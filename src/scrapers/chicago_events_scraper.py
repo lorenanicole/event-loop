@@ -534,8 +534,8 @@ CHICAGO_VENUES = {
         ),
         VenueConfig(
             name="Riviera Theatre",
-            website_url="https://www.rivieratheatre.com",
-            event_page_url="https://www.rivieratheatre.com/events",
+            website_url="https://www.rivierachicago.com",
+            event_page_url="https://www.rivierachicago.com/",
             category="music",
             address="4746 N Racine Ave",
             selectors={},
@@ -544,8 +544,8 @@ CHICAGO_VENUES = {
         ),
         VenueConfig(
             name="Byline Bank Aragon Ballroom",
-            website_url="https://www.aragonchicago.com",
-            event_page_url="https://www.aragonchicago.com/events",
+            website_url="https://www.aragonballroomchicago.com",
+            event_page_url="https://www.aragonballroomchicago.com/",
             category="music",
             address="1106 W Lawrence Ave",
             selectors={},
@@ -597,8 +597,8 @@ CHICAGO_VENUES = {
         ),
         VenueConfig(
             name="Park West",
-            website_url="https://www.parkwestchicago.com",
-            event_page_url="https://www.parkwestchicago.com/events",
+            website_url="https://www.jamusa.com/venues/park-west",
+            event_page_url="https://www.jamusa.com/venues/park-west",
             category="music",
             address="322 W Armitage Ave",
             selectors={},
@@ -620,8 +620,8 @@ CHICAGO_VENUES = {
         ),
         VenueConfig(
             name="The Vic Theatre",
-            website_url="https://www.victheater.com",
-            event_page_url="https://www.victheater.com/events",
+            website_url="https://www.jamusa.com/venues/the-vic",
+            event_page_url="https://www.jamusa.com/venues/the-vic",
             category="music",
             address="3145 N Sheffield Ave",
             selectors={},
