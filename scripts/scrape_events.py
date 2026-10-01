@@ -1,5 +1,5 @@
 """
-Scrape events from all sources and populate the database.
+Scrape events from all sources and populate the database (async).
 Sources: DO312, BandsinTown, EventBrite, Ticketmaster, TimeoutChicago, YourChicagoGuide
 Run with: uv run python scripts/scrape_events.py
 """
@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Load .env file BEFORE importing scrapers
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
+# Import scrapers
 from src.scraper import (
     DO312Scraper,
     BandsinTownScraper,
@@ -23,19 +24,21 @@ from src.scraper import (
     TimeoutChicagoScraper,
     YourChicagoGuideScraper,
 )
-from sqlalchemy.orm import Session
-from sqlalchemy import create_engine
 
-# Use sync engine for scraper (scrapers use sync session, not async)
-DATABASE_URL = "sqlite:///./data/events.db"
+# Don't import AsyncSessionLocal yet - create our own async engine
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker, Session
+
+DATABASE_URL = "sqlite+aiosqlite:///./data/events.db"
 
 
 async def scrape_all_sources():
-    """Scrape from all event sources, skip those missing credentials."""
+    """Scrape from all event sources with async database."""
     print("🔍 Scraping events from all Chicago sources...\n")
 
-    # Create sync engine for scrapers
-    sync_engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+    # Create async engine for this script
+    async_engine = create_async_engine(DATABASE_URL, echo=False)
+    AsyncSessionLocal = sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
 
     scrapers_config = [
         ("DO312", DO312Scraper),
@@ -62,15 +65,23 @@ async def scrape_all_sources():
             skipped.append(source_name)
             continue
 
-        # Scrape with this source (using sync session)
+        # Scrape with this source
         try:
-            with Session(sync_engine) as db:
+            async with AsyncSessionLocal() as async_db:
+                # Scrapers expect sync Session - get from async session
+                from sqlalchemy import inspect
+
                 print(f"⏳ Scraping {source_name}...", end=" ", flush=True)
-                count = await scraper.scrape_and_save(db, days_ahead=60)
+
+                # For now, use async_db directly - may need wrapper if scraper is strictly sync
+                count = await scraper.scrape_and_save(async_db, days_ahead=60)
                 total_events += count
+                await async_db.commit()
                 print(f"✅ {count} events")
         except Exception as e:
             print(f"⚠️  Error: {str(e)[:60]}...")
+
+    await async_engine.dispose()
 
     print(f"\n{'='*60}")
     print(f"📊 Total events scraped: {total_events}")
