@@ -23,11 +23,10 @@ from src.scraper import (
     TimeoutChicagoScraper,
     YourChicagoGuideScraper,
 )
-from src.database import AsyncSessionLocal
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 
-# Use sync engine for scraper (scrapers use sync session)
+# Use sync engine for scraper (scrapers use sync session, not async)
 DATABASE_URL = "sqlite:///./data/events.db"
 
 
