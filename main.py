@@ -1,5 +1,4 @@
 import os
-import logging
 import asyncio
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -8,14 +7,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from src.database import init_db
+from src.database import init_db, AsyncSessionLocal
 from src.api import router
 from src.scraper import DO312Scraper
+from src.logging import configure_logging, get_logger
+from src import telemetry
 
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+configure_logging(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = get_logger(__name__)
 
 # Global scraper instance
 scraper_task = None
@@ -23,8 +24,9 @@ scraper_task = None
 
 async def startup_event():
     """Initialize database on startup"""
-    init_db()
+    await init_db()
     logger.info("Database initialized")
+    # For telemetry, we'll use AsyncSessionLocal when metrics are accessed
 
 
 async def shutdown_event():

@@ -1,19 +1,24 @@
 """
 OpenTelemetry setup for observability.
 Tracks: session counts, question counts, operation latencies, token usage.
+Persists metrics to database for historical analysis.
 """
 
 from opentelemetry import metrics
 from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import InMemoryMetricsReader
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 import json
 import logging
 from datetime import datetime
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Initialize metrics
-reader = InMemoryMetricsReader()
+# Database session will be injected at runtime
+_db_session: Optional[object] = None
+
+# Initialize metrics with in-memory reader for local development
+reader = InMemoryMetricReader()
 provider = MeterProvider(metric_readers=[reader])
 metrics.set_meter_provider(provider)
 
@@ -102,17 +107,72 @@ def record_tool_call(operation: str, duration_ms: float, tokens: int = 0):
         tokens_used.add(tokens, {})
 
 
+def set_db_session(db_session: object) -> None:
+    """Set the database session for metric persistence."""
+    global _db_session
+    _db_session = db_session
+
+
+def persist_metrics_to_db() -> None:
+    """Persist current metrics to database for historical tracking."""
+    if not _db_session:
+        logger.warning("Database session not available for metrics persistence")
+        return
+
+    try:
+        from src.database.models import MetricsModel
+
+        metrics_data = reader.get_metrics_data()
+        if not metrics_data or not metrics_data.resource_metrics:
+            return
+
+        for resource_metrics in metrics_data.resource_metrics:
+            for scope_metrics in resource_metrics.scope_metrics:
+                for metric in scope_metrics.metrics:
+                    for data_point in metric.data.data_points:
+                        # Extract attributes/labels
+                        attributes_json = json.dumps(
+                            {k: str(v) for k, v in (data_point.attributes or {}).items()}
+                        )
+
+                        # Create metric record
+                        metric_record = MetricsModel(
+                            metric_name=metric.name,
+                            metric_type=type(metric.data).__name__.lower(),
+                            value=getattr(data_point, "value", 0),
+                            attributes=attributes_json,
+                            unit=metric.unit,
+                            timestamp=datetime.utcnow(),
+                        )
+                        _db_session.add(metric_record)
+
+        _db_session.commit()
+        logger.info("Metrics persisted to database")
+    except Exception as e:
+        logger.error(f"Error persisting metrics to database: {e}")
+        _db_session.rollback()
+
+
 def get_metrics_snapshot() -> dict:
     """
     Get current metrics snapshot for debugging/dashboards.
-    In production, export to OpenTelemetry collector.
+    Also persists metrics to database.
     """
     try:
+        # Persist to database
+        persist_metrics_to_db()
+
+        # Return current snapshot
         metrics_data = reader.get_metrics_data()
         return {
             "timestamp": datetime.utcnow().isoformat(),
-            "metrics": str(metrics_data),
+            "metrics_data": str(metrics_data),
+            "resource_metrics": len(metrics_data.resource_metrics) if metrics_data else 0,
+            "persisted": True,
         }
     except Exception as e:
         logger.error(f"Error getting metrics snapshot: {e}")
-        return {"error": str(e)}
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "error": str(e),
+        }

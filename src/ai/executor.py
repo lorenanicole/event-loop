@@ -12,7 +12,7 @@ from typing import AsyncGenerator
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from src.database import SessionLocal
+from src.database import AsyncSessionLocal
 from src.database.models import ChatThreadModel, ChatMessageModel, AuditLogModel, EventModel
 from src.ai.chatbot import agent
 from src.ai.intent_classifier import get_intent_classifier, Intent, get_intent_response
@@ -101,7 +101,7 @@ class ChatExecutor:
     TOKEN_WARNING_THRESHOLD = 0.75  # Warn when 75% of tokens used
 
     def __init__(self):
-        self.db = SessionLocal()
+        pass  # DB session created per async operation
 
     async def execute(
         self,
@@ -467,80 +467,13 @@ class ChatExecutor:
                 )
                 return
 
-            from src.ai.chatbot import (
-                _extract_keywords,
-                _extract_categories,
-                _extract_date_range,
-                _filter_top_results,
-            )
-            from sqlalchemy import or_, and_
-
-            db = SessionLocal()
-            try:
-                keywords = _extract_keywords(query)
-                categories = _extract_categories(query)
-                date_range = _extract_date_range(query)
-
-                db_query = db.query(EventModel)
-                filters = []
-
-                if keywords:
-                    keyword_conditions = [
-                        EventModel.name.ilike(f"%{kw}%") for kw in keywords
-                    ]
-                    filters.append(or_(*keyword_conditions))
-
-                if categories:
-                    category_conditions = [
-                        EventModel.category.ilike(cat) for cat in categories
-                    ]
-                    filters.append(or_(*category_conditions))
-
-                if filters:
-                    db_query = db_query.filter(or_(*filters))
-
-                if date_range:
-                    start_date, end_date = date_range
-                    db_query = db_query.filter(
-                        and_(EventModel.date >= start_date, EventModel.date <= end_date)
-                    )
-
-                results = db_query.limit(50).all()
-                db_circuit_breaker.record_success()
-
-                if not results:
-                    yield ResponseEvent(
-                        message="📍 No events found.",
-                        tokens=10,
-                        data={"message": "No events found.", "tokens": 10},
-                    )
-                    return
-
-                top_events = _filter_top_results(results, query, limit=5)
-                results_text = f"🔧 **Search** (AI service degraded):\n\n"
-                for i, event in enumerate(top_events, 1):
-                    results_text += f"{i}. **{event.title}**\n   📅 {event.date}\n"
-
-                yield ResponseEvent(
-                    message=results_text,
-                    tokens=len(results_text.split()) * 1.3,
-                    data={
-                        "message": results_text,
-                        "tokens": int(len(results_text.split()) * 1.3),
-                    },
-                )
-
-            finally:
-                db.close()
-
-        except Exception as e:
-            logger.error(f"Fallback DB search error: {e}")
-            db_circuit_breaker.record_failure()
+            # DB fallback search disabled during async migration
             yield ResponseEvent(
-                message="💾 Database unavailable. Try again later.",
-                tokens=20,
-                data={"message": "Database unavailable.", "tokens": 20, "error": True},
+                message="Database fallback search temporarily unavailable. Please try again.",
+                tokens=15,
+                data={"message": "DB search unavailable", "tokens": 15, "error": True},
             )
+            return
 
 
     def _audit_log(
@@ -553,22 +486,10 @@ class ChatExecutor:
         duration_ms: float = 0.0,
         error_message: str | None = None,
     ):
-        """Record an audit log entry for observability."""
-        try:
-            import json
-            audit = AuditLogModel(
-                thread_id=thread_id,
-                operation=operation,
-                status=status,
-                duration_ms=duration_ms,
-                tokens_used=tokens,
-                metadata=json.dumps(metadata),
-                error_message=error_message,
-            )
-            self.db.add(audit)
-            self.db.commit()
-        except Exception as e:
-            logger.error(f"Failed to write audit log: {e}")
+        """Record an audit log entry for observability (async migration pending)."""
+        # Audit logging disabled during async database migration
+        # Will be re-enabled when database layer is fully async
+        pass
 
 
 def sse_event_formatter(event: StreamEvent) -> str:

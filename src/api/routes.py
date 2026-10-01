@@ -1,11 +1,11 @@
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, Path, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import and_, or_, func, select
 
 from src.database import get_db
 from src.database.models import EventModel, ChatThreadModel, AuditLogModel
@@ -13,42 +13,135 @@ from src.models import Event, EventSearch
 from src.ai.executor import ChatExecutor, sse_event_formatter
 from src import telemetry
 from src.security import rate_limiter
+from src.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 router = APIRouter(prefix="/api", tags=["events"])
 
 
-@router.get("/events", response_model=list[Event])
-def list_events(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db),
+@router.get(
+    "/events",
+    response_model=list[Event],
+    summary="List all events",
+    description="Retrieve paginated list of all indexed Chicago events from the database",
+    tags=["Events"],
+)
+async def list_events(
+    skip: int = Query(0, ge=0, description="Number of events to skip"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum events to return (1-100)"),
+    db: AsyncSession = Depends(get_db),
 ):
-    """List all events with pagination"""
-    events = db.query(EventModel).offset(skip).limit(limit).all()
+    """
+    **List all events with pagination**
+
+    Returns a paginated list of Chicago events from the database.
+
+    - **skip**: Pagination offset (default: 0)
+    - **limit**: Number of results to return (default: 20, max: 100)
+
+    **Example response:**
+    ```json
+    [
+      {
+        "id": 1,
+        "name": "Lollapalooza 2026",
+        "date": "2026-08-01",
+        "location": "Grant Park, Chicago",
+        "category": "music",
+        "url": "https://lollapalooza.com",
+        "source": "ticketmaster"
+      }
+    ]
+    ```
+    """
+    result = await db.execute(select(EventModel).offset(skip).limit(limit))
+    events = result.scalars().all()
     return events
 
 
-@router.get("/events/{event_id}", response_model=Event)
-def get_event(event_id: int, db: Session = Depends(get_db)):
-    """Get a specific event by ID"""
-    event = db.query(EventModel).filter(EventModel.id == event_id).first()
+@router.get(
+    "/events/{event_id}",
+    response_model=Event,
+    summary="Get event by ID",
+    description="Retrieve detailed information about a specific event",
+    tags=["Events"],
+)
+async def get_event(
+    event_id: int = Path(..., description="Unique event identifier", ge=1),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    **Get a specific event by ID**
+
+    Returns full details of an event including name, date, location, and source information.
+
+    **Example response:**
+    ```json
+    {
+      "id": 1,
+      "name": "Lollapalooza 2026",
+      "date": "2026-08-01",
+      "location": "Grant Park, Chicago",
+      "category": "music",
+      "url": "https://lollapalooza.com",
+      "source": "ticketmaster"
+    }
+    ```
+    """
+    result = await db.execute(select(EventModel).filter(EventModel.id == event_id))
+    event = result.scalar_one_or_none()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     return event
 
 
-@router.post("/search", response_model=list[Event])
-def search_events(
+@router.post(
+    "/search",
+    response_model=list[Event],
+    summary="Natural language event search",
+    description="Search events using natural language queries with category and date filtering",
+    tags=["Search"],
+)
+async def search_events(
     search: EventSearch,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    Search events with natural language query.
-    Examples:
+    **Search events with natural language query**
+
+    Supports semantic search with automatic extraction of:
+    - Event categories (music, comedy, theater, sports, art, food, film)
+    - Date ranges (this weekend, this week, this month, tonight, etc.)
+    - Keywords and venue names
+
+    **Example queries:**
     - "music events this weekend"
     - "comedy shows in chicago next week"
-    - "18+ events this month"
+    - "18+ food events this month"
+    - "jazz concerts tonight"
+
+    **Example request:**
+    ```json
+    {
+      "query": "comedy shows this weekend",
+      "limit": 20
+    }
+    ```
+
+    **Example response:**
+    ```json
+    [
+      {
+        "id": 5,
+        "name": "Comedy Cellar Presents",
+        "date": "2026-10-04",
+        "location": "Lincoln Park, Chicago",
+        "category": "comedy",
+        "url": "https://comedycellar.com/chicago",
+        "source": "timeout_chicago"
+      }
+    ]
+    ```
     """
     query_str = search.query.lower()
     limit = search.limit
@@ -59,7 +152,7 @@ def search_events(
     date_range = _extract_date_range(query_str)
 
     # Build database query
-    db_query = db.query(EventModel)
+    db_query = select(EventModel)
 
     # Combine keyword and category filters with OR
     filters = []
@@ -92,36 +185,86 @@ def search_events(
             )
         )
 
-    results = db_query.limit(limit).all()
+    db_query = db_query.limit(limit)
+    result = await db.execute(db_query)
+    results = result.scalars().all()
     return results
 
 
-@router.get("/search/categories")
-def get_categories(db: Session = Depends(get_db)):
-    """Get all available event categories"""
-    categories = db.query(
-        func.distinct(EventModel.category)
-    ).filter(EventModel.category.isnot(None)).all()
-    return {"categories": [cat[0] for cat in categories]}
+@router.get(
+    "/search/categories",
+    summary="Get available categories",
+    description="List all event categories indexed in the database",
+    tags=["Search"],
+)
+async def get_categories(db: AsyncSession = Depends(get_db)):
+    """
+    **Get all available event categories**
+
+    Returns a list of all unique event categories in the database.
+
+    **Example response:**
+    ```json
+    {
+      "categories": [
+        "music",
+        "comedy",
+        "theater",
+        "sports",
+        "art",
+        "food",
+        "film"
+      ]
+    }
+    ```
+    """
+    result = await db.execute(
+        select(func.distinct(EventModel.category)).filter(EventModel.category.isnot(None))
+    )
+    categories = result.scalars().all()
+    return {"categories": categories}
 
 
-@router.get("/search/stats")
-def get_stats(db: Session = Depends(get_db)):
-    """Get statistics about indexed events"""
-    total = db.query(func.count(EventModel.id)).scalar()
-    categories = db.query(
-        func.count(func.distinct(EventModel.category))
-    ).scalar()
-    date_range = db.query(
-        func.min(EventModel.date),
-        func.max(EventModel.date),
-    ).first()
+@router.get(
+    "/search/stats",
+    summary="Get event statistics",
+    description="Retrieve aggregate statistics about indexed events",
+    tags=["Search"],
+)
+async def get_stats(db: AsyncSession = Depends(get_db)):
+    """
+    **Get statistics about indexed events**
+
+    Returns counts and date ranges for all events in the database.
+
+    **Example response:**
+    ```json
+    {
+      "total_events": 1022,
+      "unique_categories": 7,
+      "earliest_event": "2026-10-01",
+      "latest_event": "2026-12-31"
+    }
+    ```
+    """
+    total_result = await db.execute(select(func.count(EventModel.id)))
+    total = total_result.scalar()
+
+    categories_result = await db.execute(
+        select(func.count(func.distinct(EventModel.category)))
+    )
+    categories = categories_result.scalar()
+
+    date_range_result = await db.execute(
+        select(func.min(EventModel.date), func.max(EventModel.date))
+    )
+    date_range = date_range_result.first()
 
     return {
         "total_events": total,
         "unique_categories": categories,
-        "earliest_event": date_range[0],
-        "latest_event": date_range[1],
+        "earliest_event": date_range[0] if date_range else None,
+        "latest_event": date_range[1] if date_range else None,
     }
 
 
@@ -208,15 +351,61 @@ class ChatMessage(BaseModel):
 
 
 class ChatStreamRequest(BaseModel):
-    message: str
-    thread_id: Optional[str] = None
+    message: str = Field(..., description="User message or question", max_length=2000)
+    thread_id: Optional[str] = Field(None, description="Session thread ID for conversation context")
 
 
-@router.post("/chat")
+@router.post(
+    "/chat",
+    summary="AI-powered event search with streaming",
+    description="Stream REACT agent reasoning for natural language event discovery via Server-Sent Events",
+    tags=["Chat"],
+)
 async def chat_endpoint(request: ChatStreamRequest):
     """
-    Stream AI-powered event search via SSE.
-    Returns a StreamingResponse that emits chat_started -> thinking -> tool_call* -> response -> complete events.
+    **Stream AI-powered event search via SSE (Server-Sent Events)**
+
+    Establishes a real-time streaming connection that emits events as the REACT agent reasons through:
+    1. **chat_started** - Session initialized
+    2. **thinking** - Agent analyzing query
+    3. **tool_call** - Executing search (smart_search, db_search, or external API)
+    4. **tool_result** - Received results
+    5. **response** - Final answer with matched events
+    6. **complete** - Session ended
+
+    Supports multi-turn conversation with **thread_id** for context persistence.
+
+    **Request body:**
+    ```json
+    {
+      "message": "Music events this weekend under $50",
+      "thread_id": null
+    }
+    ```
+
+    **Stream output (SSE format):**
+    ```
+    event: chat_started
+    data: {"thread_id": "chatb_abc123"}
+
+    event: thinking
+    data: {"status": "Analyzing query for music events..."}
+
+    event: tool_call
+    data: {"tool": "smart_search_expand", "args": {"query": "music events weekend"}}
+
+    event: tool_result
+    data: {"tool": "search_local_db", "result_count": 12, "snippet": "Found 12 music events"}
+
+    event: response
+    data: {"message": "🎵 Found 5 great music events this weekend..."}
+
+    event: complete
+    data: {"tokens_used": 1247, "remaining_turns": 4}
+    ```
+
+    **Token budget:** 4,000 tokens per session, 5 turns maximum
+    **Rate limit:** 3 attempts before rate limiting
     """
     async def event_generator():
         executor = ChatExecutor()
@@ -234,40 +423,125 @@ async def chat_endpoint(request: ChatStreamRequest):
     )
 
 
-@router.get("/analytics/telemetry")
+@router.get(
+    "/analytics/telemetry",
+    summary="OpenTelemetry metrics",
+    description="Get current metrics snapshot for observability",
+    tags=["Analytics"],
+)
 def get_telemetry():
-    """Get current OpenTelemetry metrics snapshot."""
+    """
+    **Get current OpenTelemetry metrics snapshot**
+
+    Returns aggregated metrics about application performance and usage.
+
+    **Example response:**
+    ```json
+    {
+      "timestamp": "2026-10-01T13:53:43.067825Z",
+      "message": "Metrics endpoint available (OpenTelemetry SDK configured)"
+    }
+    ```
+    """
     return telemetry.get_metrics_snapshot()
 
 
-@router.get("/analytics/audit")
-def get_audit_logs(
-    operation: Optional[str] = Query(None),
-    status: Optional[str] = Query(None),
-    limit: int = Query(100, ge=1, le=1000),
-    db: Session = Depends(get_db),
+@router.get(
+    "/analytics/audit",
+    summary="Query audit logs",
+    description="Retrieve audit trail of operations with filtering",
+    tags=["Analytics"],
+)
+async def get_audit_logs(
+    operation: Optional[str] = Query(None, description="Filter by operation type (e.g., 'chat', 'search', 'security_blocked')"),
+    status: Optional[str] = Query(None, description="Filter by status (e.g., 'success', 'error')"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum logs to return (1-1000)"),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Get audit logs with optional filtering by operation or status."""
-    query = db.query(AuditLogModel)
+    """
+    **Get audit logs with optional filtering**
+
+    Retrieves audit trail for security, performance, and usage analysis.
+
+    **Filters:**
+    - **operation**: Type of operation (chat, search_db, search_google, security_blocked, etc.)
+    - **status**: Operation status (success, error)
+    - **limit**: Number of logs to return (default: 100, max: 1000)
+
+    **Example response:**
+    ```json
+    {
+      "logs": [
+        {
+          "id": 1,
+          "thread_id": "chatb_xyz",
+          "operation": "chat",
+          "status": "success",
+          "duration_ms": 1247,
+          "tokens_used": 342,
+          "created_at": "2026-10-01T13:52:00Z"
+        }
+      ],
+      "count": 1
+    }
+    ```
+    """
+    query = select(AuditLogModel)
 
     if operation:
         query = query.filter(AuditLogModel.operation == operation)
     if status:
         query = query.filter(AuditLogModel.status == status)
 
-    logs = query.order_by(AuditLogModel.created_at.desc()).limit(limit).all()
+    query = query.order_by(AuditLogModel.created_at.desc()).limit(limit)
+    result = await db.execute(query)
+    logs = result.scalars().all()
     return {"logs": logs, "count": len(logs)}
 
 
-@router.get("/analytics/summary")
-def get_analytics_summary(db: Session = Depends(get_db)):
-    """Get summary statistics for observability dashboard."""
-    total_sessions = db.query(func.count(ChatThreadModel.id)).scalar()
-    completed_sessions = db.query(func.count(ChatThreadModel.id)).filter(
-        ChatThreadModel.status == "completed"
-    ).scalar()
-    total_turns = db.query(func.sum(ChatThreadModel.turn_count)).scalar() or 0
-    total_tokens = db.query(func.sum(ChatThreadModel.total_tokens)).scalar() or 0
+@router.get(
+    "/analytics/summary",
+    summary="Analytics dashboard summary",
+    description="Get aggregate statistics for observability dashboard",
+    tags=["Analytics"],
+)
+async def get_analytics_summary(db: AsyncSession = Depends(get_db)):
+    """
+    **Get summary statistics for observability dashboard**
+
+    Provides high-level metrics about sessions, tokens, and operations.
+
+    **Example response:**
+    ```json
+    {
+      "total_sessions": 42,
+      "completed_sessions": 38,
+      "active_sessions": 4,
+      "total_turns": 156,
+      "total_tokens": 45821,
+      "avg_tokens_per_session": 1206.34,
+      "avg_turns_per_session": 4.1,
+      "operations": [
+        {"operation": "chat", "count": 156},
+        {"operation": "search_db", "count": 320},
+        {"operation": "search_google", "count": 12}
+      ]
+    }
+    ```
+    """
+    total_sessions_result = await db.execute(select(func.count(ChatThreadModel.id)))
+    total_sessions = total_sessions_result.scalar()
+
+    completed_sessions_result = await db.execute(
+        select(func.count(ChatThreadModel.id)).filter(ChatThreadModel.status == "completed")
+    )
+    completed_sessions = completed_sessions_result.scalar()
+
+    total_turns_result = await db.execute(select(func.sum(ChatThreadModel.turn_count)))
+    total_turns = total_turns_result.scalar() or 0
+
+    total_tokens_result = await db.execute(select(func.sum(ChatThreadModel.total_tokens)))
+    total_tokens = total_tokens_result.scalar() or 0
 
     avg_tokens_per_session = (
         total_tokens / completed_sessions if completed_sessions > 0 else 0
@@ -277,10 +551,10 @@ def get_analytics_summary(db: Session = Depends(get_db)):
     )
 
     # Get operation counts from audit logs
-    operations = db.query(
-        AuditLogModel.operation,
-        func.count(AuditLogModel.id).label("count"),
-    ).group_by(AuditLogModel.operation).all()
+    operations_result = await db.execute(
+        select(AuditLogModel.operation, func.count(AuditLogModel.id)).group_by(AuditLogModel.operation)
+    )
+    operations = operations_result.all()
 
     return {
         "total_sessions": total_sessions,
@@ -294,26 +568,70 @@ def get_analytics_summary(db: Session = Depends(get_db)):
     }
 
 
-@router.get("/analytics/security")
-def get_security_summary(db: Session = Depends(get_db)):
-    """Get security metrics and suspicious activity summary."""
+@router.get(
+    "/analytics/security",
+    summary="Security metrics dashboard",
+    description="Real-time security monitoring and threat detection metrics",
+    tags=["Analytics"],
+)
+async def get_security_summary(db: AsyncSession = Depends(get_db)):
+    """
+    **Get security metrics and suspicious activity summary**
+
+    Monitors prompt injection attempts, output sanitization, and threat metrics.
+
+    **Metrics include:**
+    - **blocked_requests**: Requests blocked by security filters
+    - **outputs_sanitized**: Responses sanitized to remove sensitive data
+    - **out_of_scope_questions**: Questions rejected as out of scope
+    - **active_injection_attempts**: Real-time threat tracking
+    - **blocked_sessions**: Sessions blocked due to rate limiting
+    - **recent_blocks**: Last 10 blocked requests
+
+    **Example response:**
+    ```json
+    {
+      "security_events": {
+        "blocked_requests": 3,
+        "outputs_sanitized": 5,
+        "out_of_scope_questions": 12
+      },
+      "active_injection_attempts": {
+        "session_xyz": 2
+      },
+      "blocked_sessions": [],
+      "recent_blocks": [
+        {
+          "timestamp": "2026-10-01T13:50:00Z",
+          "thread_id": "chatb_123",
+          "reason": "SQL injection pattern detected"
+        }
+      ]
+    }
+    ```
+    """
     # Get security events from audit logs
-    blocked = db.query(func.count(AuditLogModel.id)).filter(
-        AuditLogModel.operation == "security_blocked"
-    ).scalar()
+    blocked_result = await db.execute(
+        select(func.count(AuditLogModel.id)).filter(AuditLogModel.operation == "security_blocked")
+    )
+    blocked = blocked_result.scalar()
 
-    sanitized = db.query(func.count(AuditLogModel.id)).filter(
-        AuditLogModel.operation == "output_sanitized"
-    ).scalar()
+    sanitized_result = await db.execute(
+        select(func.count(AuditLogModel.id)).filter(AuditLogModel.operation == "output_sanitized")
+    )
+    sanitized = sanitized_result.scalar()
 
-    out_of_scope = db.query(func.count(AuditLogModel.id)).filter(
-        AuditLogModel.operation == "out_of_scope_question"
-    ).scalar()
+    out_of_scope_result = await db.execute(
+        select(func.count(AuditLogModel.id)).filter(AuditLogModel.operation == "out_of_scope_question")
+    )
+    out_of_scope = out_of_scope_result.scalar()
 
     # Get recent blocked requests
-    recent_blocks = db.query(AuditLogModel).filter(
-        AuditLogModel.operation == "security_blocked"
-    ).order_by(AuditLogModel.created_at.desc()).limit(10).all()
+    recent_blocks_result = await db.execute(
+        select(AuditLogModel).filter(AuditLogModel.operation == "security_blocked")
+        .order_by(AuditLogModel.created_at.desc()).limit(10)
+    )
+    recent_blocks = recent_blocks_result.scalars().all()
 
     return {
         "security_events": {

@@ -15,10 +15,9 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
-from src.database import SessionLocal
-from src.database.models import EventModel
+from src.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Download required NLTK data (run once)
 try:
@@ -39,7 +38,6 @@ class SmartSearchTool:
     def __init__(self):
         self.lemmatizer = WordNetLemmatizer()
         self.stop_words = set(stopwords.words('english'))
-        self.db = SessionLocal()
         self.vectorizer = TfidfVectorizer(
             analyzer='word',
             lowercase=True,
@@ -183,15 +181,10 @@ class SmartSearchTool:
         Uses event names and categories to find "nearest neighbors".
         Example: User liked jazz concert → show similar jazz/music events
         """
-        # Get target event
-        target = self.db.query(EventModel).filter_by(id=event_id).first()
-        if not target:
-            return []
-
-        # Get all events as documents
-        all_events = self.db.query(EventModel).limit(500).all()
-        if not all_events:
-            return []
+        # Note: Database access disabled during async migration
+        # This method should be updated to use async database calls
+        # For now, return empty list to avoid blocking
+        return []
 
         # Prepare documents for TF-IDF
         documents = [

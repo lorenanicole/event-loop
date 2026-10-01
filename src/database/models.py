@@ -77,3 +77,21 @@ class AuditLogModel(Base):
         Index("idx_status_created", "status", "created_at"),
         Index("idx_thread_operation", "thread_id", "operation"),
     )
+
+
+class MetricsModel(Base):
+    """Time-series metrics storage for observability dashboard."""
+    __tablename__ = "metrics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    metric_name = Column(String(100), index=True)  # e.g., "http.server.request.duration", "chat.sessions.created"
+    metric_type = Column(String(20), index=True)  # "counter", "gauge", "histogram"
+    value = Column(Float)  # Current value
+    attributes = Column(Text)  # JSON string with labels/tags
+    unit = Column(String(50), nullable=True)  # e.g., "ms", "tokens", "requests"
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index("idx_metric_timestamp", "metric_name", "timestamp"),
+        Index("idx_metric_type", "metric_type", "timestamp"),
+    )

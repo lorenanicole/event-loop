@@ -5,14 +5,16 @@ import asyncio
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.anthropic import AnthropicModel
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
-from typing import Optional, Union
-from src.database import SessionLocal
+from typing import Optional, Union, Literal
+from src.database import AsyncSessionLocal
 from src.database.models import EventModel
 from src.ai.smart_search import get_smart_search_tool
+from src.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 CLAUDE_API_KEY = os.getenv("ANTHROPIC_API_KEY")
@@ -29,14 +31,14 @@ class EventResult(BaseModel):
 
 class ToolCallAction(BaseModel):
     """Agent action: call a tool with arguments."""
-    action_type: str = Field(default="tool_call", description="Always 'tool_call'")
+    action_type: Literal["tool_call"] = Field(default="tool_call", description="Always 'tool_call'")
     tool: str = Field(description="Tool name: 'search_local_db' or 'search_google_events'")
     args: dict = Field(description="Tool arguments")
 
 
 class ToolResultAction(BaseModel):
     """Agent observation: received tool results."""
-    action_type: str = Field(default="tool_result", description="Always 'tool_result'")
+    action_type: Literal["tool_result"] = Field(default="tool_result", description="Always 'tool_result'")
     tool: str = Field(description="Which tool was executed")
     found: int = Field(description="Number of results found")
     events: list[EventResult] = Field(description="The events/results")
@@ -44,7 +46,7 @@ class ToolResultAction(BaseModel):
 
 class FinalResponse(BaseModel):
     """Agent response: final message to user."""
-    action_type: str = Field(default="response", description="Always 'response'")
+    action_type: Literal["response"] = Field(default="response", description="Always 'response'")
     message: str = Field(description="The response text to show user")
     context: str = Field(description="Context about what was searched/found")
     tokens: int = Field(description="Estimated tokens used")
@@ -71,61 +73,61 @@ class AgentAction(BaseModel):
 async def search_local_db(context: RunContext[str], query: str) -> str:
     """Search local database for events (FREE - no API cost)"""
     try:
-        db = SessionLocal()
-        query_str = query.lower()
+        async with AsyncSessionLocal() as db:
+            query_str = query.lower()
 
-        keywords = _extract_keywords(query_str)
-        categories = _extract_categories(query_str)
-        date_range = _extract_date_range(query_str)
+            keywords = _extract_keywords(query_str)
+            categories = _extract_categories(query_str)
+            date_range = _extract_date_range(query_str)
 
-        db_query = db.query(EventModel)
-        filters = []
+            db_query = select(EventModel)
+            filters = []
 
-        if keywords:
-            keyword_conditions = [EventModel.name.ilike(f"%{kw}%") for kw in keywords]
-            filters.append(or_(*keyword_conditions))
+            if keywords:
+                keyword_conditions = [EventModel.name.ilike(f"%{kw}%") for kw in keywords]
+                filters.append(or_(*keyword_conditions))
 
-        if categories:
-            category_conditions = [EventModel.category.ilike(cat) for cat in categories]
-            filters.append(or_(*category_conditions))
+            if categories:
+                category_conditions = [EventModel.category.ilike(cat) for cat in categories]
+                filters.append(or_(*category_conditions))
 
-        if filters:
-            db_query = db_query.filter(or_(*filters))
+            if filters:
+                db_query = db_query.filter(or_(*filters))
 
-        if date_range:
-            start_date, end_date = date_range
-            db_query = db_query.filter(
-                and_(
-                    EventModel.date >= start_date,
-                    EventModel.date <= end_date,
+            if date_range:
+                start_date, end_date = date_range
+                db_query = db_query.filter(
+                    and_(
+                        EventModel.date >= start_date,
+                        EventModel.date <= end_date,
+                    )
                 )
-            )
 
-        results = db_query.limit(50).all()
-        db.close()
+            result = await db.execute(db_query.limit(50))
+            results = result.scalars().all()
 
-        if not results:
-            return "NO_RESULTS"
+            if not results:
+                return "NO_RESULTS"
 
-        # Score and filter to top 5 most relevant events
-        top_events = _filter_top_results(results, query, limit=5)
+            # Score and filter to top 5 most relevant events
+            top_events = _filter_top_results(results, query, limit=5)
 
-        if not top_events:
-            return "NO_RESULTS"
+            if not top_events:
+                return "NO_RESULTS"
 
-        # Build response with confidence indicators
-        results_text = f"📍 **Found {len(top_events)} great match{'es' if len(top_events) != 1 else ''}:**\n\n"
-        for i, event in enumerate(top_events, 1):
-            confidence_bar = "🟢" if event.confidence >= 0.7 else "🟡" if event.confidence >= 0.5 else "🔵"
-            results_text += f"{i}. **{event.title}** {confidence_bar}\n"
-            results_text += f"   📅 {event.date}\n"
-            if event.source:
-                results_text += f"   📌 {event.source}\n"
-            if event.url:
-                results_text += f"   🔗 {event.url}\n"
-            results_text += "\n"
+            # Build response with confidence indicators
+            results_text = f"📍 **Found {len(top_events)} great match{'es' if len(top_events) != 1 else ''}:**\n\n"
+            for i, event in enumerate(top_events, 1):
+                confidence_bar = "🟢" if event.confidence >= 0.7 else "🟡" if event.confidence >= 0.5 else "🔵"
+                results_text += f"{i}. **{event.title}** {confidence_bar}\n"
+                results_text += f"   📅 {event.date}\n"
+                if event.source:
+                    results_text += f"   📌 {event.source}\n"
+                if event.url:
+                    results_text += f"   🔗 {event.url}\n"
+                results_text += "\n"
 
-        return results_text
+            return results_text
 
     except Exception as e:
         logger.error(f"DB search error: {e}")
@@ -135,36 +137,37 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
 async def _persist_events_to_db(events: list[EventResult]) -> None:
     """Background task: persist external events to DB (non-blocking)."""
     try:
-        db = SessionLocal()
-        for event in events:
-            if not event.url:
-                continue
+        async with AsyncSessionLocal() as db:
+            for event in events:
+                if not event.url:
+                    continue
 
-            existing = db.query(EventModel).filter_by(origination_url=event.url).first()
-            if existing:
-                continue
+                result = await db.execute(
+                    select(EventModel).filter_by(origination_url=event.url)
+                )
+                existing = result.scalar_one_or_none()
+                if existing:
+                    continue
 
-            try:
-                event_date = datetime.fromisoformat(event.date.replace('Z', '+00:00'))
-            except (ValueError, AttributeError):
-                event_date = datetime.now() + timedelta(days=30)
+                try:
+                    event_date = datetime.fromisoformat(event.date.replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    event_date = datetime.now() + timedelta(days=30)
 
-            new_event = EventModel(
-                name=event.title,
-                date=event_date,
-                location=event.location,
-                category="Online Search",
-                origination_url=event.url,
-                source="SerpAPI",
-            )
-            db.add(new_event)
+                new_event = EventModel(
+                    name=event.title,
+                    date=event_date,
+                    location=event.location,
+                    category="Online Search",
+                    origination_url=event.url,
+                    source="SerpAPI",
+                )
+                db.add(new_event)
 
-        db.commit()
-        logger.info(f"Persisted {len(events)} external events to DB")
+            await db.commit()
+            logger.info(f"Persisted {len(events)} external events to DB")
     except Exception as e:
         logger.error(f"Failed to persist events: {e}")
-    finally:
-        db.close()
 
 
 async def search_google_events(context: RunContext[str], query: str) -> str:
@@ -379,8 +382,10 @@ def _extract_date_range(query: str) -> Optional[tuple[datetime, datetime]]:
     return None
 
 
+_model = AnthropicModel("claude-sonnet-5-5") if CLAUDE_API_KEY else None
+
 agent = Agent(
-    model=AnthropicModel("claude-sonnet-5-5"),
+    model=_model or "test",
     system_prompt="""You are a helpful Chicago events chatbot running a REACT loop. Help users find events efficiently.
 
 WORKFLOW:
