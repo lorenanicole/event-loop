@@ -16,6 +16,12 @@ from src.database.models import EventModel
 from src.ai.smart_search import get_smart_search_tool
 from src.logging import get_logger
 
+try:
+    from nltk.corpus import wordnet
+    NLTK_AVAILABLE = True
+except ImportError:
+    NLTK_AVAILABLE = False
+
 # Load .env before using environment variables
 _env_path = Path(__file__).parent.parent.parent / ".env"
 load_dotenv(_env_path)
@@ -393,30 +399,26 @@ def _extract_keywords(query: str) -> list[str]:
         "looking", "events", "event", "i", "want", "to", "for", "any"
     }
 
-    # Synonyms to expand search: keyword -> [synonyms]
-    synonyms = {
-        "walk": ["hike", "trail", "nature", "outdoor", "park"],
-        "hike": ["walk", "trail", "nature", "outdoor"],
-        "trail": ["hike", "walk", "nature", "outdoor", "park"],
-        "comedy": ["standup", "funny", "laugh"],
-        "music": ["concert", "live", "band"],
-        "concert": ["music", "live", "band"],
-        "art": ["gallery", "exhibit", "installation"],
-        "food": ["eat", "dining", "restaurant"],
-        "play": ["theater", "theatre", "drama"],
-    }
-
     words = query.split()
     keywords = [w for w in words if w not in stop_words and len(w) > 2]
 
-    # Expand keywords with synonyms
+    # Expand keywords with NLTK WordNet synonyms
     expanded_keywords = set(keywords)
-    for kw in keywords:
-        kw_lower = kw.lower()
-        if kw_lower in synonyms:
-            expanded_keywords.update(synonyms[kw_lower])
 
-    return list(expanded_keywords)[:10]
+    if NLTK_AVAILABLE:
+        for kw in keywords:
+            kw_lower = kw.lower()
+            try:
+                synsets = wordnet.synsets(kw_lower, lang='eng')
+                for synset in synsets[:3]:  # Limit to top 3 synsets
+                    for lemma in synset.lemmas():
+                        synonym = lemma.name().replace('_', ' ')
+                        if len(synonym) > 2:
+                            expanded_keywords.add(synonym)
+            except Exception:
+                pass
+
+    return list(expanded_keywords)[:15]
 
 
 def _extract_categories(query: str) -> list[str]:
