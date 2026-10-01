@@ -6,8 +6,8 @@ Run this to populate cost/age_range fields for events that were created before t
 import asyncio
 import logging
 from datetime import datetime
+from sqlalchemy import select, and_
 from sqlalchemy.orm import Session
-from sqlalchemy import text as sql_text
 
 from src.database import init_db, AsyncSessionLocal
 from src.database.models import EventModel
@@ -42,11 +42,12 @@ async def backfill_cost_and_age_range() -> dict:
     async with AsyncSessionLocal() as session:
         try:
             # Query events where cost OR age_range is NULL
-            query = session.query(EventModel).filter(
-                (EventModel.cost.is_(None)) | (EventModel.age_range.is_(None))
+            result = await session.execute(
+                select(EventModel).filter(
+                    (EventModel.cost.is_(None)) | (EventModel.age_range.is_(None))
+                )
             )
-
-            events_to_update = query.all()
+            events_to_update = result.scalars().all()
             stats["total_processed"] = len(events_to_update)
 
             if not events_to_update:
