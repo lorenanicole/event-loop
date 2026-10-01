@@ -18,6 +18,9 @@ class ChatWidget {
   private threadId: string | null = null;
   private isStreaming = false;
   private toolResults: Record<string, string> = {};
+  private isCollapsed = true;
+  private toggleBtn: HTMLButtonElement | null = null;
+  private ctaLabel: HTMLElement | null = null;
 
   constructor(containerId: string) {
     this.container = document.getElementById(containerId)!;
@@ -26,8 +29,53 @@ class ChatWidget {
     this.sendButton = this.container.querySelector(".chat-send")!;
     this.newChatButton = this.container.querySelector(".chat-new")!;
 
+    this.createToggleButton();
     this.setupEventListeners();
+    this.collapseChat();
     this.showWelcomeGreeting();
+  }
+
+  private createToggleButton(): void {
+    this.toggleBtn = document.createElement("button");
+    this.toggleBtn.className = "chat-toggle-btn show";
+    this.toggleBtn.textContent = "💬";
+    this.toggleBtn.title = "Open chat";
+    this.toggleBtn.addEventListener("click", () => this.toggleChat());
+    document.body.appendChild(this.toggleBtn);
+
+    this.ctaLabel = document.createElement("div");
+    this.ctaLabel.className = "chat-cta";
+    this.ctaLabel.textContent = "💡 Ask me anything!";
+    document.body.appendChild(this.ctaLabel);
+  }
+
+  private toggleChat(): void {
+    this.isCollapsed ? this.expandChat() : this.collapseChat();
+  }
+
+  private collapseChat(): void {
+    this.isCollapsed = true;
+    this.container.classList.add("collapsed");
+    if (this.toggleBtn) {
+      this.toggleBtn.textContent = "💬";
+      this.toggleBtn.title = "Open chat";
+    }
+    if (this.ctaLabel) {
+      this.ctaLabel.style.display = "block";
+    }
+  }
+
+  private expandChat(): void {
+    this.isCollapsed = false;
+    this.container.classList.remove("collapsed");
+    if (this.toggleBtn) {
+      this.toggleBtn.textContent = "✕";
+      this.toggleBtn.title = "Close chat";
+    }
+    if (this.ctaLabel) {
+      this.ctaLabel.style.display = "none";
+    }
+    this.inputField.focus();
   }
 
   private showWelcomeGreeting(): void {
@@ -60,6 +108,9 @@ Let's find your next great event! ⚡`;
         e.preventDefault();
         this.sendMessage();
       }
+    });
+    this.inputField.addEventListener("focus", () => {
+      if (this.isCollapsed) this.expandChat();
     });
     this.newChatButton.addEventListener("click", () => this.startNewChat());
   }
