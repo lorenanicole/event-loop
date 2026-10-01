@@ -203,7 +203,8 @@ class EmptyBottleScraper(WickerParkVenueScraper):
     """
 
     async def scrape_events(self, client: httpx.AsyncClient) -> list[VenueEvent]:
-        """Scrape Squarespace event items."""
+        """Scrape text-based event links from content block."""
+        import re
         events = []
         try:
             response = await client.get(self.event_page_url, timeout=10)
@@ -213,45 +214,40 @@ class EmptyBottleScraper(WickerParkVenueScraper):
 
             soup = BeautifulSoup(response.text, "html.parser")
 
-            # Squarespace event collection selectors
-            event_items = soup.select(".event-item")
-            if not event_items:
-                event_items = soup.select("[data-item-id]")
+            # Find the content block with events
+            content_block = soup.select_one(".sqs-html-content")
+            if not content_block:
+                logger.debug("Empty Bottle: sqs-html-content not found")
+                return events
 
-            logger.info(f"Empty Bottle: found {len(event_items)} event items")
+            # Extract all TicketWeb links from paragraphs
+            ticket_links = content_block.find_all("a", href=lambda x: x and "ticketweb.com" in x.lower())
+            logger.info(f"Empty Bottle: found {len(ticket_links)} TicketWeb links")
 
-            for item in event_items:
+            for link in ticket_links:
                 try:
-                    # Extract event title
-                    title_elem = item.select_one(".event-title") or item.find("h3")
-                    if not title_elem:
+                    # Event name and details are in the link text
+                    event_text = link.get_text(strip=True)
+                    if not event_text or len(event_text) < 5:
                         continue
 
-                    event_name = title_elem.get_text(strip=True)
+                    ticket_url = link.get("href", self.website_url)
 
-                    # Extract date
-                    date_elem = item.select_one(".event-date")
-                    event_date = date_elem.get_text(strip=True) if date_elem else None
-
-                    # Extract time
-                    time_elem = item.select_one(".event-time")
-                    event_time = time_elem.get_text(strip=True) if time_elem else None
-
-                    # Extract ticket link (TicketWeb)
-                    ticket_elem = item.find("a", href=lambda x: x and ("ticketweb" in x.lower() or "tickets" in x.lower()))
-                    ticket_url = ticket_elem.get("href", self.website_url) if ticket_elem else self.website_url
+                    # Try to extract date from event text (e.g., "...on September 10th & 11th")
+                    date_match = re.search(r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}', event_text)
+                    event_date = date_match.group(0) if date_match else None
 
                     events.append(VenueEvent(
-                        name=event_name,
+                        name=event_text,
                         date=event_date,
-                        time=event_time,
+                        time=None,
                         location=f"{self.venue_name}, {self.address}",
                         url=ticket_url,
                         venue_name=self.venue_name,
                         category=self.category
                     ))
                 except Exception as e:
-                    logger.debug(f"Empty Bottle: failed to parse event: {e}")
+                    logger.debug(f"Empty Bottle: failed to parse link: {e}")
 
             logger.info(f"Empty Bottle: extracted {len(events)} events")
 
@@ -263,60 +259,73 @@ class EmptyBottleScraper(WickerParkVenueScraper):
 
 class DenTheatreScraper(WickerParkVenueScraper):
     """
-    Den Theatre (1331 N Milwaukee) - Squarespace comedy/tickets
-    Static HTML with Ovation Ticketing
+    Den Theatre (1331 N Milwaukee) - Squarespace summary component
+    Shows load dynamically via JavaScript - requires Playwright
     """
 
     async def scrape_events(self, client: httpx.AsyncClient) -> list[VenueEvent]:
-        """Scrape Squarespace event items for comedy shows."""
+        """Scrape comedy shows using Playwright for JS rendering."""
         events = []
         try:
-            # Follow redirects to final URL
-            response = await client.get(self.event_page_url, timeout=10, follow_redirects=True)
-            if response.status_code != 200:
-                logger.warning(f"Den Theatre: got {response.status_code}")
-                return events
+            from playwright.async_api import async_playwright
 
-            soup = BeautifulSoup(response.text, "html.parser")
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page()
 
-            # Squarespace event collection selectors (similar to Empty Bottle)
-            event_items = soup.select(".event-item")
-            if not event_items:
-                event_items = soup.select("[data-event-id]")
-
-            logger.info(f"Den Theatre: found {len(event_items)} event items")
-
-            for item in event_items:
                 try:
-                    # Extract event title (comedy shows)
-                    title_elem = item.select_one(".event-title a") or item.select_one(".event-title") or item.find("h3")
-                    if not title_elem:
-                        continue
+                    await page.goto(self.event_page_url, timeout=10000, wait_until="networkidle")
 
-                    event_name = title_elem.get_text(strip=True)
+                    # Wait for show content to render
+                    try:
+                        await page.wait_for_selector("a[href*='ovationtix']", timeout=5000)
+                    except:
+                        logger.debug("Den Theatre: Ovation ticket selector not found")
 
-                    # Extract date
-                    date_elem = item.select_one(".event-date")
-                    event_date = date_elem.get_text(strip=True) if date_elem else None
+                    html = await page.content()
+                    soup = BeautifulSoup(html, "html.parser")
 
-                    # Extract ticket link (Ovation)
-                    ticket_elem = item.find("a", href=lambda x: x and ("ovationtix" in x.lower() or "tickets" in x.lower()))
-                    ticket_url = ticket_elem.get("href", self.website_url) if ticket_elem else self.website_url
+                    # Find all show/performance links
+                    show_links = soup.find_all("a", href=lambda x: x and "ovationtix" in x.lower())
+                    logger.info(f"Den Theatre: found {len(show_links)} Ovation ticket links")
 
-                    events.append(VenueEvent(
-                        name=event_name,
-                        date=event_date,
-                        time=None,
-                        location=f"{self.venue_name}, {self.address}",
-                        url=ticket_url,
-                        venue_name=self.venue_name,
-                        category=self.category
-                    ))
-                except Exception as e:
-                    logger.debug(f"Den Theatre: failed to parse event: {e}")
+                    for link in show_links[:20]:  # Limit to first 20 shows
+                        try:
+                            # Show title from link text
+                            show_text = link.get_text(strip=True)
+                            if not show_text or len(show_text) < 2:
+                                continue
 
-            logger.info(f"Den Theatre: extracted {len(events)} events")
+                            ticket_url = link.get("href", self.website_url)
 
+                            # Look for date info in parent elements
+                            parent = link.find_parent(["div", "li", "article"])
+                            event_date = None
+                            if parent:
+                                # Look for date patterns in text
+                                import re
+                                date_match = re.search(r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}', parent.get_text())
+                                event_date = date_match.group(0) if date_match else None
+
+                            events.append(VenueEvent(
+                                name=show_text,
+                                date=event_date,
+                                time=None,
+                                location=f"{self.venue_name}, {self.address}",
+                                url=ticket_url,
+                                venue_name=self.venue_name,
+                                category=self.category
+                            ))
+                        except Exception as e:
+                            logger.debug(f"Den Theatre: failed to parse show: {e}")
+
+                    logger.info(f"Den Theatre: extracted {len(events)} events")
+
+                finally:
+                    await browser.close()
+
+        except ImportError:
+            logger.debug("Den Theatre: Playwright not available")
         except Exception as e:
             logger.error(f"Den Theatre scraping failed: {e}")
 
