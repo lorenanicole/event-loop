@@ -375,6 +375,26 @@ CHICAGO_VENUES = {
             use_playwright=True,
             extractor_fn=extract_generic_item_class,
         ),
+        VenueConfig(
+            name="Buddy Guy's Legends",
+            website_url="https://www.buddyguyslegends.com",
+            event_page_url="https://www.buddyguyslegends.com/events",
+            category="music",
+            address="700 S Wabash Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_li,
+        ),
+        VenueConfig(
+            name="James M. Nederlander Theatre",
+            website_url="https://www.jimmynet.com",
+            event_page_url="https://www.jimmynet.com/events",
+            category="theater",
+            address="24 W Randolph St",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_item_class,
+        ),
     ],
 
     "Wicker Park": [
