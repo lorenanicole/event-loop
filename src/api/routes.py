@@ -88,6 +88,11 @@ async def get_event_categories(db: AsyncSession = Depends(get_db)):
         if not cat or len(cat.strip()) < 3:
             return False
         cat_lower = cat.lower()
+
+        # Exclude placeholder/junk categories
+        if cat_lower in ['undefined', 'miscellaneous', 'events', 'other', 'online search']:
+            return False
+
         date_patterns = [
             r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)',
             r'^\d+\s*,',
