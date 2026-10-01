@@ -2,6 +2,8 @@ import os
 import logging
 import httpx
 import asyncio
+from pathlib import Path
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.anthropic import AnthropicModel
@@ -13,6 +15,10 @@ from src.database import AsyncSessionLocal
 from src.database.models import EventModel
 from src.ai.smart_search import get_smart_search_tool
 from src.logging import get_logger
+
+# Load .env before using environment variables
+_env_path = Path(__file__).parent.parent.parent / ".env"
+load_dotenv(_env_path)
 
 logger = get_logger(__name__)
 
