@@ -23,9 +23,11 @@ from src.scraper import (
     TimeoutChicagoScraper,
     YourChicagoGuideScraper,
 )
+from src.database import AsyncSessionLocal
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 
+# Use sync engine for scraper (scrapers use sync session)
 DATABASE_URL = "sqlite:///./data/events.db"
 
 
@@ -33,7 +35,8 @@ async def scrape_all_sources():
     """Scrape from all event sources, skip those missing credentials."""
     print("🔍 Scraping events from all Chicago sources...\n")
 
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+    # Create sync engine for scrapers
+    sync_engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
     scrapers_config = [
         ("DO312", DO312Scraper),
@@ -60,9 +63,9 @@ async def scrape_all_sources():
             skipped.append(source_name)
             continue
 
-        # Scrape with this source
+        # Scrape with this source (using sync session)
         try:
-            with Session(engine) as db:
+            with Session(sync_engine) as db:
                 print(f"⏳ Scraping {source_name}...", end=" ", flush=True)
                 count = await scraper.scrape_and_save(db, days_ahead=60)
                 total_events += count
