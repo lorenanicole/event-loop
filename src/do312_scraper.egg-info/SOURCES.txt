@@ -8,6 +8,7 @@ src/security.py
 src/telemetry.py
 src/ai/__init__.py
 src/ai/chatbot.py
+src/ai/event_enrichment.py
 src/ai/executor.py
 src/ai/intent_classifier.py
 src/ai/smart_search.py
@@ -31,7 +32,11 @@ src/scraper/scraper.py
 src/scraper/ticketmaster.py
 src/scraper/timeoutchicago.py
 src/scraper/yourchicagoguide.py
+src/scrapers/osm_venues.py
+src/scrapers/venue_events_persist.py
+src/scrapers/venue_scraper.py
 tests/test_api.py
+tests/test_chat_sse.py
 tests/test_chatbot.py
 tests/test_database.py
 tests/test_resilience.py

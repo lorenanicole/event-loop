@@ -1,28 +1,18 @@
 """
-Fetch entertainment venues from OpenStreetMap using Overpass API.
+Fetch entertainment venues from OpenStreetMap using Nominatim API.
 Returns venue data (name, coordinates, type) for Chicago.
 """
 
 import httpx
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-CHICAGO_BBOX = "41.6,-87.9,42.0,-87.5"  # (south, west, north, east)
-
-OVERPASS_QUERY = f"""
-[bbox:{CHICAGO_BBOX}];
-(
-  node["amenity"="theatre"];
-  node["amenity"="nightclub"];
-  node["amenity"="concert_hall"];
-  node["amenity"="music_venue"];
-  node["name"~"comedy|theater|theatre|live"];
-);
-out center;
-"""
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+RATE_LIMIT_DELAY = 1.1  # Nominatim: 1 req/sec, +100ms buffer
 
 
 @dataclass
@@ -31,86 +21,99 @@ class Venue:
     name: str
     lat: float
     lon: float
-    venue_type: str  # "theatre", "nightclub", "concert_hall", etc.
+    venue_type: str
     website: Optional[str] = None
     phone: Optional[str] = None
 
 
 async def fetch_chicago_venues() -> list[Venue]:
     """
-    Query OpenStreetMap for Chicago entertainment venues.
-    Returns list of venues with coordinates and metadata.
+    Query OpenStreetMap Nominatim for Chicago entertainment venues.
+    Uses multiple search queries to find different venue types.
     """
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(
-                "https://overpass-api.de/api/interpreter",
-                params={"data": OVERPASS_QUERY}
-            )
-            response.raise_for_status()
-
-            venues = _parse_overpass_response(response.text)
-            logger.info(f"Fetched {len(venues)} venues from OpenStreetMap")
-            return venues
-
-    except Exception as e:
-        logger.error(f"Failed to fetch venues from Overpass API: {e}")
-        return []
-
-
-def _parse_overpass_response(xml_text: str) -> list[Venue]:
-    """Parse XML response from Overpass API into Venue objects."""
     venues = []
+    queries = [
+        "theater Chicago",
+        "theatre Chicago",
+        "comedy club Chicago",
+        "concert hall Chicago",
+        "music venue Chicago",
+        "nightclub Chicago",
+    ]
 
-    try:
-        import xml.etree.ElementTree as ET
-        root = ET.fromstring(xml_text)
+    seen_names = set()
+    headers = {"User-Agent": "EventLoop/1.0 (Chicago event discovery)"}
 
-        for node in root.findall(".//node"):
-            venue = _parse_node(node)
-            if venue:
-                venues.append(venue)
+    async with httpx.AsyncClient(timeout=10, headers=headers) as client:
+        for query in queries:
+            try:
+                await asyncio.sleep(RATE_LIMIT_DELAY)  # Respect rate limit
 
-    except Exception as e:
-        logger.error(f"Failed to parse Overpass XML: {e}")
+                response = await client.get(
+                    NOMINATIM_URL,
+                    params={
+                        "q": query,
+                        "format": "json",
+                        "limit": 10,
+                        "viewbox": "-87.9,41.6,-87.5,42.0",  # Chicago bbox
+                        "bounded": 1,
+                    }
+                )
+                response.raise_for_status()
 
+                results = response.json()
+                for result in results:
+                    venue = _parse_nominatim_result(result)
+                    if venue and venue.name not in seen_names:
+                        venues.append(venue)
+                        seen_names.add(venue.name)
+
+            except Exception as e:
+                logger.error(f"Failed to search for '{query}': {e}")
+
+    logger.info(f"Fetched {len(venues)} venues from Nominatim")
     return venues
 
 
-def _parse_node(node_elem) -> Optional[Venue]:
-    """Parse a single OSM node element into a Venue."""
+def _parse_nominatim_result(result: dict) -> Optional[Venue]:
+    """Parse Nominatim search result into a Venue."""
     try:
-        lat = float(node_elem.get("lat"))
-        lon = float(node_elem.get("lon"))
+        name = result.get("name", "").strip()
+        if not name:
+            return None
 
-        name = None
-        venue_type = None
-        website = None
-        phone = None
+        lat = float(result.get("lat", 0))
+        lon = float(result.get("lon", 0))
 
-        for tag in node_elem.findall("tag"):
-            key = tag.get("k")
-            val = tag.get("v")
+        if lat == 0 or lon == 0:
+            return None
 
-            if key == "name":
-                name = val
-            elif key == "amenity":
-                venue_type = val
-            elif key == "website":
-                website = val
-            elif key == "phone":
-                phone = val
+        # Categorize venue type from OSM tags
+        venue_type = "venue"
+        osm_class = result.get("class", "")
+        osm_type = result.get("type", "")
 
-        if name and (venue_type or name):
-            return Venue(
-                name=name,
-                lat=lat,
-                lon=lon,
-                venue_type=venue_type or "venue",
-                website=website,
-                phone=phone,
-            )
-    except (ValueError, AttributeError) as e:
-        logger.debug(f"Failed to parse node: {e}")
+        if osm_class == "amenity":
+            if osm_type in ("theatre", "concert_hall", "nightclub", "bar"):
+                venue_type = osm_type
+            else:
+                venue_type = "amenity"
+        elif "theater" in name.lower() or "theatre" in name.lower():
+            venue_type = "theatre"
+        elif "comedy" in name.lower():
+            venue_type = "comedy"
+        elif "concert" in name.lower() or "hall" in name.lower():
+            venue_type = "concert_hall"
+
+        return Venue(
+            name=name,
+            lat=lat,
+            lon=lon,
+            venue_type=venue_type,
+            website=None,  # Nominatim doesn't provide website
+            phone=None,    # Nominatim doesn't provide phone
+        )
+    except (ValueError, KeyError, TypeError) as e:
+        logger.debug(f"Failed to parse Nominatim result: {e}")
 
     return None

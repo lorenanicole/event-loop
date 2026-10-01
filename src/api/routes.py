@@ -760,3 +760,38 @@ async def chat(request: ChatRequest):
             ))
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.post(
+    "/venue-events/refresh",
+    summary="Fetch and persist venue events",
+    description="Scrape entertainment venues and persist their events to the database",
+    tags=["Admin"],
+)
+@rate_limiter
+async def refresh_venue_events(db: AsyncSession = Depends(get_db)):
+    """
+    **Fetch events from entertainment venues and persist to database**
+
+    This endpoint triggers a scrape of all registered venue websites (Second City,
+    Steppenwolf, iO Theater, etc.) and persists new events to the database.
+
+    - Only adds new events that don't already exist
+    - Respects API rate limits
+    - Returns count of new events added
+
+    **Example:**
+    ```bash
+    curl -X POST http://localhost:8000/api/venue-events/refresh
+    ```
+    """
+    from src.scrapers.venue_events_persist import fetch_and_persist_venue_events
+
+    logger.info("Starting venue events refresh")
+    try:
+        count = await fetch_and_persist_venue_events(db)
+        logger.info(f"Venue refresh complete: {count} new events")
+        return {"status": "success", "new_events": count}
+    except Exception as e:
+        logger.error(f"Venue events refresh failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

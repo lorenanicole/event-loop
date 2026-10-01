@@ -6,5 +6,6 @@ logging
 models
 resilience
 scraper
+scrapers
 security
 telemetry

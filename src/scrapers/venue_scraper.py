@@ -52,13 +52,41 @@ class SecondCityScraper(VenueScraper):
     async def scrape_events(self) -> list[VenueEvent]:
         """Scrape Second City shows."""
         try:
+            from bs4 import BeautifulSoup
+
             async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.get(f"{self.venue_url}/shows")
+                response = await client.get(f"{self.venue_url}/shows/chicago")
                 if response.status_code == 200:
-                    # TODO: Parse HTML with BeautifulSoup
-                    # Extract show dates, times, and URLs
-                    logger.info(f"Fetched Second City page: {response.status_code}")
-                    return []
+                    soup = BeautifulSoup(response.text, "html.parser")
+                    events = []
+
+                    # Look for show listings - Second City uses various markup
+                    for show in soup.find_all("div", {"class": lambda x: x and "show" in x.lower()}):
+                        try:
+                            title_elem = show.find(["h3", "h4", "a"])
+                            title = title_elem.get_text(strip=True) if title_elem else None
+
+                            if not title:
+                                continue
+
+                            url = f"{self.venue_url}/shows/chicago"
+                            date_str = show.find(["span", "p"], {"class": lambda x: x and "date" in x.lower()})
+                            date = date_str.get_text(strip=True) if date_str else None
+
+                            events.append(VenueEvent(
+                                name=title,
+                                date=date,
+                                time=None,
+                                location="Second City Chicago",
+                                url=url,
+                                venue_name=self.venue_name,
+                                category=self.category,
+                            ))
+                        except Exception as e:
+                            logger.debug(f"Failed to parse Second City show: {e}")
+
+                    logger.info(f"Scraped {len(events)} Second City shows")
+                    return events
         except Exception as e:
             logger.error(f"Failed to scrape Second City: {e}")
 
@@ -78,12 +106,45 @@ class SteppenwolfScraper(VenueScraper):
     async def scrape_events(self) -> list[VenueEvent]:
         """Scrape Steppenwolf productions."""
         try:
+            from bs4 import BeautifulSoup
+
             async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.get(f"{self.venue_url}/shows")
+                response = await client.get(f"{self.venue_url}/productions")
                 if response.status_code == 200:
-                    # TODO: Parse HTML for productions/shows
-                    logger.info(f"Fetched Steppenwolf page: {response.status_code}")
-                    return []
+                    soup = BeautifulSoup(response.text, "html.parser")
+                    events = []
+
+                    # Steppenwolf uses production cards/listings
+                    for prod in soup.find_all("article") or soup.find_all("div", {"class": lambda x: x and "production" in x.lower()}):
+                        try:
+                            title_elem = prod.find(["h3", "h2", "a"])
+                            title = title_elem.get_text(strip=True) if title_elem else None
+
+                            if not title:
+                                continue
+
+                            link = prod.find("a", href=True)
+                            url = link["href"] if link else f"{self.venue_url}/productions"
+                            if not url.startswith("http"):
+                                url = f"{self.venue_url}{url}"
+
+                            date_elem = prod.find(["span", "p"], {"class": lambda x: x and ("date" in x.lower() or "run" in x.lower())})
+                            date = date_elem.get_text(strip=True) if date_elem else None
+
+                            events.append(VenueEvent(
+                                name=title,
+                                date=date,
+                                time=None,
+                                location="Steppenwolf Theatre",
+                                url=url,
+                                venue_name=self.venue_name,
+                                category=self.category,
+                            ))
+                        except Exception as e:
+                            logger.debug(f"Failed to parse Steppenwolf production: {e}")
+
+                    logger.info(f"Scraped {len(events)} Steppenwolf productions")
+                    return events
         except Exception as e:
             logger.error(f"Failed to scrape Steppenwolf: {e}")
 
@@ -103,25 +164,169 @@ class IOTheaterScraper(VenueScraper):
     async def scrape_events(self) -> list[VenueEvent]:
         """Scrape iO Theater shows."""
         try:
+            from bs4 import BeautifulSoup
+
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.get(f"{self.venue_url}/chicago/shows")
                 if response.status_code == 200:
-                    # TODO: Parse HTML for improv shows
-                    logger.info(f"Fetched iO Theater page: {response.status_code}")
-                    return []
+                    soup = BeautifulSoup(response.text, "html.parser")
+                    events = []
+
+                    # iO uses show cards or table rows
+                    for show in soup.find_all("div", {"class": lambda x: x and "show" in x.lower()}) or soup.find_all("tr"):
+                        try:
+                            title_elem = show.find(["h3", "h4", "td", "a"])
+                            title = title_elem.get_text(strip=True) if title_elem else None
+
+                            if not title or len(title) < 2:
+                                continue
+
+                            link = show.find("a", href=True)
+                            url = link["href"] if link else f"{self.venue_url}/chicago/shows"
+                            if not url.startswith("http"):
+                                url = f"{self.venue_url}{url}"
+
+                            date_elem = show.find(["span", "td"], {"class": lambda x: x and "date" in x.lower() if x else False})
+                            date = date_elem.get_text(strip=True) if date_elem else None
+
+                            events.append(VenueEvent(
+                                name=title,
+                                date=date,
+                                time=None,
+                                location="iO Chicago",
+                                url=url,
+                                venue_name=self.venue_name,
+                                category=self.category,
+                            ))
+                        except Exception as e:
+                            logger.debug(f"Failed to parse iO show: {e}")
+
+                    logger.info(f"Scraped {len(events)} iO Theater shows")
+                    return events
         except Exception as e:
             logger.error(f"Failed to scrape iO Theater: {e}")
 
         return []
 
 
-# Registry of all venue scrapers - hardcoded major Chicago venues
-# TODO: Replace with dynamic OSM fetching once Overpass API is accessible
+class GoodmanTheatreScraper(VenueScraper):
+    """Scraper for Goodman Theatre."""
+
+    def __init__(self):
+        super().__init__(
+            venue_name="Goodman Theatre",
+            venue_url="https://www.goodmantheatre.org",
+            category="theater"
+        )
+
+    async def scrape_events(self) -> list[VenueEvent]:
+        """Scrape Goodman Theatre productions."""
+        try:
+            from bs4 import BeautifulSoup
+
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(f"{self.venue_url}/seasons")
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, "html.parser")
+                    events = []
+
+                    for show in soup.find_all("article") or soup.find_all("div", {"class": lambda x: x and "show" in x.lower()}):
+                        try:
+                            title_elem = show.find(["h3", "h2", "a"])
+                            title = title_elem.get_text(strip=True) if title_elem else None
+
+                            if not title:
+                                continue
+
+                            link = show.find("a", href=True)
+                            url = link["href"] if link else f"{self.venue_url}/seasons"
+                            if not url.startswith("http"):
+                                url = f"{self.venue_url}{url}"
+
+                            events.append(VenueEvent(
+                                name=title,
+                                date=None,
+                                time=None,
+                                location="Goodman Theatre",
+                                url=url,
+                                venue_name=self.venue_name,
+                                category=self.category,
+                            ))
+                        except Exception as e:
+                            logger.debug(f"Failed to parse Goodman show: {e}")
+
+                    logger.info(f"Scraped {len(events)} Goodman Theatre shows")
+                    return events
+        except Exception as e:
+            logger.error(f"Failed to scrape Goodman Theatre: {e}")
+
+        return []
+
+
+class HouseOfBluesScraper(VenueScraper):
+    """Scraper for House of Blues Chicago."""
+
+    def __init__(self):
+        super().__init__(
+            venue_name="House of Blues",
+            venue_url="https://www.houseofblues.com/chicago",
+            category="concert"
+        )
+
+    async def scrape_events(self) -> list[VenueEvent]:
+        """Scrape House of Blues concerts."""
+        try:
+            from bs4 import BeautifulSoup
+
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(f"{self.venue_url}/events")
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, "html.parser")
+                    events = []
+
+                    for event in soup.find_all("div", {"class": lambda x: x and "event" in x.lower()}) or soup.find_all("article"):
+                        try:
+                            title_elem = event.find(["h3", "h2", "a"])
+                            title = title_elem.get_text(strip=True) if title_elem else None
+
+                            if not title:
+                                continue
+
+                            link = event.find("a", href=True)
+                            url = link["href"] if link else f"{self.venue_url}/events"
+                            if not url.startswith("http"):
+                                url = f"{self.venue_url}{url}"
+
+                            date_elem = event.find(["span", "p"], {"class": lambda x: x and "date" in x.lower() if x else False})
+                            date = date_elem.get_text(strip=True) if date_elem else None
+
+                            events.append(VenueEvent(
+                                name=title,
+                                date=date,
+                                time=None,
+                                location="House of Blues Chicago",
+                                url=url,
+                                venue_name=self.venue_name,
+                                category=self.category,
+                            ))
+                        except Exception as e:
+                            logger.debug(f"Failed to parse House of Blues event: {e}")
+
+                    logger.info(f"Scraped {len(events)} House of Blues concerts")
+                    return events
+        except Exception as e:
+            logger.error(f"Failed to scrape House of Blues: {e}")
+
+        return []
+
+
+# Registry of all venue scrapers - major Chicago entertainment venues
 VENUE_SCRAPERS = [
     SecondCityScraper(),
     SteppenwolfScraper(),
     IOTheaterScraper(),
-    # TODO: Add Goodman Theatre, Court Theatre, Zanies, House of Blues, etc.
+    GoodmanTheatreScraper(),
+    HouseOfBluesScraper(),
 ]
 
 # Known Chicago entertainment venues (from OSM/web research)
