@@ -16,12 +16,16 @@ CHICAGO_VENUES_BY_NEIGHBORHOOD = {
         {"name": "Rosa's Lounge", "url": "https://www.rosaslounge.com", "category": "music", "address": "3420 W North Ave"},
     ],
 
-    # WICKER PARK - Rock, indie, electronic venues
+    # WICKER PARK - Rock, indie, electronic, comedy venues
     "Wicker Park": [
         {"name": "Subterranean", "url": "https://www.subt.net", "category": "music", "address": "2011 W North Ave"},
         {"name": "Chop Shop", "url": "https://www.chopshopmusic.com", "category": "music", "address": "2033 W North Ave"},
         {"name": "Empty Bottle", "url": "https://www.emptybottle.com", "category": "music", "address": "1035 N Western Ave"},
-        {"name": "Morgan Manufacturing Lofts", "url": "https://www.morganmfgchicago.com", "category": "other", "address": "1837 W Hubbard"},
+        {"name": "Morgan Manufacturing Lofts", "url": "https://www.morganmfgchicago.com", "category": "other", "address": "1837 W Hubbard St"},
+        {"name": "Den Theatre", "url": "https://www.dentheatre.com", "category": "comedy", "address": "1331 N Milwaukee Ave"},
+        {"name": "The Hive on Hubbard", "url": "https://www.thehiveonhubbard.com", "category": "other", "address": "1843 W Hubbard St"},
+        {"name": "Bottom Lounge", "url": "https://www.bottomlounge.com", "category": "music", "address": "1375 W Lake St"},
+        {"name": "Lacuna Lofts Pilsen", "url": "https://www.lacunalofts.com", "category": "music", "address": "2101 S Archer Ave"},
     ],
 
     # LOGAN SQUARE - Diverse venues
