@@ -157,40 +157,40 @@ def extract_concord(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
 
 
 def extract_rosas_lounge(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
-    """Rosa's Lounge - better event name detection."""
+    """Rosa's Lounge - extract from li a (event list links)."""
     events = []
     try:
-        containers = soup.select("article, [class*='event'], [class*='show']")
-        logger.info(f"{config.name}: found {len(containers)} containers")
+        # Rosa's uses li > a structure for event listings
+        event_links = soup.select("li a")
+        logger.info(f"{config.name}: found {len(event_links)} event links")
 
-        for container in containers:
-            text = container.get_text()
-            lines = [line.strip() for line in text.split('\n') if line.strip()]
+        for link in event_links:
+            text = link.get_text(strip=True)
 
-            if not lines:
+            # Event names are substantial text
+            if not text or len(text) < 2:
                 continue
 
-            event_name = None
-            event_date = None
+            # Skip navigation links
+            skip_terms = ['Home', 'Login', 'Sign up', 'back', 'next', 'cart', 'search', 'checkout']
+            if any(term in text for term in skip_terms):
+                continue
 
-            for line in lines:
-                if len(line) > 3 and line not in ["Sold Out"]:
-                    if not any(x in line.lower() for x in ['ticket', 'door', 'age', 'reserve']):
-                        if not re.match(r'^\d{1,2}:\d{2}', line):  # Not a time
-                            event_name = line
-                            break
+            # Extract URL if available
+            url = link.get("href", config.website_url)
+            if not url.startswith("http"):
+                url = f"{config.website_url}{url}"
 
-            for line in lines:
-                if re.search(r'\d{1,2}/\d{1,2}|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec', line):
-                    event_date = line
-                    break
-
-            if event_name and len(event_name) > 3:
-                events.append(VenueEvent(
-                    name=event_name, date=event_date, time=None,
-                    location=f"{config.name}, {config.address}",
-                    url=config.website_url, venue_name=config.name, category=config.category
-                ))
+            # This is an event name
+            events.append(VenueEvent(
+                name=text,
+                date=None,  # Dates not exposed in static calendar
+                time=None,
+                location=f"{config.name}, {config.address}",
+                url=url if url != config.website_url else config.website_url,
+                venue_name=config.name,
+                category=config.category
+            ))
 
         logger.info(f"{config.name}: extracted {len(events)} events")
     except Exception as e:
@@ -243,7 +243,7 @@ CHICAGO_VENUES = {
             website_url="https://www.rosaslounge.com",
             event_page_url="https://www.rosaslounge.com/calendar",
             category="music",
-            address="3420 W North Ave",
+            address="3420 W Armitage Ave",
             selectors={},
             use_playwright=True,
             extractor_fn=extract_rosas_lounge,
@@ -293,16 +293,6 @@ CHICAGO_VENUES = {
 
     "Avondale": [
         VenueConfig(
-            name="Sleeping Village",
-            website_url="https://www.sleepingvillagechicago.com",
-            event_page_url="https://www.sleepingvillagechicago.com/",
-            category="music",
-            address="3734 W Belmont Ave",
-            selectors={},
-            use_playwright=True,
-            extractor_fn=extract_concord,
-        ),
-        VenueConfig(
             name="Rockwell on the River",
             website_url="https://www.rockwellontheriver.com",
             event_page_url="https://www.rockwellontheriver.com/calendar/",
@@ -312,16 +302,6 @@ CHICAGO_VENUES = {
             use_playwright=True,
             extractor_fn=extract_salt_shed,
         ),
-        VenueConfig(
-            name="Avondale Music Hall",
-            website_url="https://www.avondalemusichair.com",
-            event_page_url="https://www.avondalemusichaul.com/events/",
-            category="music",
-            address="3730 N Rockwell Ave",
-            selectors={},
-            use_playwright=True,
-            extractor_fn=extract_rosas_lounge,
-        ),
     ],
 }
 
@@ -330,13 +310,13 @@ async def scrape_chicago_events() -> dict[str, list[VenueEvent]]:
     """Scrape ALL Chicago neighborhoods/venues."""
     results = {}
     total_events = 0
-    
+
     async with httpx.AsyncClient(timeout=15) as client:
         for neighborhood, venues in CHICAGO_VENUES.items():
             logger.info(f"\n{'='*60}")
             logger.info(f"Scraping {neighborhood} ({len(venues)} venues)")
             logger.info('='*60)
-            
+
             neighborhood_events = []
             for config in venues:
                 try:
@@ -346,24 +326,24 @@ async def scrape_chicago_events() -> dict[str, list[VenueEvent]]:
                     total_events += len(events)
                 except Exception as e:
                     logger.error(f"Error scraping {config.name}: {e}")
-            
+
             results[neighborhood] = neighborhood_events
             logger.info(f"{neighborhood}: {len(neighborhood_events)} total events\n")
 
     logger.info(f"\n{'='*60}")
     logger.info(f"✅ TOTAL CHICAGO EVENTS: {total_events}")
     logger.info('='*60)
-    
+
     for neighborhood in sorted(results.keys()):
         events = results[neighborhood]
         by_venue = {}
         for e in events:
             by_venue.setdefault(e.venue_name, []).append(e)
-        
+
         print(f"\n{neighborhood}: {len(events)} events")
         for venue in sorted(by_venue.keys()):
             print(f"  • {venue}: {len(by_venue[venue])}")
-    
+
     return results
 
 

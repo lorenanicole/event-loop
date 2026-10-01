@@ -39,7 +39,6 @@ known-first-party = ["src"]
 known-third-party = ["pydantic", "fastapi", "sqlalchemy"]
 
 # Exclude patterns
-[tool.ruff]
 exclude = [
     ".git",
     ".venv",
