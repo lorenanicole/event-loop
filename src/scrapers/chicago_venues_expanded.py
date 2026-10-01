@@ -21,11 +21,7 @@ CHICAGO_VENUES_BY_NEIGHBORHOOD = {
         {"name": "Subterranean", "url": "https://www.subt.net", "category": "music", "address": "2011 W North Ave"},
         {"name": "Chop Shop", "url": "https://www.chopshopmusic.com", "category": "music", "address": "2033 W North Ave"},
         {"name": "Empty Bottle", "url": "https://www.emptybottle.com", "category": "music", "address": "1035 N Western Ave"},
-        {"name": "Morgan Manufacturing Lofts", "url": "https://www.morganmfgchicago.com", "category": "other", "address": "1837 W Hubbard St"},
         {"name": "Den Theatre", "url": "https://www.dentheatre.com", "category": "comedy", "address": "1331 N Milwaukee Ave"},
-        {"name": "The Hive on Hubbard", "url": "https://www.thehiveonhubbard.com", "category": "other", "address": "1843 W Hubbard St"},
-        {"name": "Bottom Lounge", "url": "https://www.bottomlounge.com", "category": "music", "address": "1375 W Lake St"},
-        {"name": "Lacuna Lofts Pilsen", "url": "https://www.lacunalofts.com", "category": "music", "address": "2101 S Archer Ave"},
     ],
 
     # LOGAN SQUARE - Diverse venues
@@ -77,11 +73,12 @@ CHICAGO_VENUES_BY_NEIGHBORHOOD = {
         {"name": "Cadillac Palace Theatre", "url": "https://www.ticketmaster.com", "category": "theater", "address": "151 W Randolph St"},
     ],
 
-    # WEST LOOP - Arts and music
+    # WEST LOOP - Arts, music, Fulton Market District
     "West Loop": [
         {"name": "Morgan Manufacturing", "url": "https://www.morganmfgchicago.com", "category": "other", "address": "1837 W Hubbard St"},
-        {"name": "Lacuna Lofts", "url": "https://www.lacunalofts.com", "category": "music", "address": "2101 S Archer Ave"},
         {"name": "Morgan Ballroom", "url": "https://www.morganmfgchicago.com", "category": "other", "address": "1837 W Hubbard St"},
+        {"name": "The Hive on Hubbard", "url": "https://www.thehiveonhubbard.com", "category": "other", "address": "1843 W Hubbard St"},
+        {"name": "Bottom Lounge", "url": "https://www.bottomlounge.com", "category": "music", "address": "1375 W Lake St"},
     ],
 
     # LINCOLN SQUARE - Theater, music, restaurants
