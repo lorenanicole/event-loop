@@ -45,7 +45,7 @@ class ChatWidget {
 
     this.ctaLabel = document.createElement("div");
     this.ctaLabel.className = "chat-cta";
-    this.ctaLabel.textContent = "💡 Ask me anything!";
+    this.ctaLabel.textContent = "🤖 Not sure?\nAsk Loopy!";
     document.body.appendChild(this.ctaLabel);
   }
 
@@ -81,11 +81,11 @@ class ChatWidget {
   }
 
   private showWelcomeGreeting(): void {
-    const greeting = `🏙️ **EventLoop: Async Event Discovery in the 312**
+    const greeting = `🏙️ **Meet Loopy!**
 
-Welcome to the future of event discovery! Powered by Python 3.15, PydanticAI, and production-grade resilience patterns.
+I'm your AI event discovery assistant, powered by Python 3.15, PydanticAI, and production-grade resilience patterns. Ready to find your next great event?
 
-💡 **Try asking:**
+💡 **Try asking me:**
 • "What's happening this weekend?"
 • "Show me comedy events this month"
 • "Any free events tonight?"
