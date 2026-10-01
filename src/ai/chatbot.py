@@ -248,11 +248,16 @@ async def search_google_events(context: RunContext[str], query: str) -> str:
             results = data.get("events_results", []) or data.get("organic_results", [])
             for event in results[:10]:
                 try:
+                    # Handle address as list or string
+                    address = event.get("address")
+                    if isinstance(address, list):
+                        address = ", ".join(address)
+
                     events.append(
                         EventResult(
                             title=event.get("title", "Untitled"),
                             date=event.get("date") or event.get("snippet"),
-                            location=event.get("address") or event.get("displayed_link"),
+                            location=address or event.get("displayed_link"),
                             url=event.get("link", ""),
                             source="SerpAPI",
                         )
