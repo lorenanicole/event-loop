@@ -103,16 +103,74 @@ class TheHideoutScraper(BucktownVenueScraper):
 
 
 class ConcordMusicHallScraper(BucktownVenueScraper):
-    """Concord Music Hall - fdatepicker calendar widget (not implemented)
-
-    Events are loaded via jQuery fdatepicker with AJAX calls for specific dates.
-    Extracting events would require reverse-engineering the AJAX endpoints and
-    systematically querying different date ranges. Not implemented in this scraper.
-    """
+    """Concord Music Hall - Calendar with dynamically-loaded events"""
 
     async def scrape_events(self, client: httpx.AsyncClient) -> list[VenueEvent]:
-        logger.debug("Concord: fdatepicker calendar requires AJAX interaction - returning 0 events")
-        return []
+        events = []
+        try:
+            from playwright.async_api import async_playwright
+
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page()
+
+                try:
+                    await page.goto(self.event_page_url, timeout=15000, wait_until="networkidle")
+                    await page.wait_for_timeout(2000)
+
+                    html = await page.content()
+                    soup = BeautifulSoup(html, "html.parser")
+
+                    # Events are in [class*='show'] and article elements
+                    event_containers = soup.select("[class*='show'], article")
+                    logger.info(f"Concord: found {len(event_containers)} event containers")
+
+                    for container in event_containers:
+                        try:
+                            # Get text from container
+                            text = container.get_text()
+                            lines = [line.strip() for line in text.split('\n') if line.strip()]
+
+                            # First meaningful line (not "Selling Fast") is event title
+                            event_name = None
+                            event_date = None
+
+                            for line in lines:
+                                if line != "Selling Fast" and len(line) > 3:
+                                    if not any(x in line for x in ['Doors', 'doors', 'age']):
+                                        event_name = line
+                                        break
+
+                            # Look for date pattern
+                            for line in lines:
+                                if re.search(r'\d{1,2}/\d{1,2}', line):
+                                    event_date = line
+                                    break
+
+                            if event_name and len(event_name) > 3:
+                                events.append(VenueEvent(
+                                    name=event_name,
+                                    date=event_date,
+                                    time=None,
+                                    location=f"{self.venue_name}, {self.address}",
+                                    url=self.website_url,
+                                    venue_name=self.venue_name,
+                                    category=self.category
+                                ))
+                        except Exception as e:
+                            logger.debug(f"Concord: failed to parse event: {e}")
+
+                    logger.info(f"Concord: extracted {len(events)} events")
+
+                finally:
+                    await browser.close()
+
+        except ImportError:
+            logger.debug("Concord: Playwright not available")
+        except Exception as e:
+            logger.error(f"Concord scraping failed: {e}")
+
+        return events
 
 
 class SaltShedScraper(BucktownVenueScraper):
@@ -270,8 +328,8 @@ async def scrape_bucktown_venues() -> list[VenueEvent]:
         ),
         ConcordMusicHallScraper(
             venue_name="Concord Music Hall",
-            website_url="https://www.concordmusichall.com",
-            event_page_url="https://www.concordmusichall.com/calendar/",
+            website_url="https://concordmusichall.com",
+            event_page_url="https://concordmusichall.com/calendar/",
             category="music",
             address="2047 N Milwaukee Ave"
         ),
