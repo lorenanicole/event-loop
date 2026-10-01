@@ -424,10 +424,11 @@ def _extract_keywords(query: str) -> list[str]:
             kw_lower = kw.lower()
             try:
                 synsets = wordnet.synsets(kw_lower, lang='eng')
-                for synset in synsets[:3]:  # Limit to top 3 synsets
+                for synset in synsets[:2]:  # Limit to top 2 synsets to avoid noise
                     for lemma in synset.lemmas():
                         synonym = lemma.name().replace('_', ' ')
-                        if len(synonym) > 2:
+                        # Only use short, single-word synonyms (no phrases like "base on balls")
+                        if 2 < len(synonym) < 20 and ' ' not in synonym and '?' not in synonym:
                             expanded_keywords.add(synonym)
             except Exception:
                 pass
