@@ -28,10 +28,13 @@ DB_RESULT_THRESHOLD = 5  # Minimum results before using SerpAPI
 
 class EventResult(BaseModel):
     title: str
-    date: str
+    date: Optional[str] = None
     location: Optional[str] = None
     url: Optional[str] = None
     source: str
+
+    class Config:
+        extra = "ignore"  # Ignore extra fields from API responses
 
 
 class ToolCallAction(BaseModel):
@@ -244,15 +247,19 @@ async def search_google_events(context: RunContext[str], query: str) -> str:
             # Try event_results first, fallback to organic results
             results = data.get("events_results", []) or data.get("organic_results", [])
             for event in results[:10]:
-                events.append(
-                    EventResult(
-                        title=event.get("title", "Untitled"),
-                        date=event.get("date", "Unknown date") if "date" in event else event.get("snippet", "Unknown date"),
-                        location=event.get("address", event.get("displayed_link", "Unknown location")),
-                        url=event.get("link", ""),
-                        source="SerpAPI",
+                try:
+                    events.append(
+                        EventResult(
+                            title=event.get("title", "Untitled"),
+                            date=event.get("date") or event.get("snippet"),
+                            location=event.get("address") or event.get("displayed_link"),
+                            url=event.get("link", ""),
+                            source="SerpAPI",
+                        )
                     )
-                )
+                except Exception as e:
+                    logger.warning(f"Failed to parse SerpAPI event: {e}, data: {event}")
+                    continue
 
             if not events:
                 return "No additional events found online"
