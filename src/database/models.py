@@ -1,9 +1,60 @@
 from datetime import datetime
 import uuid
-from sqlalchemy import Column, Integer, String, Text, DateTime, Index, ForeignKey, Float
+from sqlalchemy import Column, Integer, String, Text, DateTime, Index, ForeignKey, Float, Boolean
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
+
+
+class NeighborhoodModel(Base):
+    """Chicago neighborhood with metadata for event discovery."""
+    __tablename__ = "neighborhoods"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, index=True)  # "Wicker Park", "Loop", etc.
+    official_name = Column(String(100), nullable=True)  # Official City of Chicago name
+    description = Column(Text, nullable=True)  # Neighborhood description
+    entertainment_level = Column(String(20), nullable=True)  # "high", "medium", "low"
+    is_researched = Column(Boolean, default=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    venues = relationship("VenueModel", back_populates="neighborhood", cascade="all, delete-orphan")
+    events = relationship("EventModel", back_populates="neighborhood")
+
+    __table_args__ = (
+        Index("idx_name_researched", "name", "is_researched"),
+    )
+
+
+class VenueModel(Base):
+    """Entertainment venue within a neighborhood."""
+    __tablename__ = "venues"
+
+    id = Column(Integer, primary_key=True, index=True)
+    neighborhood_id = Column(Integer, ForeignKey("neighborhoods.id"), index=True)
+    name = Column(String(255), index=True)  # "Rosa's Lounge", "Steppenwolf", etc.
+    category = Column(String(50), index=True)  # "music", "theater", "comedy", "cinema", "other"
+    address = Column(String(255), nullable=True)
+    website_url = Column(String(500), nullable=True)
+    event_page_url = Column(String(500), nullable=True)  # Direct URL to events/calendar page
+    phone = Column(String(20), nullable=True)
+    description = Column(Text, nullable=True)
+    capacity = Column(Integer, nullable=True)
+    is_active = Column(Boolean, default=True, index=True)
+    scraper_status = Column(String(50), default="not_started", index=True)  # "not_started", "in_progress", "working", "failed"
+    last_scraped_at = Column(DateTime, nullable=True)
+    events_count = Column(Integer, default=0)  # Number of events extracted from this venue
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    neighborhood = relationship("NeighborhoodModel", back_populates="venues")
+    events = relationship("EventModel", back_populates="venue")
+
+    __table_args__ = (
+        Index("idx_neighborhood_category", "neighborhood_id", "category"),
+        Index("idx_venue_status", "scraper_status", "is_active"),
+    )
 
 
 class EventModel(Base):
@@ -16,12 +67,17 @@ class EventModel(Base):
     details = Column(Text, nullable=True)
     origination_url = Column(String(500), unique=True)
     date_retrieved = Column(DateTime, default=datetime.utcnow)
-    source = Column(String(50), default="unknown", index=True)  # do312, yourchicagoguide, ticketmaster, etc.
+    source = Column(String(50), default="unknown", index=True)  # do312, yourchicagoguide, ticketmaster, scraper, etc.
     cost = Column(String(100), nullable=True)  # "Free", "$25", "$15-30", "Donation", etc.
     age_range = Column(String(100), nullable=True)  # "All ages", "18+", "21+", "13+", etc.
     is_outdoor = Column(String(20), nullable=True)  # "outdoor", "indoor", "hybrid"
     address = Column(String(255), nullable=True)  # Street address or location
     venue_name = Column(String(255), nullable=True)  # Venue/location name
+    neighborhood_id = Column(Integer, ForeignKey("neighborhoods.id"), nullable=True, index=True)  # Link to neighborhood
+    venue_id = Column(Integer, ForeignKey("venues.id"), nullable=True, index=True)  # Link to venue
+
+    neighborhood = relationship("NeighborhoodModel", back_populates="events")
+    venue = relationship("VenueModel", back_populates="events")
 
     __table_args__ = (
         Index("idx_date_category", "date", "category"),
@@ -31,6 +87,7 @@ class EventModel(Base):
         Index("idx_age_range", "age_range"),
         Index("idx_is_outdoor", "is_outdoor"),
         Index("idx_address", "address"),
+        Index("idx_venue_neighborhood", "venue_id", "neighborhood_id"),
     )
 
 
