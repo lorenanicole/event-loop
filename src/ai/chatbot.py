@@ -385,16 +385,38 @@ def _filter_top_results(events: list[EventModel], query: str, limit: int = 5) ->
 
 
 def _extract_keywords(query: str) -> list[str]:
-    """Extract search keywords"""
+    """Extract search keywords with synonym expansion"""
     stop_words = {
         "the", "a", "an", "and", "or", "is", "are", "in", "on", "at",
         "this", "that", "these", "those", "what", "when", "where", "why",
         "find", "get", "search", "show", "tell", "give", "all", "want",
-        "looking", "events", "event", "i", "want", "to", "for"
+        "looking", "events", "event", "i", "want", "to", "for", "any"
     }
+
+    # Synonyms to expand search: keyword -> [synonyms]
+    synonyms = {
+        "walk": ["hike", "trail", "nature", "outdoor", "park"],
+        "hike": ["walk", "trail", "nature", "outdoor"],
+        "trail": ["hike", "walk", "nature", "outdoor", "park"],
+        "comedy": ["standup", "funny", "laugh"],
+        "music": ["concert", "live", "band"],
+        "concert": ["music", "live", "band"],
+        "art": ["gallery", "exhibit", "installation"],
+        "food": ["eat", "dining", "restaurant"],
+        "play": ["theater", "theatre", "drama"],
+    }
+
     words = query.split()
     keywords = [w for w in words if w not in stop_words and len(w) > 2]
-    return keywords[:5]
+
+    # Expand keywords with synonyms
+    expanded_keywords = set(keywords)
+    for kw in keywords:
+        kw_lower = kw.lower()
+        if kw_lower in synonyms:
+            expanded_keywords.update(synonyms[kw_lower])
+
+    return list(expanded_keywords)[:10]
 
 
 def _extract_categories(query: str) -> list[str]:
