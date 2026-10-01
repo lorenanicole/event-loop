@@ -282,7 +282,7 @@ async def search_google_events(context: RunContext[str], query: str) -> str:
                 if event.location:
                     results_text += f"   📍 {event.location}\n"
                 if event.url:
-                    results_text += f"   🔗 {event.url}\n"
+                    results_text += f"   🔗 [View Event]({event.url})\n"
                 results_text += "\n"
 
             return results_text
