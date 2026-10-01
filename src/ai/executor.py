@@ -372,7 +372,7 @@ class ChatExecutor:
 
             try:
                 result = await default_retry_policy.execute(
-                    agent.run(message),
+                    lambda: agent.run(message),
                     operation_name="llm_agent_run",
                 )
                 response_text = result.data
