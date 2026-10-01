@@ -66,6 +66,7 @@ class ChatWidget {
     this.container.classList.add("collapsed");
     document.body.classList.add("chat-collapsed");
     if (this.toggleBtn) {
+      this.toggleBtn.style.display = "flex";
       this.toggleBtn.title = "Open chat";
       const logo = this.toggleBtn.querySelector("img");
       if (logo) logo.style.opacity = "1";
@@ -81,6 +82,7 @@ class ChatWidget {
     document.body.classList.remove("chat-collapsed");
     if (this.toggleBtn) {
       this.toggleBtn.title = "Close chat";
+      this.toggleBtn.style.display = "none";
       const logo = this.toggleBtn.querySelector("img");
       if (logo) logo.style.opacity = "0.5";
     }
