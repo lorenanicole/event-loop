@@ -315,7 +315,7 @@ CHICAGO_VENUES = {
         VenueConfig(
             name="Avondale Music Hall",
             website_url="https://www.avondalemusichair.com",
-            event_page_url="https://www.avondalemusichair.com/events/",
+            event_page_url="https://www.avondalemusichaul.com/events/",
             category="music",
             address="3730 N Rockwell Ave",
             selectors={},

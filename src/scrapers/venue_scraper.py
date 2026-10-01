@@ -69,14 +69,28 @@ class VenueScraper:
         return events
 
     async def _scrape_with_playwright(self) -> list[VenueEvent]:
-        """Scrape JavaScript-rendered page with Playwright."""
+        """Scrape JavaScript-rendered page with Playwright + stealth."""
         events = []
         try:
             from playwright.async_api import async_playwright
 
             async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
-                page = await browser.new_page()
+                # Stealth mode to bypass bot detection (Cloudflare, etc)
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=[
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-dev-shm-usage',
+                    ]
+                )
+                page = await browser.new_page(
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                )
+
+                # Hide automation signals
+                await page.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                """)
 
                 try:
                     await page.goto(self.config.event_page_url, timeout=15000, wait_until="networkidle")
