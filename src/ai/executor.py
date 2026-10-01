@@ -355,6 +355,9 @@ class ChatExecutor:
         If LLM fails: fall back to simple database search.
         """
         try:
+            logger.info(f"Agent model: {agent.model}")
+            logger.info(f"Agent tools: {[t.__name__ for t in agent.tools] if hasattr(agent, 'tools') else 'N/A'}")
+
             # Check LLM circuit breaker
             if not llm_circuit_breaker.is_available():
                 logger.warning("LLM circuit breaker OPEN - degraded mode")
