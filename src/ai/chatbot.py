@@ -452,7 +452,7 @@ DECISION LOGIC:
 2. Call search_local_db(query) with the analyzed query
    - If "Found N events" where N >= 3: Use these results, skip step 3
    - If found 1-2 events: Include them, continue to step 3 for more
-   - If "NO_RESULTS": Continue to step 3
+   - If "NO_RESULTS" or "LOW_CONFIDENCE_LOCAL_RESULTS": Continue to step 3 (local matches are poor/missing)
 3. If needed, call search_google_events(query) to fill gaps
    - Auto-persists new events to DB (async, non-blocking)
 4. Format final response with top 3-5 events
@@ -470,6 +470,8 @@ RESPONSE RULES:
 - Keep responses under 200 words
 - Be warm and enthusiastic about events
 - If zero results, suggest similar searches
+- NEVER show debug strings like "NO_RESULTS" or "LOW_CONFIDENCE_LOCAL_RESULTS" to user
+  These are internal signals only - when you see them, act on them (continue searching)
 
 COST CONTROL:
 - Prefer local DB (FREE) over SerpAPI (PAID)
