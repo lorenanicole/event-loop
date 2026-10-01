@@ -151,7 +151,7 @@ CHICAGO_VENUES_BY_NEIGHBORHOOD = {
     "Wicker Park": [
         {"name": "Subterranean", "url": "https://www.subt.net", "event_page_url": "https://subt.net/", "category": "music", "address": "2011 W North Ave"},
         {"name": "Chop Shop", "url": "https://chopshopchi.com", "event_page_url": "https://chopshopchi.com/calendar/index.html", "category": "music", "address": "2033 W North Ave"},
-        {"name": "Empty Bottle", "url": "https://www.emptybottle.com", "event_page_url": "https://www.emptybottle.com/ebp-events", "category": "music", "address": "1035 N Western Ave"},
+        {"name": "Empty Bottle", "url": "https://www.emptybottle.com", "event_page_url": "https://www.emptybottle.com/", "category": "music", "address": "1035 N Western Ave"},
         {"name": "Den Theatre", "url": "https://www.dentheatre.com", "event_page_url": "https://thedentheatre.com/calendar?view=calendar&month=10-2026", "category": "comedy", "address": "1331 N Milwaukee Ave"},
     ],
 

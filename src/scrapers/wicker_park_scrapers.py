@@ -203,54 +203,85 @@ class EmptyBottleScraper(WickerParkVenueScraper):
     """
 
     async def scrape_events(self, client: httpx.AsyncClient) -> list[VenueEvent]:
-        """Scrape text-based event links from content block."""
+        """Scrape event cards from homepage using Playwright for JS rendering."""
         import re
         events = []
         try:
-            response = await client.get(self.event_page_url, timeout=10)
-            if response.status_code != 200:
-                logger.warning(f"Empty Bottle: got {response.status_code}")
-                return events
+            from playwright.async_api import async_playwright
 
-            soup = BeautifulSoup(response.text, "html.parser")
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page()
 
-            # Find the content block with events
-            content_block = soup.select_one(".sqs-html-content")
-            if not content_block:
-                logger.debug("Empty Bottle: sqs-html-content not found")
-                return events
-
-            # Extract all TicketWeb links from paragraphs
-            ticket_links = content_block.find_all("a", href=lambda x: x and "ticketweb.com" in x.lower())
-            logger.info(f"Empty Bottle: found {len(ticket_links)} TicketWeb links")
-
-            for link in ticket_links:
                 try:
-                    # Event name and details are in the link text
-                    event_text = link.get_text(strip=True)
-                    if not event_text or len(event_text) < 5:
-                        continue
+                    await page.goto(self.event_page_url, timeout=10000, wait_until="networkidle")
 
-                    ticket_url = link.get("href", self.website_url)
+                    # Wait for calendar event items to render
+                    try:
+                        await page.wait_for_selector(".show-details", timeout=5000)
+                    except:
+                        logger.debug("Empty Bottle: .show-details selector not found")
 
-                    # Try to extract date from event text (e.g., "...on September 10th & 11th")
-                    date_match = re.search(r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}', event_text)
-                    event_date = date_match.group(0) if date_match else None
+                    html = await page.content()
+                    soup = BeautifulSoup(html, "html.parser")
 
-                    events.append(VenueEvent(
-                        name=event_text,
-                        date=event_date,
-                        time=None,
-                        location=f"{self.venue_name}, {self.address}",
-                        url=ticket_url,
-                        venue_name=self.venue_name,
-                        category=self.category
-                    ))
-                except Exception as e:
-                    logger.debug(f"Empty Bottle: failed to parse link: {e}")
+                    # Find all show event containers (.show-details elements)
+                    event_items = soup.select(".show-details")
+                    logger.info(f"Empty Bottle: found {len(event_items)} show details")
 
-            logger.info(f"Empty Bottle: extracted {len(events)} events")
+                    for item in event_items:
+                        try:
+                            # Extract event title from div.title
+                            title_elem = item.select_one("div.title")
+                            if not title_elem:
+                                continue
 
+                            event_title = title_elem.get_text(strip=True)
+                            if not event_title or len(event_title) < 2:
+                                continue
+
+                            # Extract date from div.date
+                            date_elem = item.select_one("div.date")
+                            event_date = date_elem.get_text(strip=True) if date_elem else None
+
+                            # Extract time from div.start-time
+                            time_elem = item.select_one("div.start-time")
+                            event_time = time_elem.get_text(strip=True) if time_elem else None
+
+                            # Extract artist names from ul.performing li elements
+                            artists = []
+                            performing_list = item.select_one("ul.performing")
+                            if performing_list:
+                                artists = [li.get_text(strip=True) for li in performing_list.find_all("li") if li.get_text(strip=True)]
+
+                            # Append artists to event title
+                            full_title = event_title
+                            if artists:
+                                full_title = f"{event_title} - {', '.join(artists[:2])}"
+
+                            # Extract venue link
+                            venue_link = item.select_one("a.venue")
+                            ticket_url = venue_link.get("href", self.website_url) if venue_link else self.website_url
+
+                            events.append(VenueEvent(
+                                name=full_title,
+                                date=event_date,
+                                time=event_time,
+                                location=f"{self.venue_name}, {self.address}",
+                                url=ticket_url,
+                                venue_name=self.venue_name,
+                                category=self.category
+                            ))
+                        except Exception as e:
+                            logger.debug(f"Empty Bottle: failed to parse show: {e}")
+
+                    logger.info(f"Empty Bottle: extracted {len(events)} events")
+
+                finally:
+                    await browser.close()
+
+        except ImportError:
+            logger.debug("Empty Bottle: Playwright not available")
         except Exception as e:
             logger.error(f"Empty Bottle scraping failed: {e}")
 
@@ -368,7 +399,7 @@ async def scrape_wicker_park_venues() -> list[VenueEvent]:
         EmptyBottleScraper(
             venue_name="Empty Bottle",
             website_url="https://www.emptybottle.com",
-            event_page_url="https://www.emptybottle.com/ebp-events",
+            event_page_url="https://www.emptybottle.com/",
             category="music",
             address="1035 N Western Ave"
         ),
