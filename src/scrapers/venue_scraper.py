@@ -36,6 +36,7 @@ class VenueConfig:
     selectors: dict
     use_playwright: bool = False
     extractor_fn: Optional[Callable] = None
+    playwright_wait_until: str = "domcontentloaded"
 
 
 class VenueScraper:
@@ -93,7 +94,7 @@ class VenueScraper:
                 """)
 
                 try:
-                    await page.goto(self.config.event_page_url, timeout=15000, wait_until="networkidle")
+                    await page.goto(self.config.event_page_url, timeout=15000, wait_until=self.config.playwright_wait_until)
                     await page.wait_for_timeout(2000)
 
                     html = await page.content()
