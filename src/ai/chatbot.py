@@ -134,11 +134,17 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
             top_events = _filter_top_results(results, query, limit=5)
 
             if not top_events:
+                logger.info(f"No results after scoring for query: {query}")
                 return "NO_RESULTS"
 
             # Check confidence - if average < 0.3, suggest Google search
             avg_confidence = sum(e.confidence for e in top_events) / len(top_events)
+            logger.info(f"Local search found {len(top_events)} events, avg confidence: {avg_confidence:.2f}")
+            for evt in top_events:
+                logger.info(f"  - {evt.title}: {evt.confidence:.2f}")
+
             if avg_confidence < 0.3:
+                logger.info(f"Confidence {avg_confidence:.2f} below threshold, falling back to SerpAPI")
                 return "LOW_CONFIDENCE_LOCAL_RESULTS"
 
             # Build response with event details
