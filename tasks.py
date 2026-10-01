@@ -239,9 +239,10 @@ def security_audit(c):
 
 @task
 def scrape(c):
-    """Scrape events from DO312 and populate database."""
-    print_header("Scraping Events from DO312")
-    print(f"{YELLOW}Running: uv run python scripts/scrape_events.py{RESET}\n")
+    """Scrape events from all Chicago sources and populate database."""
+    print_header("Scraping Events from All Sources")
+    print(f"{YELLOW}Sources: DO312, Bandsintown, EventBrite, Ticketmaster,")
+    print(f"          TimeoutChicago, YourChicagoGuide, EventsCom{RESET}\n")
     c.run("uv run python scripts/scrape_events.py")
 
 
@@ -268,7 +269,7 @@ def info(c):
 
     print(f"""
 {BOLD}Development:{RESET}
-  invoke scrape            # Scrape events from DO312 into database
+  invoke scrape            # Scrape from 7 event sources into database
   invoke dev               # Start backend with uv (port 8000)
   invoke frontend          # Start frontend dev server (port 5173)
 
