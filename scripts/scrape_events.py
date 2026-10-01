@@ -6,9 +6,14 @@ Run with: uv run python scripts/scrape_events.py
 
 import asyncio
 import sys
+import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Load .env file BEFORE importing scrapers
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
 from src.scraper import (
     DO312Scraper,
