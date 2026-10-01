@@ -127,6 +127,12 @@ Let's find your next great event! ⚡`;
       if (this.isCollapsed) this.expandChat();
     });
     this.newChatButton.addEventListener("click", () => this.startNewChat());
+
+    // Wire up close button
+    const closeBtn = this.container.querySelector(".chat-close-btn");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", () => this.collapseChat());
+    }
   }
 
   private endConversation(): void {
