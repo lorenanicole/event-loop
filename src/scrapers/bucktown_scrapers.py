@@ -103,31 +103,16 @@ class TheHideoutScraper(BucktownVenueScraper):
 
 
 class ConcordMusicHallScraper(BucktownVenueScraper):
-    """Concord Music Hall - fdatepicker calendar widget (needs investigation)"""
+    """Concord Music Hall - fdatepicker calendar widget (not implemented)
+
+    Events are loaded via jQuery fdatepicker with AJAX calls for specific dates.
+    Extracting events would require reverse-engineering the AJAX endpoints and
+    systematically querying different date ranges. Not implemented in this scraper.
+    """
 
     async def scrape_events(self, client: httpx.AsyncClient) -> list[VenueEvent]:
-        events = []
-        try:
-            # Try with proper user agent to avoid 403
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-            response = await client.get(self.event_page_url, timeout=10, headers=headers)
-            if response.status_code != 200:
-                logger.warning(f"Concord: got {response.status_code}")
-                return events
-
-            soup = BeautifulSoup(response.text, "html.parser")
-
-            # Concord uses fdatepicker JavaScript widget - events are loaded dynamically
-            # For now, return empty and log for investigation
-            logger.info(f"Concord: page returned {response.status_code}, but events require JavaScript rendering")
-            logger.debug("Concord uses fdatepicker widget - may need Playwright with calendar interaction")
-
-        except Exception as e:
-            logger.error(f"Concord scraping failed: {e}")
-
-        return events
+        logger.debug("Concord: fdatepicker calendar requires AJAX interaction - returning 0 events")
+        return []
 
 
 class SaltShedScraper(BucktownVenueScraper):
