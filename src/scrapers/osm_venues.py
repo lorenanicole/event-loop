@@ -17,23 +17,54 @@ NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 SERP_API_URL = "https://serpapi.com/search"
 RATE_LIMIT_DELAY = 1.1  # Nominatim: 1 req/sec, +100ms buffer
 
-# Chicago neighborhoods for venue organization
+# Chicago neighborhoods for venue organization (30+ neighborhoods)
 CHICAGO_NEIGHBORHOODS = {
+    # Downtown & Loop Area
     "Loop": (41.8837, -87.6453),
     "River North": (41.8910, -87.6249),
+    "West Loop": (41.8833, -87.6544),
+    "South Loop": (41.8666, -87.6243),
+    "Near South Side": (41.8500, -87.6250),
+    "Printer's Row": (41.8689, -87.6386),
+
+    # North Gold Coast
     "Gold Coast": (41.8980, -87.6244),
+    "Old Town": (41.9061, -87.6137),
     "Lincoln Park": (41.9214, -87.6471),
+    "Clybourn Corridor": (41.9080, -87.6490),
+
+    # North Side
     "Lakeview": (41.9380, -87.6455),
+    "Boystown": (41.9440, -87.6443),
+    "Uptown": (41.9647, -87.6577),
+    "Andersonville": (41.9709, -87.6707),
+    "Edgewater": (41.9730, -87.6570),
+    "Rogers Park": (41.9978, -87.6752),
+
+    # Northwest Side
     "Wicker Park": (41.9086, -87.6751),
     "Bucktown": (41.9189, -87.6899),
-    "Pilsen": (41.8534, -87.6426),
-    "West Loop": (41.8833, -87.6544),
-    "Andersonville": (41.9709, -87.6707),
-    "Rogers Park": (41.9978, -87.6752),
-    "Uptown": (41.9647, -87.6577),
-    "Boystown": (41.9440, -87.6443),
     "Logan Square": (41.9331, -87.6764),
-    "Pilsen Arts District": (41.8534, -87.6426),
+    "Humboldt Park": (41.8993, -87.7130),
+    "Ukrainian Village": (41.8976, -87.6841),
+    "Avondale": (41.9524, -87.7048),
+    "Ravenswood": (41.9626, -87.6933),
+    "Kilbourn Park": (41.9474, -87.7095),
+
+    # West & Southwest
+    "Pilsen": (41.8534, -87.6426),
+    "Little Italy": (41.8715, -87.6475),
+    "University Village": (41.8058, -87.6258),
+    "Bridgeport": (41.8311, -87.6427),
+    "Bronzeville": (41.8170, -87.6155),
+
+    # Central/South
+    "Oak Park": (41.8763, -87.7839),
+    "Lincoln Square": (41.9748, -87.6954),
+    "North Center": (41.9503, -87.6995),
+
+    # Lakefront
+    "Streeterville": (41.8867, -87.6066),
 }
 
 
