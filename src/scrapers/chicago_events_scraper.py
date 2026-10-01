@@ -483,6 +483,93 @@ CHICAGO_VENUES = {
             use_playwright=True,
         ),
     ],
+
+    "Loop": [
+        VenueConfig(
+            name="Chicago Theatre",
+            website_url="https://www.thechicagotheatre.com",
+            event_page_url="https://www.msg.com/calendar?venues=KovZpZA6AJ6A",
+            category="theater",
+            address="175 N State St",
+            selectors={},
+            use_playwright=True,
+        ),
+        VenueConfig(
+            name="Jazz Showcase",
+            website_url="https://www.jazzshowcase.com",
+            event_page_url="https://www.jazzshowcase.com/calendar",
+            category="music",
+            address="806 S Plymouth Ct",
+            selectors={},
+            use_playwright=True,
+        ),
+    ],
+
+    "Uptown": [
+        VenueConfig(
+            name="Green Mill Jazz Club",
+            website_url="https://www.greenmilljazz.com",
+            event_page_url="https://greenmilljazz.com/calendar/",
+            category="music",
+            address="4802 N Broadway Ave",
+            selectors={},
+            use_playwright=True,
+        ),
+    ],
+
+    "Lincoln Park": [
+        VenueConfig(
+            name="Steppenwolf Theatre Company",
+            website_url="https://www.steppenwolf.org",
+            event_page_url="https://www.steppenwolf.org/whats-on/current-season",
+            category="theater",
+            address="1650 N Halsted St",
+            selectors={},
+            use_playwright=True,
+        ),
+        VenueConfig(
+            name="Second City",
+            website_url="https://www.secondcity.com",
+            event_page_url="https://www.secondcity.com/shows",
+            category="comedy",
+            address="1616 N Wells St",
+            selectors={},
+            use_playwright=True,
+        ),
+    ],
+
+    "Lake View": [
+        VenueConfig(
+            name="Metro Chicago",
+            website_url="https://www.metrochicago.com",
+            event_page_url="https://www.metrochicago.com/events",
+            category="music",
+            address="3730 N Clark St",
+            selectors={},
+            use_playwright=True,
+        ),
+        VenueConfig(
+            name="The Vic Theatre",
+            website_url="https://www.victheater.com",
+            event_page_url="https://www.victheater.com/events",
+            category="music",
+            address="3145 N Sheffield Ave",
+            selectors={},
+            use_playwright=True,
+        ),
+    ],
+
+    "Lincoln Square": [
+        VenueConfig(
+            name="Old Town School of Folk Music",
+            website_url="https://www.oldtownschool.org",
+            event_page_url="https://www.oldtownschool.org/events",
+            category="music",
+            address="4544 N Lincoln Ave",
+            selectors={},
+            use_playwright=True,
+        ),
+    ],
 }
 
 
