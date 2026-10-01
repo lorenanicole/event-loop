@@ -115,12 +115,27 @@ class IOTheaterScraper(VenueScraper):
         return []
 
 
-# Registry of all venue scrapers
+# Registry of all venue scrapers - hardcoded major Chicago venues
+# TODO: Replace with dynamic OSM fetching once Overpass API is accessible
 VENUE_SCRAPERS = [
     SecondCityScraper(),
     SteppenwolfScraper(),
     IOTheaterScraper(),
-    # TODO: Add more venues as needed
+    # TODO: Add Goodman Theatre, Court Theatre, Zanies, House of Blues, etc.
+]
+
+# Known Chicago entertainment venues (from OSM/web research)
+CHICAGO_VENUES = [
+    {"name": "Steppenwolf Theatre", "url": "https://www.steppenwolf.org", "type": "theater"},
+    {"name": "Goodman Theatre", "url": "https://www.goodmantheatre.org", "type": "theater"},
+    {"name": "Court Theatre", "url": "https://www.courttheatre.org", "type": "theater"},
+    {"name": "Second City", "url": "https://www.secondcity.com", "type": "comedy"},
+    {"name": "iO Theater", "url": "https://www.ioimprov.com", "type": "comedy"},
+    {"name": "The Laugh Factory", "url": "https://www.laughfactorychicago.com", "type": "comedy"},
+    {"name": "Zanies Chicago", "url": "https://www.zaniescomedyclub.com", "type": "comedy"},
+    {"name": "House of Blues", "url": "https://www.houseofblues.com/chicago", "type": "concert"},
+    {"name": "Congress Theater", "url": "https://www.congresschicago.com", "type": "concert"},
+    {"name": "Aragon Ballroom", "url": "https://www.aragonchicago.com", "type": "concert"},
 ]
 
 
