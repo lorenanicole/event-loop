@@ -156,6 +156,35 @@ def extract_concord(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
     return events
 
 
+def extract_chicago_theatre(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Chicago Theatre - extract from [class*='item'] event cards."""
+    events = []
+    try:
+        event_containers = soup.select("[class*='item']")
+        logger.info(f"{config.name}: found {len(event_containers)} item elements")
+
+        for container in event_containers:
+            text = container.get_text(strip=True)
+            if not text or len(text) < 10:
+                continue
+
+            skip_terms = ['menu', 'sidebar', 'nav', 'footer', 'home', 'login', 'cart', 'instagram', 'facebook', 'twitter']
+            if any(skip in text.lower() for skip in skip_terms):
+                continue
+
+            events.append(VenueEvent(
+                name=text[:200], date=None, time=None,
+                location=f"{config.name}, {config.address}",
+                url=config.event_page_url or config.website_url,
+                venue_name=config.name, category=config.category
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from [class*='item']")
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+    return events
+
+
 def extract_generic_li(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Generic extractor for venues using li elements for event listings."""
     events = []
@@ -194,10 +223,11 @@ def extract_generic_item_class(soup: BeautifulSoup, config: VenueConfig) -> list
 
         for container in event_containers:
             text = container.get_text(strip=True)
-            if not text or len(text) < 3:
+            if not text or len(text) < 10:
                 continue
 
-            skip_terms = ['menu', 'sidebar', 'nav', 'footer', 'home', 'login', 'cart']
+            skip_terms = ['menu', 'sidebar', 'nav', 'footer', 'home', 'login', 'cart', 'subscriber',
+                         'email', 'password', 'sign in', 'register', 'account', 'search', 'instagram', 'facebook']
             if any(skip in text.lower() for skip in skip_terms):
                 continue
 
@@ -263,12 +293,12 @@ CHICAGO_VENUES = {
         VenueConfig(
             name="Chicago Theatre",
             website_url="https://www.thechicagotheatre.com",
-            event_page_url="https://www.msg.com/calendar?venues=KovZpZA6AJ6A",
+            event_page_url="https://www.thechicagotheatre.com",
             category="theater",
             address="175 N State St",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_generic_item_class,
+            extractor_fn=extract_chicago_theatre,
         ),
         VenueConfig(
             name="Jazz Showcase",
