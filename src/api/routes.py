@@ -61,6 +61,32 @@ async def list_events(
 
 
 @router.get(
+    "/events/categories",
+    response_model=list[str],
+    summary="Get event categories",
+    description="Retrieve distinct event categories currently in the database",
+    tags=["Events"],
+)
+async def get_event_categories(db: AsyncSession = Depends(get_db)):
+    """
+    **Get all distinct event categories**
+
+    Returns a list of all unique event categories in the database.
+    Useful for dynamic UI filtering.
+
+    **Example response:**
+    ```json
+    ["music", "comedy", "theater", "sports", "art", "food", "film", "tech"]
+    ```
+    """
+    result = await db.execute(
+        select(EventModel.category).distinct().filter(EventModel.category.isnot(None))
+    )
+    categories = sorted([cat for cat in result.scalars().all() if cat])
+    return categories
+
+
+@router.get(
     "/events/{event_id}",
     response_model=Event,
     summary="Get event by ID",
@@ -94,32 +120,6 @@ async def get_event(
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     return event
-
-
-@router.get(
-    "/events/categories",
-    response_model=list[str],
-    summary="Get event categories",
-    description="Retrieve distinct event categories currently in the database",
-    tags=["Events"],
-)
-async def get_event_categories(db: AsyncSession = Depends(get_db)):
-    """
-    **Get all distinct event categories**
-
-    Returns a list of all unique event categories in the database.
-    Useful for dynamic UI filtering.
-
-    **Example response:**
-    ```json
-    ["music", "comedy", "theater", "sports", "art", "food", "film", "tech"]
-    ```
-    """
-    result = await db.execute(
-        select(EventModel.category).distinct().filter(EventModel.category.isnot(None))
-    )
-    categories = sorted([cat for cat in result.scalars().all() if cat])
-    return categories
 
 
 @router.post(
