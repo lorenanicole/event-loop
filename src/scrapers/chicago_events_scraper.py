@@ -1,7 +1,5 @@
 """
-Unified Chicago Events Scraper - ALL neighborhoods/venues in one place.
-Strategic, config-driven approach using flexible VenueScraper framework.
-Scales to all 77+ neighborhoods without N+1 scripts.
+Unified Chicago Events Scraper - ALL neighborhoods/venues, iteratively refined.
 """
 
 import httpx
@@ -19,7 +17,7 @@ logger = logging.getLogger(__name__)
 # ===== CUSTOM EXTRACTORS =====
 
 def extract_chop_shop(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
-    """Dice FM widget extraction for Chop Shop."""
+    """Dice FM widget extraction."""
     events = []
     try:
         dice_container = soup.select_one("div.dice_events")
@@ -49,11 +47,120 @@ def extract_chop_shop(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEve
     return events
 
 
-def extract_text_based(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
-    """Extract events from h2/h3 text (for Concord, Salt Shed, etc)."""
+def extract_outset(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Outset WordPress h3.listing__title extraction."""
     events = []
     try:
-        containers = soup.select("[class*='show'], article, [class*='event']")
+        event_items = soup.select("h3")
+        logger.info(f"{config.name}: found {len(event_items)} h3 elements")
+
+        for item in event_items:
+            parent = item.parent
+            if not parent or "listing__title" not in parent.get("class", []):
+                continue
+
+            event_name = item.get_text(strip=True)
+            if not event_name or len(event_name) < 2:
+                continue
+
+            event_date = None
+            for sibling in item.find_all_next(limit=10):
+                if sibling.name == "h3":
+                    break
+                sibling_text = sibling.get_text(strip=True)
+                if "•" in sibling_text or re.search(r'\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)', sibling_text):
+                    event_date = sibling_text
+                    break
+
+            events.append(VenueEvent(
+                name=event_name, date=event_date, time=None,
+                location=f"{config.name}, {config.address}",
+                url=config.website_url, venue_name=config.name, category=config.category
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events")
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+    return events
+
+
+def extract_salt_shed(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Salt Shed - filter out navigation h2/h3."""
+    events = []
+    try:
+        event_items = soup.select("h2, h3")
+        logger.info(f"{config.name}: found {len(event_items)} heading elements")
+
+        skip_terms = ["menu", "more", "about", "contact", "news", "follow", "social", "booking",
+                      "newsletter", "signup", "subscribe", "home", "gallery", "press",
+                      "your privacy", "your favorites", "favourite", "cart", "checkout"]
+
+        for item in event_items:
+            text = item.get_text(strip=True)
+            if not text or len(text) < 3:
+                continue
+            if any(skip in text.lower() for skip in skip_terms):
+                continue
+
+            events.append(VenueEvent(
+                name=text, date=None, time=None,
+                location=f"{config.name}, {config.address}",
+                url=config.website_url, venue_name=config.name, category=config.category
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events")
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+    return events
+
+
+def extract_concord(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Concord & similar - extract from [class*='show'] and article elements."""
+    events = []
+    try:
+        event_containers = soup.select("[class*='show'], article")
+        logger.info(f"{config.name}: found {len(event_containers)} containers")
+
+        for container in event_containers:
+            text = container.get_text()
+            lines = [line.strip() for line in text.split('\n') if line.strip()]
+
+            if not lines:
+                continue
+
+            event_name = None
+            event_date = None
+
+            for line in lines:
+                if line == "Selling Fast" or not event_name:
+                    if line != "Selling Fast" and len(line) > 3:
+                        if not any(x in line for x in ['Doors', 'doors', 'age']):
+                            event_name = line
+                            break
+
+            for line in lines:
+                if re.search(r'\d{1,2}/\d{1,2}', line):
+                    event_date = line
+                    break
+
+            if event_name and len(event_name) > 3:
+                events.append(VenueEvent(
+                    name=event_name, date=event_date, time=None,
+                    location=f"{config.name}, {config.address}",
+                    url=config.website_url, venue_name=config.name, category=config.category
+                ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events")
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+    return events
+
+
+def extract_rosas_lounge(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Rosa's Lounge - better event name detection."""
+    events = []
+    try:
+        containers = soup.select("article, [class*='event'], [class*='show']")
         logger.info(f"{config.name}: found {len(containers)} containers")
 
         for container in containers:
@@ -67,9 +174,11 @@ def extract_text_based(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEv
             event_date = None
 
             for line in lines:
-                if len(line) > 3 and not any(x in line for x in ['ticket', 'door', 'age', 'newsletter', 'subscribe']):
-                    event_name = line
-                    break
+                if len(line) > 3 and line not in ["Sold Out"]:
+                    if not any(x in line.lower() for x in ['ticket', 'door', 'age', 'reserve']):
+                        if not re.match(r'^\d{1,2}:\d{2}', line):  # Not a time
+                            event_name = line
+                            break
 
             for line in lines:
                 if re.search(r'\d{1,2}/\d{1,2}|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec', line):
@@ -137,7 +246,7 @@ CHICAGO_VENUES = {
             address="3420 W North Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_text_based,
+            extractor_fn=extract_rosas_lounge,
         ),
     ],
 
@@ -158,7 +267,7 @@ CHICAGO_VENUES = {
             address="2047 N Milwaukee Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_text_based,
+            extractor_fn=extract_concord,
         ),
         VenueConfig(
             name="Salt Shed",
@@ -168,7 +277,7 @@ CHICAGO_VENUES = {
             address="1357 N Elston Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_text_based,
+            extractor_fn=extract_salt_shed,
         ),
         VenueConfig(
             name="Outset",
@@ -176,8 +285,9 @@ CHICAGO_VENUES = {
             event_page_url="https://outsetlive.com/events/",
             category="music",
             address="1675 N Elston Ave",
-            selectors={"event_container": "h3", "title": "h3"},
+            selectors={},
             use_playwright=True,
+            extractor_fn=extract_outset,
         ),
     ],
 
@@ -190,7 +300,7 @@ CHICAGO_VENUES = {
             address="3734 W Belmont Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_text_based,
+            extractor_fn=extract_concord,
         ),
         VenueConfig(
             name="Rockwell on the River",
@@ -200,14 +310,24 @@ CHICAGO_VENUES = {
             address="3757 N Rockwell Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_text_based,
+            extractor_fn=extract_salt_shed,
+        ),
+        VenueConfig(
+            name="Avondale Music Hall",
+            website_url="https://www.avondalemusichair.com",
+            event_page_url="https://www.avondalemusichair.com/events/",
+            category="music",
+            address="3730 N Rockwell Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_rosas_lounge,
         ),
     ],
 }
 
 
 async def scrape_chicago_events() -> dict[str, list[VenueEvent]]:
-    """Scrape ALL Chicago neighborhoods/venues in one unified operation."""
+    """Scrape ALL Chicago neighborhoods/venues."""
     results = {}
     total_events = 0
     
@@ -234,7 +354,6 @@ async def scrape_chicago_events() -> dict[str, list[VenueEvent]]:
     logger.info(f"✅ TOTAL CHICAGO EVENTS: {total_events}")
     logger.info('='*60)
     
-    # Print summary
     for neighborhood in sorted(results.keys()):
         events = results[neighborhood]
         by_venue = {}
