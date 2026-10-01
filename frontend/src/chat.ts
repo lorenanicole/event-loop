@@ -17,6 +17,7 @@ class ChatWidget {
   private newChatButton: HTMLButtonElement;
   private threadId: string | null = null;
   private isStreaming = false;
+  private toolResults: Record<string, string> = {};
 
   constructor(containerId: string) {
     this.container = document.getElementById(containerId)!;
@@ -186,19 +187,38 @@ Let's find your next great event! ⚡`;
         break;
 
       case "tool_call":
-        this.showStatus(`🔧 Calling ${data.tool}: ${data.args}`);
+        this.showStatus(`🔧 Calling ${data.tool}...`);
         break;
 
-      case "tool_result":
+      case "tool_result": {
+        const tool = data.tool as string;
+        // Store tool result for later - if there's backend data, capture it
+        if (data.backend_data) {
+          this.toolResults[tool] = data.backend_data as string;
+        }
         this.showStatus(
-          `✓ Found ${data.result_count} results: ${data.snippet}`
+          `✓ Found ${data.result_count} results`
         );
         break;
+      }
 
-      case "response":
+      case "response": {
         this.clearStatus();
-        appendMessage(data.message as string);
+        let message = data.message as string;
+
+        // If we have tool results and the message is generic, prepend formatted results
+        if (Object.keys(this.toolResults).length > 0 && message.includes("Something went wrong")) {
+          // This is a fallback, format the tool results we have
+          const formatted = this.formatToolResults();
+          if (formatted) {
+            message = formatted;
+          }
+        }
+
+        appendMessage(message);
+        this.toolResults = {}; // Reset for next message
         break;
+      }
 
       case "conversation_status":
         if (data.status === "limit_approaching") {
@@ -240,8 +260,8 @@ Let's find your next great event! ⚡`;
     const contentEl = document.createElement("div");
     contentEl.className = "chat-content";
 
-    // Check if content contains event results (starts with Found N great match)
-    if (content.includes("📍 **Found") && content.includes("**")) {
+    // Check if content contains formatted event results or markdown
+    if (content.includes("**") || content.includes("📍") || content.includes("🎉") || content.includes("[")) {
       contentEl.innerHTML = this.parseMarkdownAndEvents(content);
     } else {
       contentEl.textContent = content;
@@ -253,9 +273,20 @@ Let's find your next great event! ⚡`;
     this.messageList.scrollTop = this.messageList.scrollHeight;
   }
 
+  private formatToolResults(): string {
+    const searchResults = this.toolResults["search_local_db"];
+    if (!searchResults) return "";
+
+    // The search_local_db already returns formatted markdown
+    // Just need to parse it for display
+    return searchResults;
+  }
+
   private parseMarkdownAndEvents(text: string): string {
     // Convert markdown bold to HTML
     let html = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    // Convert markdown links to HTML
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
     // Convert emojis and newlines
     html = html.replace(/\n/g, "<br>");
     return html;
