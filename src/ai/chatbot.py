@@ -423,6 +423,12 @@ def _extract_keywords(query: str) -> list[str]:
     expanded_keywords = set(keywords)
     logger.debug(f"Base keywords before NLTK: {keywords}")
 
+    # Always preserve important event keywords
+    important_keywords = {"walk", "walks", "walking", "nature", "hike", "hikes"}
+    for word in words:
+        if word.lower() in important_keywords:
+            expanded_keywords.add(word.lower())
+
     if NLTK_AVAILABLE:
         for kw in keywords:
             kw_lower = kw.lower()
