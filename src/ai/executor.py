@@ -169,12 +169,13 @@ class ChatExecutor:
                 # Reject out-of-scope questions early
                 if intent != Intent.CHICAGO_EVENTS and confidence > 0.7:
                     response = await get_intent_response(intent, reasoning)
+                    tokens_count = int(len(response.split()) * 1.3)
                     yield ResponseEvent(
                         message=response,
-                        tokens=len(response.split()) * 1.3,
+                        tokens=tokens_count,
                         data={
                             "message": response,
-                            "tokens": int(len(response.split()) * 1.3),
+                            "tokens": tokens_count,
                             "out_of_scope": True,
                         },
                     )
@@ -399,12 +400,13 @@ class ChatExecutor:
                         data={"status": "Expanding search online..."},
                     )
 
+                tokens_count = int(len(response_text.split()) * 1.3)
                 yield ResponseEvent(
                     message=response_text,
-                    tokens=len(response_text.split()) * 1.3,
+                    tokens=tokens_count,
                     data={
                         "message": response_text,
-                        "tokens": int(len(response_text.split()) * 1.3),
+                        "tokens": tokens_count,
                     },
                 )
 
