@@ -1,0 +1,71 @@
+# Ruff configuration for Python 3.15 project
+# Fast, modern linter and formatter
+
+[tool.ruff]
+# Python 3.15
+target-version = "py315"
+line-length = 100
+
+# Lint rules
+lint.select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort (import sorting)
+    "N",      # pep8-naming
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "C90",    # mccabe (complexity)
+    "C4",     # flake8-comprehensions
+    "T20",    # flake8-print
+    "SIM",    # flake8-simplify
+    "RUF",    # ruff-specific rules
+]
+
+lint.ignore = [
+    "E501",   # Line too long (we handle this with line-length)
+    "W503",   # Line break before binary operator
+    "N806",   # Variable in function should be lowercase (for type hints)
+]
+
+# Per-file-ignores
+lint.per-file-ignores = {
+    "__init__.py" = ["F401"],  # Unused imports in __init__
+    "tests/*" = ["T201"],  # Allow print in tests
+}
+
+# McCabe complexity threshold
+lint.mccabe.max-complexity = 10
+
+# isort configuration (import sorting)
+lint.isort.known-first-party = ["src"]
+lint.isort.known-third-party = ["pydantic", "fastapi", "sqlalchemy"]
+
+# Exclude patterns
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    ".pytest_cache",
+    ".ruff_cache",
+    "htmlcov",
+    "*.egg-info",
+]
+
+# Format configuration
+format.quote-style = "double"
+format.indent-style = "space"
+format.line-ending = "auto"
+format.skip-magic-trailing-comma = false
+
+[tool.ruff.lint.pylint]
+# Max allowed arguments per function
+max-args = 6
+# Max allowed attributes per class
+max-attributes = 8
+
+[tool.ruff.lint.flake8-bugbear]
+# Extend immutable calls (avoid mutable default args)
+extend-immutable-calls = ["pydantic.Field"]
