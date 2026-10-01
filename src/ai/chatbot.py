@@ -101,6 +101,9 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
             categories = _extract_categories(query_str)
             date_range = _extract_date_range(query_str)
 
+            logger.info(f"Extracted keywords: {keywords}")
+            logger.info(f"Extracted categories: {categories}")
+
             db_query = select(EventModel)
             filters = []
 
@@ -127,7 +130,10 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
             result = await db.execute(db_query.limit(50))
             results = result.scalars().all()
 
+            logger.info(f"Database query returned {len(results)} raw results")
+
             if not results:
+                logger.info("No results found - returning NO_RESULTS")
                 return "NO_RESULTS"
 
             # Score and filter to top 5 most relevant events
