@@ -39,6 +39,13 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"Backfill skipped or failed: {e}")
 
+    # Backfill location data (is_outdoor, address, venue_name) for existing events
+    try:
+        from scripts.backfill_locations import backfill_event_locations
+        await backfill_event_locations()
+    except Exception as e:
+        logger.warning(f"Location backfill skipped or failed: {e}")
+
     # For telemetry, we'll use AsyncSessionLocal when metrics are accessed
 
 

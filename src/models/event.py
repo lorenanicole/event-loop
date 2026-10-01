@@ -11,6 +11,9 @@ class EventCreate(BaseModel):
     origination_url: str
     cost: Optional[str] = None
     age_range: Optional[str] = None
+    is_outdoor: Optional[str] = None
+    address: Optional[str] = None
+    venue_name: Optional[str] = None
     date_retrieved: datetime = Field(default_factory=datetime.utcnow)
 
 

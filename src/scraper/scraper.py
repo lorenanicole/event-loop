@@ -5,7 +5,12 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from src.models import EventCreate
 from src.database.models import EventModel
-from src.ai.event_enrichment import extract_from_event_text
+from src.ai.event_enrichment import (
+    extract_from_event_text,
+    extract_is_outdoor,
+    extract_address,
+    extract_venue_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +109,12 @@ class DO312Scraper:
             # Extract cost and age_range from title and details
             cost, age_range = extract_from_event_text(title, details)
 
+            # Extract location data
+            full_text = f"{title} {details or ''}".strip()
+            is_outdoor = extract_is_outdoor(full_text)
+            address = extract_address(full_text)
+            venue_name = extract_venue_name(title)
+
             event = EventCreate(
                 name=title,
                 date=event_date,
@@ -112,11 +123,17 @@ class DO312Scraper:
                 origination_url=origination_url,
             )
 
-            # Add cost and age_range to the event if extracted
+            # Add enriched data to the event if extracted
             if cost:
                 event.cost = cost
             if age_range:
                 event.age_range = age_range
+            if is_outdoor:
+                event.is_outdoor = is_outdoor
+            if address:
+                event.address = address
+            if venue_name:
+                event.venue_name = venue_name
 
             return event
 
