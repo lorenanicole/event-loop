@@ -61,6 +61,8 @@ class ScoredEvent(BaseModel):
     source: str
     category: Optional[str] = None
     details: Optional[str] = None
+    cost: Optional[str] = None
+    age_range: Optional[str] = None
     confidence: float = Field(description="Relevance score 0.0-1.0")
 
 
@@ -126,6 +128,15 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
 
                 # Date
                 results_text += f"   📅 {event.date}\n"
+
+                # Cost and age range
+                if event.cost or event.age_range:
+                    details_parts = []
+                    if event.cost:
+                        details_parts.append(f"💰 {event.cost}")
+                    if event.age_range:
+                        details_parts.append(f"👥 {event.age_range}")
+                    results_text += f"   {' | '.join(details_parts)}\n"
 
                 # Source/Location
                 if event.source:
@@ -306,6 +317,8 @@ def _filter_top_results(events: list[EventModel], query: str, limit: int = 5) ->
             source=event.source or "Local DB",
             category=event.category,
             details=_truncate_summary(event.details) if event.details else None,
+            cost=event.cost if hasattr(event, 'cost') else None,
+            age_range=event.age_range if hasattr(event, 'age_range') else None,
             confidence=_score_event_relevance(event, query, categories),
         )
         for event in events

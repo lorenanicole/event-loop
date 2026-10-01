@@ -17,11 +17,15 @@ class EventModel(Base):
     origination_url = Column(String(500), unique=True)
     date_retrieved = Column(DateTime, default=datetime.utcnow)
     source = Column(String(50), default="unknown", index=True)  # do312, yourchicagoguide, ticketmaster, etc.
+    cost = Column(String(100), nullable=True)  # "Free", "$25", "$15-30", "Donation", etc.
+    age_range = Column(String(100), nullable=True)  # "All ages", "18+", "21+", "13+", etc.
 
     __table_args__ = (
         Index("idx_date_category", "date", "category"),
         Index("idx_name_search", "name"),
         Index("idx_source", "source"),
+        Index("idx_cost", "cost"),
+        Index("idx_age_range", "age_range"),
     )
 
 
