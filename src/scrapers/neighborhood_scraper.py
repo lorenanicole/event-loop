@@ -1,6 +1,11 @@
 """
 Generic neighborhood-based venue event scraper.
 Specify a neighborhood name, get events from all venues in that area.
+
+Supports multiple scraping strategies:
+1. Playwright (JS rendering) - For dynamic sites
+2. BeautifulSoup (direct HTML) - Fast fallback
+3. SerpAPI search - Last resort fallback
 """
 
 import httpx
@@ -16,6 +21,32 @@ logger = logging.getLogger(__name__)
 
 SERP_API_URL = "https://serpapi.com/search"
 RATE_LIMIT_DELAY = 0.5
+USE_PLAYWRIGHT = True  # Try Playwright for JS rendering
+
+# Venue scraping methods registry - persists which methods work for which venues
+VENUE_SCRAPE_METHODS = {
+    # Format: "Venue Name": {
+    #     "method": "playwright|html|serp",
+    #     "url": "working event page URL",
+    #     "selector": "CSS selector if applicable",
+    #     "notes": "any special handling needed"
+    # }
+}
+
+def get_venue_scrape_method(venue_name: str) -> Optional[dict]:
+    """Get cached scraping method for a venue."""
+    return VENUE_SCRAPE_METHODS.get(venue_name)
+
+def save_venue_scrape_method(venue_name: str, method: str, url: str, selector: Optional[str] = None, notes: str = ""):
+    """Save which scraping method worked for a venue."""
+    VENUE_SCRAPE_METHODS[venue_name] = {
+        "method": method,
+        "url": url,
+        "selector": selector,
+        "notes": notes,
+        "last_updated": asyncio.get_event_loop().time() if asyncio._get_running_loop() else None
+    }
+    logger.info(f"Saved scraping method for {venue_name}: {method}")
 
 
 @dataclass
@@ -159,24 +190,107 @@ class VenueScraper(ABC):
 
     async def scrape_events(self, client: httpx.AsyncClient, serp_api_key: Optional[str] = None) -> list[VenueEvent]:
         """
-        Try direct scraping first, fall back to SerpAPI search if unavailable.
+        Try multiple strategies: Playwright (JS), BeautifulSoup (HTML), SerpAPI (search).
+        Saves which method worked for future use.
         """
+        # Strategy 1: Try Playwright for JS-heavy sites
+        if USE_PLAYWRIGHT:
+            events = await self._scrape_with_playwright()
+            if events:
+                save_venue_scrape_method(
+                    self.venue_name,
+                    "playwright",
+                    self.event_page_url,
+                    notes="Dynamic JS rendering"
+                )
+                logger.info(f"{self.venue_name}: scraped {len(events)} events via Playwright")
+                return events
+
+        # Strategy 2: Try direct HTML scraping
         try:
-            # Try to fetch event page
             response = await client.get(self.event_page_url, timeout=10)
             if response.status_code == 200:
                 events = await self.scrape_events_from_page()
                 if events:
-                    logger.info(f"{self.venue_name}: scraped {len(events)} events from page")
+                    save_venue_scrape_method(
+                        self.venue_name,
+                        "html",
+                        self.event_page_url,
+                        notes="Direct HTML parsing"
+                    )
+                    logger.info(f"{self.venue_name}: scraped {len(events)} events from HTML")
                     return events
         except Exception as e:
-            logger.debug(f"{self.venue_name}: event page unavailable ({type(e).__name__})")
+            logger.debug(f"{self.venue_name}: HTML scraping failed ({type(e).__name__})")
 
-        # Fallback: SerpAPI search
+        # Strategy 3: SerpAPI search fallback
         if serp_api_key:
-            return await self._search_events_via_serp(client, serp_api_key)
+            events = await self._search_events_via_serp(client, serp_api_key)
+            if events:
+                save_venue_scrape_method(
+                    self.venue_name,
+                    "serp",
+                    f"{SERP_API_URL}?q={self.venue_name}+Chicago+events",
+                    notes="SerpAPI search fallback"
+                )
+            return events
 
-        logger.warning(f"{self.venue_name}: no events found (set SERP_API_KEY for fallback)")
+        logger.warning(f"{self.venue_name}: no events found")
+        return []
+
+    async def _scrape_with_playwright(self) -> list[VenueEvent]:
+        """Use Playwright to render JavaScript and parse dynamic content."""
+        try:
+            from playwright.async_api import async_playwright
+
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page()
+
+                try:
+                    await page.goto(self.event_page_url, timeout=10000, wait_until="networkidle")
+                    html = await page.content()
+                    soup = BeautifulSoup(html, "html.parser")
+
+                    # Parse events from rendered page
+                    events = []
+                    for event_elem in soup.find_all("div", class_=lambda x: x and any(w in x.lower() for w in ["event", "show", "card"]))[:10]:
+                        try:
+                            title = event_elem.find(["h3", "h4", "h2", "a"])
+                            if not title:
+                                continue
+
+                            event_name = title.get_text(strip=True)
+                            if len(event_name) < 2:
+                                continue
+
+                            link = event_elem.find("a", href=True)
+                            url = link["href"] if link else self.website_url
+                            if not url.startswith("http"):
+                                url = f"{self.website_url}{url}"
+
+                            events.append(VenueEvent(
+                                name=event_name,
+                                date=None,
+                                time=None,
+                                location=self.venue_name,
+                                url=url,
+                                venue_name=self.venue_name,
+                                category=self.category
+                            ))
+                        except Exception as e:
+                            logger.debug(f"Failed to parse event: {e}")
+
+                    return events
+
+                finally:
+                    await browser.close()
+
+        except ImportError:
+            logger.debug(f"{self.venue_name}: Playwright not available")
+        except Exception as e:
+            logger.debug(f"{self.venue_name}: Playwright failed ({type(e).__name__})")
+
         return []
 
     async def _search_events_via_serp(self, client: httpx.AsyncClient, api_key: str) -> list[VenueEvent]:
