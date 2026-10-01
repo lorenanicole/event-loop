@@ -285,39 +285,55 @@ class DenTheatreScraper(WickerParkVenueScraper):
                     html = await page.content()
                     soup = BeautifulSoup(html, "html.parser")
 
-                    # Find all show/performance links
-                    show_links = soup.find_all("a", href=lambda x: x and "ovationtix" in x.lower())
-                    logger.info(f"Den Theatre: found {len(show_links)} Ovation ticket links")
+                    # Find all calendar event items (li.item elements)
+                    event_items = soup.select("li.item")
+                    logger.info(f"Den Theatre: found {len(event_items)} calendar items")
 
-                    for link in show_links[:20]:  # Limit to first 20 shows
+                    import re
+                    for item in event_items:
                         try:
-                            # Show title from link text
-                            show_text = link.get_text(strip=True)
-                            if not show_text or len(show_text) < 2:
+                            # Extract show title from span.item-title
+                            title_elem = item.select_one("span.item-title")
+                            if not title_elem:
                                 continue
 
-                            ticket_url = link.get("href", self.website_url)
+                            show_title = title_elem.get_text(strip=True)
+                            if not show_title or len(show_title) < 2:
+                                continue
 
-                            # Look for date info in parent elements
-                            parent = link.find_parent(["div", "li", "article"])
+                            # Extract time from span.item-time--12hr
+                            time_elem = item.select_one("span.item-time--12hr")
+                            show_time = time_elem.get_text(strip=True) if time_elem else None
+
+                            # Extract event URL from a.item-link href
+                            link_elem = item.select_one("a.item-link")
+                            event_url = link_elem.get("href", "") if link_elem else ""
+
+                            # Parse date from URL path: /calendar/YYYY/MM/DD/...
                             event_date = None
-                            if parent:
-                                # Look for date patterns in text
-                                import re
-                                date_match = re.search(r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}', parent.get_text())
-                                event_date = date_match.group(0) if date_match else None
+                            if event_url:
+                                date_match = re.search(r'/calendar/(\d{4})/(\d{2})/(\d{2})/', event_url)
+                                if date_match:
+                                    year, month, day = date_match.groups()
+                                    event_date = f"{month}/{day}/{year}"
+
+                                # Make URL absolute if relative
+                                if not event_url.startswith("http"):
+                                    event_url = f"{self.website_url}{event_url}"
+                            else:
+                                event_url = self.website_url
 
                             events.append(VenueEvent(
-                                name=show_text,
+                                name=show_title,
                                 date=event_date,
-                                time=None,
+                                time=show_time,
                                 location=f"{self.venue_name}, {self.address}",
-                                url=ticket_url,
+                                url=event_url,
                                 venue_name=self.venue_name,
                                 category=self.category
                             ))
                         except Exception as e:
-                            logger.debug(f"Den Theatre: failed to parse show: {e}")
+                            logger.debug(f"Den Theatre: failed to parse calendar item: {e}")
 
                     logger.info(f"Den Theatre: extracted {len(events)} events")
 
@@ -359,7 +375,7 @@ async def scrape_wicker_park_venues() -> list[VenueEvent]:
         DenTheatreScraper(
             venue_name="Den Theatre",
             website_url="https://www.dentheatre.com",
-            event_page_url="https://thedentheatre.com/tickets-1",
+            event_page_url="https://thedentheatre.com/calendar?view=calendar&month=10-2026",
             category="comedy",
             address="1331 N Milwaukee Ave"
         ),
