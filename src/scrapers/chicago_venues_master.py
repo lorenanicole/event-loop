@@ -9,9 +9,23 @@ CHICAGO_VENUES_MASTER = {
     # ===== NEIGHBORHOODS WITH MOST ENTERTAINMENT (Priority 1) =====
 
     "Loop": [
-        {"name": "Chicago Theatre", "address": "175 N State St", "website": "https://www.thechicagotheatre.com", "event_page_url": "https://www.msg.com/calendar?venues=KovZpZA6AJ6A"},
-        {"name": "Jazz Showcase", "address": "806 S Plymouth Ct", "website": "https://www.jazzshowcase.com", "event_page_url": "https://www.jazzshowcase.com/calendar"},
-        {"name": "Buddy Guy's Legends", "address": "700 S Wabash Ave", "website": "https://www.buddyguyslegends.com", "event_page_url": "https://www.buddyguyslegends.com/events"},
+        # Theater District (Broadway Theaters)
+        {"name": "Chicago Theatre", "address": "175 N State St", "website": "https://www.thechicagotheatre.com", "event_page_url": "https://www.msg.com/calendar?venues=KovZpZA6AJ6A", "category": "theater"},
+        {"name": "Auditorium Theatre", "address": "50 E Congress Pkwy", "website": "https://www.auditoriumtheatre.org", "event_page_url": "https://www.auditoriumtheatre.org/events", "category": "theater"},
+        {"name": "James M. Nederlander Theatre", "address": "24 W Randolph St", "website": "https://www.jimmynet.com", "event_page_url": "https://www.jimmynet.com/events", "category": "theater"},
+        {"name": "CIBC Theatre", "address": "18 W Monroe St", "website": "https://www.broadwayinchicago.com", "event_page_url": "https://www.broadwayinchicago.com/cibc", "category": "theater"},
+        {"name": "Goodman Theatre", "address": "170 N Dearborn St", "website": "https://www.goodmantheatre.org", "event_page_url": "https://www.goodmantheatre.org/plays", "category": "theater"},
+
+        # Music & Jazz
+        {"name": "Jazz Showcase", "address": "806 S Plymouth Ct", "website": "https://www.jazzshowcase.com", "event_page_url": "https://www.jazzshowcase.com/calendar", "category": "music"},
+        {"name": "Buddy Guy's Legends", "address": "700 S Wabash Ave", "website": "https://www.buddyguyslegends.com", "event_page_url": "https://www.buddyguyslegends.com/events", "category": "music"},
+        {"name": "House of Blues Chicago", "address": "329 N Dearborn St", "website": "https://www.houseofblues.com/chicago", "event_page_url": "https://www.houseofblues.com/chicago/events", "category": "music"},
+
+        # Opera & Classical
+        {"name": "Civic Opera House", "address": "20 N Wacker Dr", "website": "https://www.lyricopera.org", "event_page_url": "https://www.lyricopera.org/season", "category": "theater"},
+
+        # Outdoor/Festival
+        {"name": "Jay Pritzker Pavilion", "address": "201 E Randolph St", "website": "https://www.millenniumparkpavilion.org", "event_page_url": "https://www.millenniumparkpavilion.org/events", "category": "music"},
     ],
 
     "Uptown": [
