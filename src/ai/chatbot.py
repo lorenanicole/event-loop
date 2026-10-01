@@ -63,6 +63,8 @@ class ScoredEvent(BaseModel):
     details: Optional[str] = None
     cost: Optional[str] = None
     age_range: Optional[str] = None
+    is_outdoor: Optional[str] = None
+    address: Optional[str] = None
     confidence: float = Field(description="Relevance score 0.0-1.0")
 
 
@@ -128,6 +130,15 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
 
                 # Date
                 results_text += f"   📅 {event.date}\n"
+
+                # Address if available
+                if event.address:
+                    results_text += f"   📍 {event.address}\n"
+
+                # Outdoor/Indoor designation
+                if event.is_outdoor:
+                    outdoor_emoji = "🌳" if event.is_outdoor == "outdoor" else "🏢"
+                    results_text += f"   {outdoor_emoji} {event.is_outdoor.capitalize()}\n"
 
                 # Cost and age range
                 if event.cost or event.age_range:
@@ -319,6 +330,8 @@ def _filter_top_results(events: list[EventModel], query: str, limit: int = 5) ->
             details=_truncate_summary(event.details) if event.details else None,
             cost=event.cost if hasattr(event, 'cost') else None,
             age_range=event.age_range if hasattr(event, 'age_range') else None,
+            is_outdoor=event.is_outdoor if hasattr(event, 'is_outdoor') else None,
+            address=event.address if hasattr(event, 'address') else None,
             confidence=_score_event_relevance(event, query, categories),
         )
         for event in events

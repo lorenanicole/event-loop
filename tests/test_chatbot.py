@@ -393,3 +393,68 @@ class TestEventEnrichment:
 
         age = extract_age_range("ALL AGES Welcome")
         assert age == "All ages"
+
+    def test_extract_is_outdoor_park(self):
+        """Extract outdoor designation for park events."""
+        from src.ai.event_enrichment import extract_is_outdoor
+
+        outdoor = extract_is_outdoor("Free Concert in the Park")
+        assert outdoor == "outdoor"
+
+        outdoor = extract_is_outdoor("Music festival at the lakefront")
+        assert outdoor == "outdoor"
+
+    def test_extract_is_outdoor_indoor(self):
+        """Extract indoor designation for theater/venue events."""
+        from src.ai.event_enrichment import extract_is_outdoor
+
+        indoor = extract_is_outdoor("Theater production at the Chicago Loop")
+        assert indoor == "indoor"
+
+        indoor = extract_is_outdoor("Concert at Blue Note nightclub")
+        assert indoor == "indoor"
+
+    def test_extract_is_outdoor_none(self):
+        """Return None when designation unclear."""
+        from src.ai.event_enrichment import extract_is_outdoor
+
+        result = extract_is_outdoor("Some random event")
+        assert result is None
+
+    def test_extract_address_standard(self):
+        """Extract standard street addresses."""
+        from src.ai.event_enrichment import extract_address
+
+        address = extract_address("Event at 123 N Michigan Ave")
+        assert address is not None
+        assert "123" in address
+        assert "Michigan" in address
+
+        address = extract_address("Located at 456 State Street, Chicago")
+        assert address is not None
+        assert "456" in address
+
+    def test_extract_address_none(self):
+        """Return None when no address found."""
+        from src.ai.event_enrichment import extract_address
+
+        address = extract_address("Event at some venue")
+        assert address is None
+
+    def test_extract_venue_name(self):
+        """Extract venue name from event title."""
+        from src.ai.event_enrichment import extract_venue_name
+
+        venue = extract_venue_name("Concert at Blue Note")
+        assert venue == "Blue Note"
+
+        venue = extract_venue_name("Show at the Chicago Theatre")
+        assert venue is not None
+        assert "Chicago" in venue
+
+    def test_extract_venue_name_none(self):
+        """Return None when no venue found."""
+        from src.ai.event_enrichment import extract_venue_name
+
+        venue = extract_venue_name("Random event title")
+        assert venue is None

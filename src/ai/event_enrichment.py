@@ -41,6 +41,17 @@ AGE_PATTERNS = [
     # Note: removed "children" from kids_friendly pattern as it conflicts with numeric patterns
 ]
 
+# Outdoor/Indoor patterns
+OUTDOOR_PATTERNS = [
+    (r"\b(?:outdoor|outside|park|lakefront|plaza|rooftop|beach|pier|trail|garden|botanical)\b", "outdoor", re.IGNORECASE),
+    (r"\b(?:in the park|at the lake|along the river)\b", "outdoor", re.IGNORECASE),
+]
+
+INDOOR_PATTERNS = [
+    (r"\b(?:indoor|inside|theater|theatre|lounge|venue|nightclub|museum|gallery|hall|arena|stadium|auditorium)\b", "indoor", re.IGNORECASE),
+    (r"\b(?:at the|chicago loop|downtown)\b", "indoor", re.IGNORECASE),
+]
+
 
 def extract_cost(text: str) -> Optional[str]:
     """
@@ -113,28 +124,108 @@ def extract_from_event_text(
     return cost, age_range
 
 
+def extract_is_outdoor(text: str) -> Optional[str]:
+    """
+    Detect if event is outdoor, indoor, or hybrid.
+    Returns: "outdoor", "indoor", or None if unclear.
+    """
+    if not text or not isinstance(text, str):
+        return None
+
+    text = text.strip().lower()
+
+    # Check outdoor patterns first
+    for pattern, outdoor_type, flags in OUTDOOR_PATTERNS:
+        if re.search(pattern, text, flags):
+            return outdoor_type
+
+    # Check indoor patterns
+    for pattern, indoor_type, flags in INDOOR_PATTERNS:
+        if re.search(pattern, text, flags):
+            return indoor_type
+
+    return None
+
+
+def extract_address(text: str) -> Optional[str]:
+    """
+    Extract street address from event text.
+    Looks for patterns like "123 Main St", "at 456 State St", "located at 789 Oak Ave".
+    Returns: address string or None if not found.
+    """
+    if not text or not isinstance(text, str):
+        return None
+
+    # Pattern: number + street name + optional apartment/suite
+    # e.g., "123 Main Street", "456 Oak Ave, Chicago, IL 60601"
+    address_pattern = r"\b(\d+\s+[A-Za-z\s]+(?:St|Street|Ave|Avenue|Blvd|Boulevard|Rd|Road|Dr|Drive|Way|Lane|Ln|Ct|Court|Pl|Place)\.?[^,]*)"
+    match = re.search(address_pattern, text, re.IGNORECASE)
+    if match:
+        return match.group(0).strip()
+
+    return None
+
+
+def extract_venue_name(event_name: str, url: Optional[str] = None) -> Optional[str]:
+    """
+    Extract venue/location name from event name or URL.
+    Heuristic: if event name contains "at" or "at the", extract the part after it.
+    E.g., "Concert at Blue Note" -> "Blue Note"
+    """
+    if not event_name or not isinstance(event_name, str):
+        return None
+
+    # Look for "at venue_name" pattern
+    at_pattern = r"\bat\s+(?:the\s+)?([A-Za-z\s&'-]+?)(?:\s+-|\s+on|\s+\(|$)"
+    match = re.search(at_pattern, event_name, re.IGNORECASE)
+    if match:
+        venue = match.group(1).strip()
+        # Filter out common filler words
+        if venue and len(venue) > 2 and not venue.lower() in ["the", "chicago"]:
+            return venue
+
+    return None
+
+
 def extract_and_update_event(event_data: dict) -> dict:
     """
-    Extract cost and age_range from event data and update the dict in-place.
+    Extract cost, age_range, is_outdoor, address, and venue_name from event data.
     Used during scraping to enrich events before saving to DB.
 
     Args:
-        event_data: dict with 'name' and optional 'details' keys
+        event_data: dict with 'name' and optional 'details', 'url' keys
 
     Returns:
-        Updated event_data dict with cost and age_range added if extracted
+        Updated event_data dict with enriched fields
     """
     if not event_data:
         return event_data
 
     name = event_data.get("name", "")
     details = event_data.get("details", "")
+    url = event_data.get("url") or event_data.get("origination_url")
 
+    # Extract cost and age range
     cost, age_range = extract_from_event_text(name, details)
-
     if cost:
         event_data["cost"] = cost
     if age_range:
         event_data["age_range"] = age_range
+
+    # Extract outdoor/indoor
+    full_text = f"{name} {details or ''}".strip()
+    is_outdoor = extract_is_outdoor(full_text)
+    if is_outdoor:
+        event_data["is_outdoor"] = is_outdoor
+
+    # Extract address
+    address = extract_address(full_text)
+    if address:
+        event_data["address"] = address
+
+    # Extract venue name
+    venue_name = extract_venue_name(name)
+    if venue_name:
+        event_data["venue_name"] = venue_name
 
     return event_data

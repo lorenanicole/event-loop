@@ -19,6 +19,9 @@ class EventModel(Base):
     source = Column(String(50), default="unknown", index=True)  # do312, yourchicagoguide, ticketmaster, etc.
     cost = Column(String(100), nullable=True)  # "Free", "$25", "$15-30", "Donation", etc.
     age_range = Column(String(100), nullable=True)  # "All ages", "18+", "21+", "13+", etc.
+    is_outdoor = Column(String(20), nullable=True)  # "outdoor", "indoor", "hybrid"
+    address = Column(String(255), nullable=True)  # Street address or location
+    venue_name = Column(String(255), nullable=True)  # Venue/location name
 
     __table_args__ = (
         Index("idx_date_category", "date", "category"),
@@ -26,6 +29,8 @@ class EventModel(Base):
         Index("idx_source", "source"),
         Index("idx_cost", "cost"),
         Index("idx_age_range", "age_range"),
+        Index("idx_is_outdoor", "is_outdoor"),
+        Index("idx_address", "address"),
     )
 
 
