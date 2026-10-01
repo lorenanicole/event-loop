@@ -1,7 +1,9 @@
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 import httpx
 from src.models import EventCreate
 from src.database.models import EventModel
@@ -140,12 +142,14 @@ class YourChicagoGuideScraper:
             logger.debug(f"Parse error: {e}")
             return None
 
-    async def scrape_and_save(self, db: Session, days_ahead: int = 30) -> int:
-        """Fetch events and save new ones to database"""
+    async def scrape_and_save(self, db: Union[Session, AsyncSession], days_ahead: int = 30) -> int:
+        """Fetch events and save new ones to database (sync or async)"""
         try:
             events = await self.fetch_events(days_ahead=days_ahead)
             saved_count = 0
             seen_urls = set()
+
+            is_async = isinstance(db, AsyncSession)
 
             for event_data in events:
                 url = event_data.origination_url
@@ -153,7 +157,16 @@ class YourChicagoGuideScraper:
                     continue
                 seen_urls.add(url)
 
-                existing = db.query(EventModel).filter_by(origination_url=url).first()
+                if is_async:
+                    # Async query
+                    result = await db.execute(
+                        select(EventModel).filter_by(origination_url=url)
+                    )
+                    existing = result.scalar_one_or_none()
+                else:
+                    # Sync query
+                    existing = db.query(EventModel).filter_by(origination_url=url).first()
+
                 if not existing:
                     event = EventModel(**event_data.model_dump(), source="yourchicagoguide")
                     db.add(event)
@@ -161,11 +174,18 @@ class YourChicagoGuideScraper:
                 else:
                     existing.date_retrieved = datetime.utcnow()
 
-            db.commit()
+            if is_async:
+                await db.commit()
+            else:
+                db.commit()
+
             logger.info(f"Saved {saved_count} new events from Your Chicago Guide")
             return saved_count
 
         except Exception as e:
             logger.error(f"Error saving events: {e}")
-            db.rollback()
+            if is_async:
+                await db.rollback()
+            else:
+                db.rollback()
             return 0
