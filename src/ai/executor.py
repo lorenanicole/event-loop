@@ -355,8 +355,11 @@ class ChatExecutor:
         If LLM fails: fall back to simple database search.
         """
         try:
+            print(f"\n🔍 DEBUG: Agent model = {agent.model}")
+            print(f"🔍 DEBUG: Agent has _tools attr? {hasattr(agent, '_tools')}")
+            if hasattr(agent, '_tools'):
+                print(f"🔍 DEBUG: Agent._tools = {agent._tools}")
             logger.info(f"Agent model: {agent.model}")
-            logger.info(f"Agent tools: {[t.__name__ for t in agent.tools] if hasattr(agent, 'tools') else 'N/A'}")
 
             # Check LLM circuit breaker
             if not llm_circuit_breaker.is_available():
