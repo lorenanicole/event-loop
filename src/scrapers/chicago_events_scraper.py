@@ -190,6 +190,64 @@ def extract_chicago_theatre(soup: BeautifulSoup, config: VenueConfig) -> list[Ve
     return events
 
 
+def extract_generic_card(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Generic extractor for venues using [class*='card'] for event listings."""
+    events = []
+    try:
+        event_containers = soup.select("[class*='card']")
+        logger.info(f"{config.name}: found {len(event_containers)} [class*='card'] elements")
+
+        for container in event_containers:
+            text = container.get_text(strip=True)
+            if not text or len(text) < 10:
+                continue
+
+            skip_terms = ['menu', 'sidebar', 'nav', 'footer', 'home', 'login', 'cart', 'subscriber']
+            if any(skip in text.lower() for skip in skip_terms):
+                continue
+
+            events.append(VenueEvent(
+                name=text[:200], date=None, time=None,
+                location=f"{config.name}, {config.address}",
+                url=config.event_page_url or config.website_url,
+                venue_name=config.name, category=config.category
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from [class*='card']")
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+    return events
+
+
+def extract_event_div(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Generic extractor for venues using div[class*='event'] for event listings."""
+    events = []
+    try:
+        event_containers = soup.select("div[class*='event']")
+        logger.info(f"{config.name}: found {len(event_containers)} div[class*='event'] elements")
+
+        for container in event_containers:
+            text = container.get_text(strip=True)
+            if not text or len(text) < 10:
+                continue
+
+            skip_terms = ['menu', 'sidebar', 'nav', 'footer', 'home', 'login', 'cart', 'filter']
+            if any(skip in text.lower() for skip in skip_terms):
+                continue
+
+            events.append(VenueEvent(
+                name=text[:200], date=None, time=None,
+                location=f"{config.name}, {config.address}",
+                url=config.event_page_url or config.website_url,
+                venue_name=config.name, category=config.category
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from div[class*='event']")
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+    return events
+
+
 def extract_generic_li(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Generic extractor for venues using li elements for event listings."""
     events = []
@@ -533,16 +591,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_generic_li,
         ),
         VenueConfig(
-            name="Riviera Theatre",
-            website_url="https://www.rivierachicago.com",
-            event_page_url="https://www.rivierachicago.com/",
-            category="music",
-            address="4746 N Racine Ave",
-            selectors={},
-            use_playwright=True,
-            extractor_fn=extract_generic_li,
-        ),
-        VenueConfig(
             name="Byline Bank Aragon Ballroom",
             website_url="https://www.aragonballroomchicago.com",
             event_page_url="https://www.aragonballroomchicago.com/",
@@ -550,7 +598,7 @@ CHICAGO_VENUES = {
             address="1106 W Lawrence Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_generic_li,
+            extractor_fn=extract_generic_card,
         ),
     ],
 
@@ -563,7 +611,7 @@ CHICAGO_VENUES = {
             address="1650 N Halsted St",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_generic_li,
+            extractor_fn=extract_generic_item_class,
         ),
         VenueConfig(
             name="Lincoln Hall",
@@ -573,7 +621,7 @@ CHICAGO_VENUES = {
             address="2424 N Lincoln Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_generic_li,
+            extractor_fn=extract_generic_card,
         ),
         VenueConfig(
             name="Kingston Mines",
@@ -593,7 +641,7 @@ CHICAGO_VENUES = {
             address="1616 N Wells St",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_generic_li,
+            extractor_fn=extract_generic_item_class,
         ),
         VenueConfig(
             name="Park West",
@@ -603,7 +651,7 @@ CHICAGO_VENUES = {
             address="322 W Armitage Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_generic_li,
+            extractor_fn=extract_generic_item_class,
         ),
     ],
 
@@ -616,7 +664,7 @@ CHICAGO_VENUES = {
             address="3730 N Clark St",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_generic_li,
+            extractor_fn=extract_event_div,
         ),
         VenueConfig(
             name="The Vic Theatre",
@@ -626,7 +674,7 @@ CHICAGO_VENUES = {
             address="3145 N Sheffield Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_generic_li,
+            extractor_fn=extract_generic_item_class,
         ),
         VenueConfig(
             name="Schubas Tavern",
@@ -636,7 +684,7 @@ CHICAGO_VENUES = {
             address="3159 N Southport Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_generic_li,
+            extractor_fn=extract_generic_item_class,
         ),
     ],
 
