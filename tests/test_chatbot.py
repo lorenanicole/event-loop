@@ -195,7 +195,8 @@ class TestResultFiltering:
                 'category': 'music',
                 'date': datetime.now() + timedelta(days=i),
                 'origination_url': f'http://example.com/{i}',
-                'source': 'test'
+                'source': 'test',
+                'details': f'A great event with music and fun times'
             })()
             for i in range(10)
         ]
@@ -213,14 +214,16 @@ class TestResultFiltering:
                 'category': 'music',
                 'date': datetime.now() + timedelta(days=1),
                 'origination_url': 'http://example.com/1',
-                'source': 'test'
+                'source': 'test',
+                'details': 'Live jazz performance with local musicians'
             })(),
             type('Event', (), {
                 'name': 'Random Event',
                 'category': 'other',
                 'date': datetime.now() + timedelta(days=50),
                 'origination_url': 'http://example.com/2',
-                'source': 'test'
+                'source': 'test',
+                'details': 'Some random event happening later'
             })(),
         ]
 
