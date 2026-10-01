@@ -38,8 +38,16 @@ class ChatWidget {
   private createToggleButton(): void {
     this.toggleBtn = document.createElement("button");
     this.toggleBtn.className = "chat-toggle-btn show";
-    this.toggleBtn.textContent = "💬";
     this.toggleBtn.title = "Open chat";
+
+    // Create Loopara logo image
+    const logo = document.createElement("img");
+    logo.src = "/loopara-logo.svg";
+    logo.style.width = "32px";
+    logo.style.height = "32px";
+    logo.style.filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.2))";
+    this.toggleBtn.appendChild(logo);
+
     this.toggleBtn.addEventListener("click", () => this.toggleChat());
     document.body.appendChild(this.toggleBtn);
 
@@ -58,8 +66,9 @@ class ChatWidget {
     this.container.classList.add("collapsed");
     document.body.classList.add("chat-collapsed");
     if (this.toggleBtn) {
-      this.toggleBtn.textContent = "💬";
       this.toggleBtn.title = "Open chat";
+      const logo = this.toggleBtn.querySelector("img");
+      if (logo) logo.style.opacity = "1";
     }
     if (this.ctaLabel) {
       this.ctaLabel.style.display = "block";
@@ -71,8 +80,9 @@ class ChatWidget {
     this.container.classList.remove("collapsed");
     document.body.classList.remove("chat-collapsed");
     if (this.toggleBtn) {
-      this.toggleBtn.textContent = "✕";
       this.toggleBtn.title = "Close chat";
+      const logo = this.toggleBtn.querySelector("img");
+      if (logo) logo.style.opacity = "0.5";
     }
     if (this.ctaLabel) {
       this.ctaLabel.style.display = "none";
