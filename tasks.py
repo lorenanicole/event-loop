@@ -238,6 +238,14 @@ def security_audit(c):
 
 
 @task
+def scrape(c):
+    """Scrape events from DO312 and populate database."""
+    print_header("Scraping Events from DO312")
+    print(f"{YELLOW}Running: uv run python scripts/scrape_events.py{RESET}\n")
+    c.run("uv run python scripts/scrape_events.py")
+
+
+@task
 def dev(c):
     """Run backend server with uv."""
     print_header("Starting Backend (EventLoop API)")
@@ -260,6 +268,7 @@ def info(c):
 
     print(f"""
 {BOLD}Development:{RESET}
+  invoke scrape            # Scrape events from DO312 into database
   invoke dev               # Start backend with uv (port 8000)
   invoke frontend          # Start frontend dev server (port 5173)
 
@@ -301,6 +310,7 @@ def info(c):
 
 # Create command collection
 ns = Collection()
+ns.add_task(scrape)
 ns.add_task(dev)
 ns.add_task(frontend)
 ns.add_task(test)
