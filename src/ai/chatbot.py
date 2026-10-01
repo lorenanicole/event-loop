@@ -211,11 +211,10 @@ async def _persist_events_to_db(events: list[EventResult]) -> None:
                 new_event = EventModel(
                     name=event.title,
                     date=event_date,
-                    location=event.location,
+                    address=event.location,
                     category="Online Search",
                     origination_url=event.url,
                     source="SerpAPI",
-                    details=event.date if hasattr(event, 'date') else None,
                 )
                 db.add(new_event)
                 persisted_count += 1
