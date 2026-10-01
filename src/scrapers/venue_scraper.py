@@ -329,18 +329,22 @@ VENUE_SCRAPERS = [
     HouseOfBluesScraper(),
 ]
 
-# Known Chicago entertainment venues (from OSM/web research)
+# Known Chicago entertainment venues (from curated list)
+# Updated dynamically via fetch_chicago_venues() which geocodes and discovers websites
 CHICAGO_VENUES = [
-    {"name": "Steppenwolf Theatre", "url": "https://www.steppenwolf.org", "type": "theater"},
+    # Seed venues with known working URLs
+    {"name": "Steppenwolf Theatre Company", "url": "https://www.steppenwolf.org", "type": "theater"},
     {"name": "Goodman Theatre", "url": "https://www.goodmantheatre.org", "type": "theater"},
     {"name": "Court Theatre", "url": "https://www.courttheatre.org", "type": "theater"},
-    {"name": "Second City", "url": "https://www.secondcity.com", "type": "comedy"},
+    {"name": "The Second City", "url": "https://www.secondcity.com", "type": "comedy"},
     {"name": "iO Theater", "url": "https://www.ioimprov.com", "type": "comedy"},
-    {"name": "The Laugh Factory", "url": "https://www.laughfactorychicago.com", "type": "comedy"},
     {"name": "Zanies Chicago", "url": "https://www.zaniescomedyclub.com", "type": "comedy"},
-    {"name": "House of Blues", "url": "https://www.houseofblues.com/chicago", "type": "concert"},
+    {"name": "House of Blues Chicago", "url": "https://www.houseofblues.com/chicago", "type": "concert"},
     {"name": "Congress Theater", "url": "https://www.congresschicago.com", "type": "concert"},
-    {"name": "Aragon Ballroom", "url": "https://www.aragonchicago.com", "type": "concert"},
+    {"name": "Byline Bank Aragon Ballroom", "url": "https://www.aragonchicago.com", "type": "concert"},
+    {"name": "Ravinia Festival", "url": "https://www.ravinia.org", "type": "music"},
+    {"name": "Chicago Symphony Orchestra", "url": "https://cso.org", "type": "music"},
+    {"name": "Green Mill Jazz Club", "url": "https://www.greenmilljazzclub.com", "type": "music"},
 ]
 
 
