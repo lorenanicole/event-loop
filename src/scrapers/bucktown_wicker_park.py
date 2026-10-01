@@ -1,15 +1,16 @@
 """
-Bucktown/Wicker Park venue event discovery via SerpAPI.
-Uses Google search to reliably find upcoming events at venues.
-More robust than HTML scraping since venues use external ticketing platforms.
+Bucktown/Wicker Park venue event discovery.
+Hybrid approach: Try to scrape event pages, fall back to SerpAPI if unavailable.
 """
 
 import httpx
 import logging
 import os
 import asyncio
+from bs4 import BeautifulSoup
 from dataclasses import dataclass
 from typing import Optional
+from abc import ABC, abstractmethod
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ RATE_LIMIT_DELAY = 0.5
 
 @dataclass
 class VenueEvent:
-    """Event discovered via search."""
+    """Event discovered from venue or search."""
     name: str
     date: Optional[str]
     time: Optional[str]
@@ -29,132 +30,398 @@ class VenueEvent:
     category: str
 
 
-# Bucktown/Wicker Park venues with addresses
-BUCKTOWN_WICKER_PARK_VENUES = [
-    {
-        "name": "Subterranean",
-        "address": "2011 W North Ave, Chicago",
-        "category": "music",
-        "neighborhood": "Wicker Park"
-    },
-    {
-        "name": "Chop Shop",
-        "address": "2033 W North Ave, Chicago",
-        "category": "music",
-        "neighborhood": "Wicker Park"
-    },
-    {
-        "name": "Schubas Tavern",
-        "address": "3159 N Southport Ave, Chicago",
-        "category": "music",
-        "neighborhood": "Lakeview (near Bucktown)"
-    },
-    {
-        "name": "The Hideout",
-        "address": "1354 W Wabansia Ave, Chicago",
-        "category": "music",
-        "neighborhood": "Bucktown"
-    },
-    {
-        "name": "Empty Bottle",
-        "address": "1035 N Western Ave, Chicago",
-        "category": "music",
-        "neighborhood": "Wicker Park"
-    },
-    {
-        "name": "Concord Music Hall",
-        "address": "2047 N Milwaukee Ave, Chicago",
-        "category": "music",
-        "neighborhood": "Bucktown"
-    },
+class VenueScraper(ABC):
+    """Base class for venue-specific event scrapers."""
+
+    def __init__(self, venue_name: str, website_url: str, event_page_url: str, category: str):
+        self.venue_name = venue_name
+        self.website_url = website_url
+        self.event_page_url = event_page_url
+        self.category = category
+
+    @abstractmethod
+    async def scrape_events_from_page(self) -> list[VenueEvent]:
+        """Try to scrape events from venue's event page."""
+        pass
+
+    async def scrape_events(self, client: httpx.AsyncClient, serp_api_key: Optional[str] = None) -> list[VenueEvent]:
+        """
+        Try direct scraping first, fall back to SerpAPI search if unavailable.
+        """
+        try:
+            # Try to fetch event page
+            response = await client.get(self.event_page_url, timeout=10)
+            if response.status_code == 200:
+                events = await self.scrape_events_from_page()
+                if events:
+                    logger.info(f"{self.venue_name}: scraped {len(events)} events from page")
+                    return events
+        except Exception as e:
+            logger.debug(f"{self.venue_name}: event page unavailable ({type(e).__name__})")
+
+        # Fallback: SerpAPI search
+        if serp_api_key:
+            return await self._search_events_via_serp(client, serp_api_key)
+
+        logger.warning(f"{self.venue_name}: no events found (set SERP_API_KEY for fallback)")
+        return []
+
+    async def _search_events_via_serp(self, client: httpx.AsyncClient, api_key: str) -> list[VenueEvent]:
+        """Fallback: search for events via SerpAPI."""
+        events = []
+
+        try:
+            await asyncio.sleep(RATE_LIMIT_DELAY)
+
+            response = await client.get(
+                SERP_API_URL,
+                params={
+                    "q": f"{self.venue_name} Chicago events 2026",
+                    "api_key": api_key,
+                    "engine": "google",
+                    "num": 5,
+                }
+            )
+            response.raise_for_status()
+            results = response.json()
+
+            # Parse organic results for event links
+            if "organic_results" in results:
+                for result in results["organic_results"][:5]:
+                    try:
+                        title = result.get("title", "")
+                        link = result.get("link", "")
+
+                        if any(x in title.lower() for x in ["event", "concert", "show", "ticket"]):
+                            events.append(VenueEvent(
+                                name=title[:100],
+                                date=None,
+                                time=None,
+                                location=self.venue_name,
+                                url=link,
+                                venue_name=self.venue_name,
+                                category=self.category
+                            ))
+                    except Exception as e:
+                        logger.debug(f"Failed to parse SerpAPI result: {e}")
+
+            if events:
+                logger.info(f"{self.venue_name}: found {len(events)} events via SerpAPI")
+
+        except Exception as e:
+            logger.error(f"SerpAPI search failed for {self.venue_name}: {e}")
+
+        return events
+
+
+class SubterraneanScraper(VenueScraper):
+    """Subterranean (2011 W North Ave) - indie rock/experimental."""
+
+    def __init__(self):
+        super().__init__(
+            venue_name="Subterranean",
+            website_url="https://www.subt.net",
+            event_page_url="https://www.subt.net/calendar",
+            category="music"
+        )
+
+    async def scrape_events_from_page(self) -> list[VenueEvent]:
+        """Scrape from Subterranean calendar page."""
+        events = []
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(self.event_page_url)
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, "html.parser")
+
+                    # Parse event listings
+                    for event_elem in soup.find_all("div", class_=lambda x: x and "event" in x.lower())[:10]:
+                        try:
+                            title = event_elem.find(["h3", "h4", "a"])
+                            if not title:
+                                continue
+
+                            event_name = title.get_text(strip=True)
+                            link = event_elem.find("a", href=True)
+                            url = link["href"] if link else self.website_url
+
+                            events.append(VenueEvent(
+                                name=event_name,
+                                date=None,
+                                time=None,
+                                location="Subterranean, 2011 W North Ave",
+                                url=url,
+                                venue_name=self.venue_name,
+                                category=self.category
+                            ))
+                        except Exception as e:
+                            logger.debug(f"Failed to parse event: {e}")
+        except Exception as e:
+            logger.debug(f"Subterranean page scrape failed: {e}")
+
+        return events
+
+
+class ChopShopScraper(VenueScraper):
+    """Chop Shop (2033 W North Ave) - indie/rock."""
+
+    def __init__(self):
+        super().__init__(
+            venue_name="Chop Shop",
+            website_url="https://www.chopshopmusic.com",
+            event_page_url="https://www.chopshopmusic.com/events",
+            category="music"
+        )
+
+    async def scrape_events_from_page(self) -> list[VenueEvent]:
+        """Scrape from Chop Shop events page."""
+        events = []
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(self.event_page_url)
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, "html.parser")
+
+                    for event_elem in soup.find_all("div", class_=lambda x: x and any(w in x.lower() for w in ["event", "show", "card"]))[:10]:
+                        try:
+                            title = event_elem.find(["h3", "h4", "a"])
+                            if not title:
+                                continue
+
+                            event_name = title.get_text(strip=True)
+                            link = event_elem.find("a", href=True)
+                            url = link["href"] if link else self.website_url
+                            if not url.startswith("http"):
+                                url = f"{self.website_url}{url}"
+
+                            events.append(VenueEvent(
+                                name=event_name,
+                                date=None,
+                                time=None,
+                                location="Chop Shop, 2033 W North Ave",
+                                url=url,
+                                venue_name=self.venue_name,
+                                category=self.category
+                            ))
+                        except Exception as e:
+                            logger.debug(f"Failed to parse event: {e}")
+        except Exception as e:
+            logger.debug(f"Chop Shop page scrape failed: {e}")
+
+        return events
+
+
+class SchubaScraper(VenueScraper):
+    """Schubas Tavern (3159 N Southport) - indie/folk."""
+
+    def __init__(self):
+        super().__init__(
+            venue_name="Schubas Tavern",
+            website_url="https://www.schubastavern.com",
+            event_page_url="https://lh-st.com/",
+            category="music"
+        )
+
+    async def scrape_events_from_page(self) -> list[VenueEvent]:
+        """Scrape from Schubas ticketing partner (lh-st.com)."""
+        events = []
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(self.event_page_url)
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, "html.parser")
+
+                    for event_elem in soup.find_all("div", class_=lambda x: x and "event" in x.lower())[:10]:
+                        try:
+                            title = event_elem.find(["h3", "h4", "a"])
+                            if not title:
+                                continue
+
+                            event_name = title.get_text(strip=True)
+                            link = event_elem.find("a", href=True)
+                            url = link["href"] if link else self.website_url
+
+                            events.append(VenueEvent(
+                                name=event_name,
+                                date=None,
+                                time=None,
+                                location="Schubas Tavern, 3159 N Southport Ave",
+                                url=url,
+                                venue_name=self.venue_name,
+                                category=self.category
+                            ))
+                        except Exception as e:
+                            logger.debug(f"Failed to parse event: {e}")
+        except Exception as e:
+            logger.debug(f"Schubas page scrape failed: {e}")
+
+        return events
+
+
+class HideoutScraper(VenueScraper):
+    """The Hideout (1354 W Wabansia) - intimate venue."""
+
+    def __init__(self):
+        super().__init__(
+            venue_name="The Hideout",
+            website_url="https://www.hideoutchicago.com",
+            event_page_url="https://www.hideoutchicago.com/calendar",
+            category="music"
+        )
+
+    async def scrape_events_from_page(self) -> list[VenueEvent]:
+        """Scrape from Hideout calendar."""
+        events = []
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(self.event_page_url)
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, "html.parser")
+
+                    for event_elem in soup.find_all("div", class_=lambda x: x and "event" in x.lower())[:10]:
+                        try:
+                            title = event_elem.find(["h3", "h4", "a"])
+                            if not title:
+                                continue
+
+                            event_name = title.get_text(strip=True)
+                            link = event_elem.find("a", href=True)
+                            url = link["href"] if link else self.website_url
+
+                            events.append(VenueEvent(
+                                name=event_name,
+                                date=None,
+                                time=None,
+                                location="The Hideout, 1354 W Wabansia Ave",
+                                url=url,
+                                venue_name=self.venue_name,
+                                category=self.category
+                            ))
+                        except Exception as e:
+                            logger.debug(f"Failed to parse event: {e}")
+        except Exception as e:
+            logger.debug(f"Hideout page scrape failed: {e}")
+
+        return events
+
+
+class EmptyBottleScraper(VenueScraper):
+    """Empty Bottle (1035 N Western) - indie music."""
+
+    def __init__(self):
+        super().__init__(
+            venue_name="Empty Bottle",
+            website_url="https://www.emptybottle.com",
+            event_page_url="https://www.emptybottle.com/calendar",
+            category="music"
+        )
+
+    async def scrape_events_from_page(self) -> list[VenueEvent]:
+        """Scrape from Empty Bottle calendar."""
+        events = []
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(self.event_page_url)
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, "html.parser")
+
+                    for event_elem in soup.find_all("div", class_=lambda x: x and "event" in x.lower())[:10]:
+                        try:
+                            title = event_elem.find(["h3", "h4", "a"])
+                            if not title:
+                                continue
+
+                            event_name = title.get_text(strip=True)
+                            link = event_elem.find("a", href=True)
+                            url = link["href"] if link else self.website_url
+
+                            events.append(VenueEvent(
+                                name=event_name,
+                                date=None,
+                                time=None,
+                                location="Empty Bottle, 1035 N Western Ave",
+                                url=url,
+                                venue_name=self.venue_name,
+                                category=self.category
+                            ))
+                        except Exception as e:
+                            logger.debug(f"Failed to parse event: {e}")
+        except Exception as e:
+            logger.debug(f"Empty Bottle page scrape failed: {e}")
+
+        return events
+
+
+class ConcordScraper(VenueScraper):
+    """Concord Music Hall (2047 N Milwaukee) - indie/rock."""
+
+    def __init__(self):
+        super().__init__(
+            venue_name="Concord Music Hall",
+            website_url="https://www.concordmusichal.com",
+            event_page_url="https://www.concordmusichal.com/events",
+            category="music"
+        )
+
+    async def scrape_events_from_page(self) -> list[VenueEvent]:
+        """Scrape from Concord events page."""
+        events = []
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(self.event_page_url)
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, "html.parser")
+
+                    for event_elem in soup.find_all("div", class_=lambda x: x and "event" in x.lower())[:10]:
+                        try:
+                            title = event_elem.find(["h3", "h4", "a"])
+                            if not title:
+                                continue
+
+                            event_name = title.get_text(strip=True)
+                            link = event_elem.find("a", href=True)
+                            url = link["href"] if link else self.website_url
+
+                            events.append(VenueEvent(
+                                name=event_name,
+                                date=None,
+                                time=None,
+                                location="Concord Music Hall, 2047 N Milwaukee Ave",
+                                url=url,
+                                venue_name=self.venue_name,
+                                category=self.category
+                            ))
+                        except Exception as e:
+                            logger.debug(f"Failed to parse event: {e}")
+        except Exception as e:
+            logger.debug(f"Concord page scrape failed: {e}")
+
+        return events
+
+
+# Scraper registry
+BUCKTOWN_WICKER_PARK_SCRAPERS = [
+    SubterraneanScraper(),
+    ChopShopScraper(),
+    SchubaScraper(),
+    HideoutScraper(),
+    EmptyBottleScraper(),
+    ConcordScraper(),
 ]
 
 
-async def _search_venue_events(client: httpx.AsyncClient, venue_name: str, api_key: str) -> list[VenueEvent]:
-    """Search for upcoming events at a venue via SerpAPI."""
-    events = []
-
-    try:
-        await asyncio.sleep(RATE_LIMIT_DELAY)
-
-        # Search for events at this venue
-        response = await client.get(
-            SERP_API_URL,
-            params={
-                "q": f"{venue_name} Chicago events 2026",
-                "api_key": api_key,
-                "engine": "google",
-                "num": 10,
-            }
-        )
-        response.raise_for_status()
-
-        results = response.json()
-
-        # Parse knowledge graph / organic results for event info
-        if "knowledge_graph" in results:
-            kg = results["knowledge_graph"]
-            if "events" in kg:
-                for event_data in kg["events"][:5]:
-                    try:
-                        events.append(VenueEvent(
-                            name=event_data.get("title", "Unknown"),
-                            date=event_data.get("date", None),
-                            time=None,
-                            location=venue_name,
-                            url=event_data.get("link", ""),
-                            venue_name=venue_name,
-                            category="music"
-                        ))
-                    except Exception as e:
-                        logger.debug(f"Failed to parse event: {e}")
-
-        # Also parse organic results for event links
-        if "organic_results" in results:
-            for result in results["organic_results"][:5]:
-                try:
-                    title = result.get("title", "")
-                    link = result.get("link", "")
-                    snippet = result.get("snippet", "")
-
-                    # Look for event keywords in title/snippet
-                    if any(x in title.lower() or x in snippet.lower() for x in ["event", "concert", "show", "ticket", "buy tickets"]):
-                        events.append(VenueEvent(
-                            name=title[:100],
-                            date=None,  # Would need parsing from snippet
-                            time=None,
-                            location=venue_name,
-                            url=link,
-                            venue_name=venue_name,
-                            category="music"
-                        ))
-                except Exception as e:
-                    logger.debug(f"Failed to parse result: {e}")
-
-    except Exception as e:
-        logger.error(f"SerpAPI search failed for {venue_name}: {e}")
-
-    return events
-
-
 async def scrape_bucktown_wicker_park() -> list[VenueEvent]:
-    """Discover events at all Bucktown/Wicker Park venues via SerpAPI."""
+    """Scrape all Bucktown/Wicker Park venues with SerpAPI fallback."""
     all_events = []
-    api_key = os.environ.get("SERP_API_KEY")
-
-    if not api_key:
-        logger.warning("SERP_API_KEY not set - skipping event discovery")
-        return []
+    serp_api_key = os.environ.get("SERP_API_KEY")
 
     async with httpx.AsyncClient(timeout=15) as client:
-        for venue in BUCKTOWN_WICKER_PARK_VENUES:
+        for scraper in BUCKTOWN_WICKER_PARK_SCRAPERS:
             try:
-                logger.debug(f"Searching events for {venue['name']}...")
-                events = await _search_venue_events(client, venue["name"], api_key)
+                events = await scraper.scrape_events(client, serp_api_key)
                 all_events.extend(events)
-                logger.info(f"{venue['name']}: found {len(events)} events")
             except Exception as e:
-                logger.error(f"Error searching {venue['name']}: {e}")
+                logger.error(f"Error scraping {scraper.venue_name}: {e}")
 
-    logger.info(f"Total Bucktown/Wicker Park events discovered: {len(all_events)}")
+    logger.info(f"Total Bucktown/Wicker Park events: {len(all_events)}")
     return all_events
