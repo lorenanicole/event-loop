@@ -78,6 +78,7 @@ class AgentAction(BaseModel):
 
 async def search_local_db(context: RunContext[str], query: str) -> str:
     """Search local database for events (FREE - no API cost)"""
+    logger.info(f"search_local_db called with query: {query}")
     try:
         async with AsyncSessionLocal() as db:
             query_str = query.lower()
@@ -213,6 +214,7 @@ async def _persist_events_to_db(events: list[EventResult]) -> None:
 
 async def search_google_events(context: RunContext[str], query: str) -> str:
     """Search Google Events using SerpAPI (PAID - only if DB has few results)"""
+    logger.info(f"search_google_events called with query: {query}")
     try:
         if not SERPAPI_KEY:
             return "SerpAPI not configured"
@@ -379,6 +381,7 @@ def _extract_categories(query: str) -> list[str]:
 
 async def smart_search_expand(context: RunContext[str], query: str) -> str:
     """Expand user query with synonyms and extract intent using NLP (FREE)"""
+    logger.info(f"smart_search_expand called with query: {query}")
     try:
         tool = get_smart_search_tool()
         result = await tool.query_expansion_and_search(query)
@@ -436,7 +439,7 @@ def _extract_date_range(query: str) -> Optional[tuple[datetime, datetime]]:
     return None
 
 
-_model = AnthropicModel("claude-sonnet-5-5") if CLAUDE_API_KEY else None
+_model = AnthropicModel("claude-sonnet-5-5") if CLAUDE_API_KEY else None  # AnthropicModel wraps the model name
 
 agent = Agent(
     model=_model or "test",
