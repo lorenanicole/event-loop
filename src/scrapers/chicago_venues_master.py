@@ -90,7 +90,6 @@ CHICAGO_VENUES_MASTER = {
     ],
 
     "Logan Square": [
-        {"name": "Rosa's Lounge", "address": "3420 W Armitage Ave", "website": "https://www.rosaslounge.com", "event_page_url": "https://www.rosaslounge.com/calendar"},
         {"name": "Thalia Hall", "address": "1807 S Allport St", "website": "https://www.thaliahallchicago.com", "event_page_url": "https://www.thaliahallchicago.com/events"},
         {"name": "The Whistler", "address": "2421 N Milwaukee Ave", "website": "https://www.whistlerchicago.com", "event_page_url": "https://www.whistlerchicago.com/"},
         {"name": "Logan Theatre", "address": "2646 N Milwaukee Ave", "website": "https://www.logantheatre.com", "event_page_url": "https://www.logantheatre.com/"},
