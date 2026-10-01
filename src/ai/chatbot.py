@@ -462,8 +462,12 @@ IMPORTANT:
 - Show top 3-5 best-matched events
 - Format results with emojis and clear information (date, location, links, price info)
 - Keep responses concise and helpful""",
-    tools=[smart_search_expand, search_local_db, search_google_events],
 )
+
+# Register tools with the agent
+agent.tool(search_local_db)
+agent.tool(search_google_events)
+agent.tool(smart_search_expand)
 
 
 async def chat(user_message: str) -> str:
