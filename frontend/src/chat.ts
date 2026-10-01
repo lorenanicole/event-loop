@@ -283,11 +283,13 @@ Let's find your next great event! ⚡`;
   }
 
   private parseMarkdownAndEvents(text: string): string {
+    // Convert markdown links to HTML FIRST (before processing newlines)
+    let html = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
     // Convert markdown bold to HTML
-    let html = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-    // Convert markdown links to HTML
-    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
-    // Convert emojis and newlines
+    html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    // Convert backtick code to HTML
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+    // Convert newlines last
     html = html.replace(/\n/g, "<br>");
     return html;
   }
