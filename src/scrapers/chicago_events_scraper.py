@@ -156,6 +156,64 @@ def extract_concord(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
     return events
 
 
+def extract_generic_li(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Generic extractor for venues using li elements for event listings."""
+    events = []
+    try:
+        event_containers = soup.select("li")
+        logger.info(f"{config.name}: found {len(event_containers)} li elements")
+
+        for container in event_containers:
+            text = container.get_text(strip=True)
+            if not text or len(text) < 3:
+                continue
+
+            skip_terms = ['menu', 'sidebar', 'nav', 'footer', 'home', 'login', 'cart']
+            if any(skip in text.lower() for skip in skip_terms):
+                continue
+
+            events.append(VenueEvent(
+                name=text[:200], date=None, time=None,
+                location=f"{config.name}, {config.address}",
+                url=config.event_page_url or config.website_url,
+                venue_name=config.name, category=config.category
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from li")
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+    return events
+
+
+def extract_generic_item_class(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Generic extractor for venues using [class*='item'] for event listings."""
+    events = []
+    try:
+        event_containers = soup.select("[class*='item']")
+        logger.info(f"{config.name}: found {len(event_containers)} [class*='item'] elements")
+
+        for container in event_containers:
+            text = container.get_text(strip=True)
+            if not text or len(text) < 3:
+                continue
+
+            skip_terms = ['menu', 'sidebar', 'nav', 'footer', 'home', 'login', 'cart']
+            if any(skip in text.lower() for skip in skip_terms):
+                continue
+
+            events.append(VenueEvent(
+                name=text[:200], date=None, time=None,
+                location=f"{config.name}, {config.address}",
+                url=config.event_page_url or config.website_url,
+                venue_name=config.name, category=config.category
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from [class*='item']")
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+    return events
+
+
 def extract_rosas_lounge(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Rosa's Lounge - extract from li a (event list links)."""
     events = []
@@ -201,6 +259,89 @@ def extract_rosas_lounge(soup: BeautifulSoup, config: VenueConfig) -> list[Venue
 # ===== NEIGHBORHOOD CONFIGS =====
 
 CHICAGO_VENUES = {
+    "Loop": [
+        VenueConfig(
+            name="Chicago Theatre",
+            website_url="https://www.thechicagotheatre.com",
+            event_page_url="https://www.msg.com/calendar?venues=KovZpZA6AJ6A",
+            category="theater",
+            address="175 N State St",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_item_class,
+        ),
+        VenueConfig(
+            name="Jazz Showcase",
+            website_url="https://www.jazzshowcase.com",
+            event_page_url="https://www.jazzshowcase.com/calendar",
+            category="music",
+            address="806 S Plymouth Ct",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_li,
+        ),
+        VenueConfig(
+            name="Auditorium Theatre",
+            website_url="https://www.auditoriumtheatre.org",
+            event_page_url="https://www.auditoriumtheatre.org/events",
+            category="theater",
+            address="50 E Congress Pkwy",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_li,
+        ),
+        VenueConfig(
+            name="CIBC Theatre",
+            website_url="https://www.broadwayinchicago.com",
+            event_page_url="https://www.broadwayinchicago.com/cibc",
+            category="theater",
+            address="18 W Monroe St",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_item_class,
+        ),
+        VenueConfig(
+            name="Goodman Theatre",
+            website_url="https://www.goodmantheatre.org",
+            event_page_url="https://www.goodmantheatre.org/plays",
+            category="theater",
+            address="170 N Dearborn St",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_li,
+        ),
+        VenueConfig(
+            name="House of Blues Chicago",
+            website_url="https://www.houseofblues.com/chicago",
+            event_page_url="https://www.houseofblues.com/chicago/events",
+            category="music",
+            address="329 N Dearborn St",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_li,
+        ),
+        VenueConfig(
+            name="Civic Opera House",
+            website_url="https://www.lyricopera.org",
+            event_page_url="https://www.lyricopera.org/season",
+            category="theater",
+            address="20 N Wacker Dr",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_li,
+        ),
+        VenueConfig(
+            name="Jay Pritzker Pavilion",
+            website_url="https://www.millenniumparkpavilion.org",
+            event_page_url="https://www.millenniumparkpavilion.org/events",
+            category="music",
+            address="201 E Randolph St",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_item_class,
+        ),
+    ],
+
     "Wicker Park": [
         VenueConfig(
             name="Subterranean",
@@ -479,27 +620,6 @@ CHICAGO_VENUES = {
             event_page_url="https://www.unitedcenter.com/events",
             category="music",
             address="1901 W Madison St",
-            selectors={},
-            use_playwright=True,
-        ),
-    ],
-
-    "Loop": [
-        VenueConfig(
-            name="Chicago Theatre",
-            website_url="https://www.thechicagotheatre.com",
-            event_page_url="https://www.msg.com/calendar?venues=KovZpZA6AJ6A",
-            category="theater",
-            address="175 N State St",
-            selectors={},
-            use_playwright=True,
-        ),
-        VenueConfig(
-            name="Jazz Showcase",
-            website_url="https://www.jazzshowcase.com",
-            event_page_url="https://www.jazzshowcase.com/calendar",
-            category="music",
-            address="806 S Plymouth Ct",
             selectors={},
             use_playwright=True,
         ),
