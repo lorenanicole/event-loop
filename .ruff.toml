@@ -7,7 +7,8 @@ target-version = "py315"
 line-length = 100
 
 # Lint rules
-lint.select = [
+[tool.ruff.lint]
+select = [
     "E",      # pycodestyle errors
     "W",      # pycodestyle warnings
     "F",      # Pyflakes
@@ -22,25 +23,23 @@ lint.select = [
     "RUF",    # ruff-specific rules
 ]
 
-lint.ignore = [
+ignore = [
     "E501",   # Line too long (we handle this with line-length)
     "W503",   # Line break before binary operator
     "N806",   # Variable in function should be lowercase (for type hints)
 ]
 
-# Per-file-ignores
-[lint.per-file-ignores]
-"__init__.py" = ["F401"]
-"tests/*" = ["T201"]
-
 # McCabe complexity threshold
-lint.mccabe.max-complexity = 10
+[tool.ruff.lint.mccabe]
+max-complexity = 10
 
 # isort configuration (import sorting)
-lint.isort.known-first-party = ["src"]
-lint.isort.known-third-party = ["pydantic", "fastapi", "sqlalchemy"]
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+known-third-party = ["pydantic", "fastapi", "sqlalchemy"]
 
 # Exclude patterns
+[tool.ruff]
 exclude = [
     ".git",
     ".venv",
@@ -48,23 +47,5 @@ exclude = [
     "build",
     "dist",
     ".pytest_cache",
-    ".ruff_cache",
-    "htmlcov",
-    "*.egg-info",
+    "node_modules",
 ]
-
-# Format configuration
-format.quote-style = "double"
-format.indent-style = "space"
-format.line-ending = "auto"
-format.skip-magic-trailing-comma = false
-
-[tool.ruff.lint.pylint]
-# Max allowed arguments per function
-max-args = 6
-# Max allowed attributes per class
-max-attributes = 8
-
-[tool.ruff.lint.flake8-bugbear]
-# Extend immutable calls (avoid mutable default args)
-extend-immutable-calls = ["pydantic.Field"]
