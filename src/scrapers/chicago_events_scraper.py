@@ -9,6 +9,11 @@ from typing import Optional, Callable
 from bs4 import BeautifulSoup
 from src.scrapers.venue_scraper import VenueScraper, VenueConfig, VenueEvent
 import re
+import asyncio
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import select
+from src.database.models import EventModel, VenueModel, Base
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -723,10 +728,57 @@ CHICAGO_VENUES = {
 }
 
 
+async def save_events_to_db(async_session_maker, config: VenueConfig, events: list[VenueEvent]) -> None:
+    """Save extracted events to database."""
+    if not events:
+        return
+
+    async with async_session_maker() as session:
+        try:
+            # Find venue
+            stmt = select(VenueModel).where(VenueModel.name == config.name)
+            result = await session.execute(stmt)
+            venue = result.scalar_one_or_none()
+
+            if not venue:
+                logger.warning(f"Venue not found in database: {config.name}")
+                return
+
+            # Add events
+            for i, event in enumerate(events):
+                # Event name includes date/time info from extraction
+                event_model = EventModel(
+                    venue_id=venue.id,
+                    neighborhood_id=venue.neighborhood_id,
+                    name=event.name,
+                    date=None,  # Date strings from extraction, would need parsing
+                    category=event.category,
+                    address=event.location,
+                    venue_name=event.venue_name,
+                    origination_url=f"{event.url}#{config.name}#{i}",
+                    source="scraper",
+                )
+                session.add(event_model)
+
+            # Update venue event count
+            venue.events_count = len(events)
+            await session.commit()
+            logger.info(f"Saved {len(events)} events to database for {config.name}")
+
+        except Exception as e:
+            logger.error(f"Error saving events for {config.name}: {e}")
+            await session.rollback()
+
+
 async def scrape_chicago_events() -> dict[str, list[VenueEvent]]:
-    """Scrape ALL Chicago neighborhoods/venues."""
+    """Scrape ALL Chicago neighborhoods/venues and save to database."""
     results = {}
     total_events = 0
+
+    # Initialize database
+    DATABASE_URL = "sqlite+aiosqlite:////Users/lorenamesa/Workspace/python315/events.db"
+    engine = create_async_engine(DATABASE_URL, echo=False)
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with httpx.AsyncClient(timeout=15) as client:
         for neighborhood, venues in CHICAGO_VENUES.items():
@@ -741,6 +793,10 @@ async def scrape_chicago_events() -> dict[str, list[VenueEvent]]:
                     events = await scraper.scrape(client)
                     neighborhood_events.extend(events)
                     total_events += len(events)
+
+                    # Save events to database
+                    await save_events_to_db(async_session, config, events)
+
                 except Exception as e:
                     logger.error(f"Error scraping {config.name}: {e}")
 
@@ -750,6 +806,8 @@ async def scrape_chicago_events() -> dict[str, list[VenueEvent]]:
     logger.info(f"\n{'='*60}")
     logger.info(f"✅ TOTAL CHICAGO EVENTS: {total_events}")
     logger.info('='*60)
+
+    await engine.dispose()
 
     for neighborhood in sorted(results.keys()):
         events = results[neighborhood]
