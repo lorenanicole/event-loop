@@ -377,8 +377,8 @@ CHICAGO_VENUES = {
         ),
         VenueConfig(
             name="Buddy Guy's Legends",
-            website_url="https://www.buddyguyslegends.com",
-            event_page_url="https://www.buddyguyslegends.com/events",
+            website_url="https://buddyguy.com",
+            event_page_url="https://buddyguy.com/",
             category="music",
             address="700 S Wabash Ave",
             selectors={},

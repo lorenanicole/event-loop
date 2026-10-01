@@ -18,7 +18,7 @@ CHICAGO_VENUES_MASTER = {
 
         # Music & Jazz
         {"name": "Jazz Showcase", "address": "806 S Plymouth Ct", "website": "https://www.jazzshowcase.com", "event_page_url": "https://www.jazzshowcase.com/calendar", "category": "music"},
-        {"name": "Buddy Guy's Legends", "address": "700 S Wabash Ave", "website": "https://www.buddyguyslegends.com", "event_page_url": "https://www.buddyguyslegends.com/events", "category": "music"},
+        {"name": "Buddy Guy's Legends", "address": "700 S Wabash Ave", "website": "https://buddyguy.com", "event_page_url": "https://buddyguy.com/", "category": "music"},
         {"name": "House of Blues Chicago", "address": "329 N Dearborn St", "website": "https://www.houseofblues.com/chicago", "event_page_url": "https://www.houseofblues.com/chicago/events", "category": "music"},
 
         # Opera & Classical
