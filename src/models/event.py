@@ -21,4 +21,4 @@ class Event(EventCreate):
 
 class EventSearch(BaseModel):
     query: str = Field(..., description="Natural language search query")
-    limit: int = Field(default=20, le=100)
+    limit: int = Field(default=20, ge=1, le=100)

@@ -101,6 +101,7 @@ Let's find your next great event! ⚡`;
   }
 
   private async streamChat(message: string): Promise<void> {
+    console.log("Chat: Sending message:", message);
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -110,6 +111,7 @@ Let's find your next great event! ⚡`;
       }),
     });
 
+    console.log("Chat: Response status:", response.status);
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -127,26 +129,44 @@ Let's find your next great event! ⚡`;
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
+      // Keep last incomplete line in buffer
       buffer = lines.pop() || "";
 
-      for (const line of lines) {
+      let i = 0;
+      while (i < lines.length) {
+        const line = lines[i];
+
         if (line.startsWith("event: ")) {
           const eventType = line.slice(7);
-          const dataLine = lines.shift();
+          const dataLine = lines[i + 1];
+          console.log("Chat: Event type:", eventType);
 
           if (dataLine?.startsWith("data: ")) {
-            const data = JSON.parse(dataLine.slice(6));
-            await this.handleStreamEvent(eventType, data, (msg) => {
-              currentAssistantMessage += msg;
-            });
+            try {
+              const data = JSON.parse(dataLine.slice(6));
+              console.log("Chat: Event data:", data);
+              await this.handleStreamEvent(eventType, data, (msg) => {
+                currentAssistantMessage += msg;
+              });
+            } catch (e) {
+              console.error("Chat: Failed to parse event data:", e);
+            }
+            i += 2; // Skip event and data lines
+          } else {
+            i += 1;
           }
+        } else {
+          i += 1;
         }
       }
     }
 
     // Add final assistant message
+    console.log("Chat: Final message:", currentAssistantMessage);
     if (currentAssistantMessage) {
       this.addMessageToUI("assistant", currentAssistantMessage);
+    } else {
+      this.addMessageToUI("error", "No response received from AI");
     }
   }
 
@@ -219,12 +239,26 @@ Let's find your next great event! ⚡`;
 
     const contentEl = document.createElement("div");
     contentEl.className = "chat-content";
-    contentEl.textContent = content;
+
+    // Check if content contains event results (starts with Found N great match)
+    if (content.includes("📍 **Found") && content.includes("**")) {
+      contentEl.innerHTML = this.parseMarkdownAndEvents(content);
+    } else {
+      contentEl.textContent = content;
+    }
 
     messageEl.appendChild(avatar);
     messageEl.appendChild(contentEl);
     this.messageList.appendChild(messageEl);
     this.messageList.scrollTop = this.messageList.scrollHeight;
+  }
+
+  private parseMarkdownAndEvents(text: string): string {
+    // Convert markdown bold to HTML
+    let html = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    // Convert emojis and newlines
+    html = html.replace(/\n/g, "<br>");
+    return html;
   }
 
   private showStatus(status: string): void {

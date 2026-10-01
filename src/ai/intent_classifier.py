@@ -3,6 +3,7 @@ Intent classifier: Quickly determine if user is asking about Chicago events.
 Rejects out-of-scope questions early before running expensive REACT agent.
 """
 
+import os
 from enum import Enum
 import logging
 from pydantic_ai.models.anthropic import AnthropicModel
@@ -31,37 +32,44 @@ class IntentClassifier:
     def _build_agent(self):
         """Build a fast intent classification agent."""
         from pydantic_ai import Agent
-        from pydantic import BaseModel, Field
-
-        class IntentResult(BaseModel):
-            intent: str = Field(
-                description="One of: chicago_events, chicago_info, events_general, out_of_scope"
-            )
-            confidence: float = Field(
-                description="Confidence 0.0-1.0 that this is the correct intent"
-            )
-            reasoning: str = Field(description="Why we classified it this way")
 
         agent = Agent(
             model=self.model,
-            result_type=IntentResult,
-            system_prompt="""You are an intent classifier for a Chicago events chatbot.
-Classify the user's message into one of these categories:
+            system_prompt="""You are a precise intent classifier for a Chicago events chatbot.
+Classify the user's message into ONE of these categories:
 
-1. **chicago_events**: User asking about events/things to do in Chicago
-   - Examples: "Show me concerts", "What's happening this weekend?", "Comedy shows in Chicago"
+1. **chicago_events**: User asking about events/activities in Chicago
+   - EXPLICIT: "Show me concerts in Chicago", "What's happening in Chicago this weekend?"
+   - IMPLICIT: "What's happening tonight?", "Show me free events this weekend"
+     (Implicit = context suggests Chicago events, even if Chicago not mentioned)
+   - Confidence: 0.95+ if explicit, 0.85+ if implicit context is clear
 
-2. **chicago_info**: User asking about Chicago (but not events)
-   - Examples: "What neighborhoods should I visit?", "Best pizza in Chicago?"
+2. **chicago_info**: User asking about Chicago itself (NOT events)
+   - Examples: "Best neighborhoods?", "Where's the best pizza?", "Tell me about Chicago"
+   - Confidence: 0.90+
 
-3. **events_general**: Asking about events but NOT Chicago-specific
-   - Examples: "Where can I find events?", "Event recommendation engine"
+3. **events_general**: Generic event questions unrelated to Chicago
+   - Examples: "How do I find events?", "Tell me about event planning"
+   - Confidence: 0.80+
 
-4. **out_of_scope**: Anything else entirely
-   - Examples: "Tell me a joke", "What's the weather?", "Help with Python", "Write a poem"
+4. **out_of_scope**: Unrelated to Chicago or events
+   - Examples: "Tell me a joke", "What's the weather?", "Help with Python"
+   - Confidence: 0.99 (should be very certain)
 
-Be strict: If it's not clearly about Chicago events, classify as out_of_scope.
-Return JSON with: intent, confidence (0.0-1.0), reasoning.""",
+DECISION RULES:
+- If question is about events AND location is Chicago (explicit or implicit) → chicago_events
+- If question is about Chicago but NOT events → chicago_info
+- If question is about events but NOT Chicago → events_general
+- Otherwise → out_of_scope
+- When in doubt, lean toward chicago_events (this is a Chicago events bot)
+
+RESPONSE FORMAT:
+Return ONLY raw JSON object (no markdown, no code fences):
+{
+  "intent": "chicago_events|chicago_info|events_general|out_of_scope",
+  "confidence": 0.0-1.0,
+  "reasoning": "brief explanation"
+}""",
         )
         return agent
 
@@ -71,9 +79,36 @@ Return JSON with: intent, confidence (0.0-1.0), reasoning.""",
         Returns: (intent, confidence, reasoning)
         """
         try:
+            import json
+
+            # Run agent - it returns JSON text per system prompt
             result = await self.classifier_agent.run(user_message)
 
-            intent_str = result.data.intent.lower()
+            # AgentRunResult has .output attribute with the model's response
+            if hasattr(result, 'output'):
+                result_text = str(result.output).strip()
+            elif hasattr(result, 'data'):
+                result_text = str(result.data).strip()
+            else:
+                result_text = str(result).strip()
+
+            # Strip markdown code fences if present (agent returns ```json {...}```)
+            if result_text.startswith('```'):
+                result_text = result_text.split('```')[1]
+                # Remove language identifier if present (e.g., "json")
+                if result_text.startswith(('json', 'python', 'yaml')):
+                    result_text = result_text.split('\n', 1)[1]
+
+            result_text = result_text.strip()
+
+            if not result_text:
+                logger.warning(f"Empty response from intent classifier for: {user_message[:50]}")
+                return Intent.CHICAGO_EVENTS, 0.5, "Empty classifier response"
+
+            # Parse JSON response
+            data = json.loads(result_text)
+
+            intent_str = data.get('intent', 'out_of_scope').lower()
             intent_map = {
                 "chicago_events": Intent.CHICAGO_EVENTS,
                 "chicago_info": Intent.CHICAGO_INFO,
@@ -82,8 +117,8 @@ Return JSON with: intent, confidence (0.0-1.0), reasoning.""",
             }
 
             intent = intent_map.get(intent_str, Intent.OUT_OF_SCOPE)
-            confidence = result.data.confidence
-            reasoning = result.data.reasoning
+            confidence = float(data.get('confidence', 0.5))
+            reasoning = str(data.get('reasoning', ''))
 
             logger.info(
                 f"Intent: {intent.value} (confidence: {confidence:.2f}) - {reasoning[:60]}"
@@ -91,7 +126,7 @@ Return JSON with: intent, confidence (0.0-1.0), reasoning.""",
             return intent, confidence, reasoning
 
         except Exception as e:
-            logger.error(f"Intent classification error: {e}")
+            logger.error(f"Intent classification error: {e}", exc_info=True)
             # Default to chicago_events on error (fail open for events)
             return Intent.CHICAGO_EVENTS, 0.5, f"Classification error: {str(e)}"
 

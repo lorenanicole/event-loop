@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from src.database import init_db, AsyncSessionLocal
-from src.api import router
+from src.api import router, analytics_router
 from src.scraper import DO312Scraper
 from src.logging import configure_logging, get_logger
 from src import telemetry
@@ -60,6 +60,7 @@ app.add_middleware(
 
 # Include API routes
 app.include_router(router)
+app.include_router(analytics_router)
 
 
 @app.get("/")
@@ -118,5 +119,5 @@ if __name__ == "__main__":
         "main:app",
         host=host,
         port=port,
-        reload=True,
+        reload=False,
     )

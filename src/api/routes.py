@@ -17,6 +17,7 @@ from src.logging import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api", tags=["events"])
+analytics_router = APIRouter(prefix="", tags=["analytics"])
 
 
 @router.get(
@@ -423,7 +424,7 @@ async def chat_endpoint(request: ChatStreamRequest):
     )
 
 
-@router.get(
+@analytics_router.get(
     "/analytics/telemetry",
     summary="OpenTelemetry metrics",
     description="Get current metrics snapshot for observability",
@@ -446,7 +447,7 @@ def get_telemetry():
     return telemetry.get_metrics_snapshot()
 
 
-@router.get(
+@analytics_router.get(
     "/analytics/audit",
     summary="Query audit logs",
     description="Retrieve audit trail of operations with filtering",
@@ -499,7 +500,7 @@ async def get_audit_logs(
     return {"logs": logs, "count": len(logs)}
 
 
-@router.get(
+@analytics_router.get(
     "/analytics/summary",
     summary="Analytics dashboard summary",
     description="Get aggregate statistics for observability dashboard",
@@ -568,7 +569,7 @@ async def get_analytics_summary(db: AsyncSession = Depends(get_db)):
     }
 
 
-@router.get(
+@analytics_router.get(
     "/analytics/security",
     summary="Security metrics dashboard",
     description="Real-time security monitoring and threat detection metrics",
@@ -654,3 +655,61 @@ async def get_security_summary(db: AsyncSession = Depends(get_db)):
             for log in recent_blocks
         ],
     }
+
+
+class ChatRequest(BaseModel):
+    """Chat message request with optional thread ID for conversation continuity."""
+    message: str = Field(..., description="User's natural language query")
+    thread_id: Optional[str] = Field(None, description="Thread ID for multi-turn conversations")
+
+
+@router.post(
+    "/chat",
+    summary="AI-powered event chat with SSE streaming",
+    description="Send natural language queries and receive event recommendations via Server-Sent Events (SSE)",
+    tags=["Chat"],
+)
+async def chat(request: ChatRequest):
+    """
+    **Stream AI-powered chat responses for event discovery**
+
+    Uses PydanticAI REACT agent with Claude to understand questions and find events.
+
+    **Request:**
+    - `message`: Natural language query (e.g., "free jazz concerts this weekend")
+    - `thread_id` (optional): Reuse conversation thread for multi-turn chat
+
+    **Response:** Server-Sent Events (SSE) stream with events:
+    - `chat_started`: Thread initialized
+    - `thinking`: Agent reasoning status
+    - `tool_call`: Searching database/web
+    - `tool_result`: Results found
+    - `response`: Final message with event summary
+    - `complete`: Chat finished
+    - `error`: Error occurred
+
+    **Example:**
+    ```bash
+    curl -X POST http://localhost:8000/api/chat \\
+      -H "Content-Type: application/json" \\
+      -d '{"message": "free events tonight"}'
+    ```
+    """
+    logger.info(f"Chat request: message='{request.message[:50]}...' thread_id={request.thread_id}")
+    executor = ChatExecutor()
+
+    async def event_stream():
+        """Stream events from executor"""
+        try:
+            async for event in executor.execute(request.message, request.thread_id):
+                logger.debug(f"Chat event: {event.event}")
+                yield sse_event_formatter(event)
+        except Exception as e:
+            logger.error(f"Chat execution error: {type(e).__name__}: {e}", exc_info=True)
+            from src.ai.executor import StreamEvent
+            yield sse_event_formatter(StreamEvent(
+                event="error",
+                data={"error": str(e)}
+            ))
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")

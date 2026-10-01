@@ -10,7 +10,8 @@ import json
 from datetime import datetime
 from typing import AsyncGenerator
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import AsyncSessionLocal
 from src.database.models import ChatThreadModel, ChatMessageModel, AuditLogModel, EventModel
@@ -119,6 +120,7 @@ class ChatExecutor:
         """
         start_time = time.time()
         temp_thread_id = thread_id or "new_session"
+        db = None
 
         try:
             # 1. SECURITY: Validate input against prompt injection attacks
@@ -128,13 +130,6 @@ class ChatExecutor:
 
             if not is_safe:
                 logger.warning(f"Security check failed: {threat_reason}")
-                self._audit_log(
-                    "security_blocked",
-                    temp_thread_id,
-                    "blocked",
-                    0,
-                    {"reason": threat_reason},
-                )
                 yield StreamEvent(
                     event="error",
                     data={"error": "⚠️ Request blocked for security. Please try a different question."},
@@ -143,182 +138,177 @@ class ChatExecutor:
 
             message = sanitized_message
 
-            # Create or load chat thread
-            if thread_id:
-                thread = self.db.query(ChatThreadModel).filter_by(id=thread_id).first()
-                if not thread:
-                    raise ValueError(f"Thread {thread_id} not found")
-            else:
-                thread = ChatThreadModel()
-                self.db.add(thread)
-                self.db.flush()  # Get ID without committing
-                thread_id = thread.id
+            # Create async database session
+            async with AsyncSessionLocal() as db:
+                # Create or load chat thread
+                if thread_id:
+                    result = await db.execute(
+                        select(ChatThreadModel).filter(ChatThreadModel.id == thread_id)
+                    )
+                    thread = result.scalar_one_or_none()
+                    if not thread:
+                        raise ValueError(f"Thread {thread_id} not found")
+                else:
+                    thread = ChatThreadModel()
+                    db.add(thread)
+                    await db.flush()  # Get ID without committing
+                    thread_id = thread.id
 
-                # Record new session
-                telemetry.record_session_created()
-                self._audit_log("chat_created", thread_id, "success", 0, {})
+                    # Record new session
+                    telemetry.record_session_created()
 
-            # Classify intent before running expensive LLM
-            yield ThinkingEvent(
-                status="Analyzing your question...",
-                data={"status": "Analyzing your question..."},
-            )
-
-            classifier = get_intent_classifier()
-            intent, confidence, reasoning = await classifier.classify(message)
-
-            # Reject out-of-scope questions early
-            if intent != Intent.CHICAGO_EVENTS and confidence > 0.7:
-                response = await get_intent_response(intent, reasoning)
-                self._audit_log(
-                    "out_of_scope_question",
-                    thread_id,
-                    "success",
-                    0,
-                    {"intent": intent.value, "confidence": confidence},
+                # Classify intent before running expensive LLM
+                yield ThinkingEvent(
+                    status="Analyzing your question...",
+                    data={"status": "Analyzing your question..."},
                 )
-                yield ResponseEvent(
-                    message=response,
-                    tokens=len(response.split()) * 1.3,
-                    data={
-                        "message": response,
-                        "tokens": int(len(response.split()) * 1.3),
-                        "out_of_scope": True,
-                    },
-                )
-                yield CompleteEvent(
+
+                classifier = get_intent_classifier()
+                intent, confidence, reasoning = await classifier.classify(message)
+
+                # Reject out-of-scope questions early
+                if intent != Intent.CHICAGO_EVENTS and confidence > 0.7:
+                    response = await get_intent_response(intent, reasoning)
+                    yield ResponseEvent(
+                        message=response,
+                        tokens=len(response.split()) * 1.3,
+                        data={
+                            "message": response,
+                            "tokens": int(len(response.split()) * 1.3),
+                            "out_of_scope": True,
+                        },
+                    )
+                    yield CompleteEvent(
+                        thread_id=thread_id,
+                        tokens_used=0,
+                        data={
+                            "thread_id": thread_id,
+                            "tokens_used": 0,
+                            "out_of_scope": True,
+                        },
+                    )
+                    return
+
+                # Record question (only if in-scope)
+                telemetry.record_question_asked()
+
+                # Check conversation limits
+                remaining_tokens = self.MAX_TOKENS_PER_CONVERSATION - thread.total_tokens
+                remaining_turns = self.MAX_TURNS_PER_CONVERSATION - thread.turn_count
+
+                if remaining_turns <= 0 or remaining_tokens <= 0:
+                    yield ConversationStatusEvent(
+                        status="Conversation limit reached. Please start a new chat.",
+                        remaining_tokens=0,
+                        remaining_turns=0,
+                        data={
+                            "status": "limit_reached",
+                            "message": "This conversation has reached its limit. Start a new one!"
+                        }
+                    )
+                    return
+
+                yield ChatStartedEvent(thread_id=thread_id, data={"thread_id": thread_id})
+
+                # Store user message
+                user_msg = ChatMessageModel(
                     thread_id=thread_id,
-                    tokens_used=0,
-                    data={
-                        "thread_id": thread_id,
-                        "tokens_used": 0,
-                        "out_of_scope": True,
-                    },
+                    role="user",
+                    content=message,
+                    token_count=len(message.split()),  # Simple estimate
                 )
-                return
+                db.add(user_msg)
+                await db.flush()
 
-            # Record question (only if in-scope)
-            telemetry.record_question_asked()
-            self._audit_log("question_asked", thread_id, "success", 0, {"message": message[:100]})
+                # State 2: Thinking
+                yield ThinkingEvent(
+                    status="Analyzing your request...",
+                    data={"status": "Analyzing your request..."}
+                )
 
-            # Check conversation limits
-            remaining_tokens = self.MAX_TOKENS_PER_CONVERSATION - thread.total_tokens
-            remaining_turns = self.MAX_TURNS_PER_CONVERSATION - thread.turn_count
+                # Run REACT agent with event interception
+                full_response = ""
+                tool_calls_made = 0
+                total_tokens = 0
 
-            if remaining_turns <= 0 or remaining_tokens <= 0:
-                yield ConversationStatusEvent(
-                    status="Conversation limit reached. Please start a new chat.",
-                    remaining_tokens=0,
-                    remaining_turns=0,
+                async for event in self._run_agent_with_events(message):
+                    if event.event == "tool_call":
+                        tool_calls_made += 1
+                        yield event
+                    elif event.event == "tool_result":
+                        yield event
+                    elif event.event == "response":
+                        full_response = event.data.get("message", "")
+                        total_tokens = event.data.get("tokens", 0)
+
+                # State Final: Response and Complete
+                yield ResponseEvent(
+                    message=full_response,
+                    tokens=total_tokens,
                     data={
-                        "status": "limit_reached",
-                        "message": "This conversation has reached its limit. Start a new one!"
+                        "message": full_response,
+                        "tokens": total_tokens,
+                        "tool_calls": tool_calls_made,
                     }
                 )
-                return
 
-            yield ChatStartedEvent(thread_id=thread_id, data={"thread_id": thread_id})
+                # Store assistant message
+                assistant_msg = ChatMessageModel(
+                    thread_id=thread_id,
+                    role="assistant",
+                    content=full_response,
+                    token_count=total_tokens,
+                    tool_calls_made=tool_calls_made,
+                )
+                db.add(assistant_msg)
 
-            # Store user message
-            user_msg = ChatMessageModel(
-                thread_id=thread_id,
-                role="user",
-                content=message,
-                token_count=len(message.split()),  # Simple estimate
-            )
-            self.db.add(user_msg)
-            self.db.flush()
+                # Update thread totals
+                thread.total_tokens += total_tokens
+                thread.turn_count += 1
+                await db.commit()
 
-            # State 2: Thinking
-            yield ThinkingEvent(
-                status="Analyzing your request...",
-                data={"status": "Analyzing your request..."}
-            )
+                # Record telemetry for this interaction
+                telemetry.record_tool_call("agent_run", 0, total_tokens)
 
-            # Run REACT agent with event interception
-            full_response = ""
-            tool_calls_made = 0
-            total_tokens = 0
+                # Check if approaching limits and emit status
+                new_remaining_tokens = self.MAX_TOKENS_PER_CONVERSATION - thread.total_tokens
+                new_remaining_turns = self.MAX_TURNS_PER_CONVERSATION - thread.turn_count
+                is_session_complete = new_remaining_turns <= 0 or new_remaining_tokens <= 0
 
-            async for event in self._run_agent_with_events(message):
-                if event.event == "tool_call":
-                    tool_calls_made += 1
-                    yield event
-                elif event.event == "tool_result":
-                    yield event
-                elif event.event == "response":
-                    full_response = event.data.get("message", "")
-                    total_tokens = event.data.get("tokens", 0)
+                if new_remaining_tokens < (self.MAX_TOKENS_PER_CONVERSATION * (1 - self.TOKEN_WARNING_THRESHOLD)):
+                    yield ConversationStatusEvent(
+                        status="One more question available",
+                        remaining_tokens=max(0, new_remaining_tokens),
+                        remaining_turns=max(0, new_remaining_turns),
+                        data={
+                            "status": "limit_approaching",
+                            "remaining_tokens": max(0, new_remaining_tokens),
+                            "remaining_turns": max(0, new_remaining_turns),
+                        }
+                    )
 
-            # State Final: Response and Complete
-            yield ResponseEvent(
-                message=full_response,
-                tokens=total_tokens,
-                data={
-                    "message": full_response,
-                    "tokens": total_tokens,
-                    "tool_calls": tool_calls_made,
-                }
-            )
+                # Record completion metrics if session is done
+                if is_session_complete:
+                    duration_ms = (time.time() - start_time) * 1000
+                    telemetry.record_session_completed(
+                        tokens=thread.total_tokens,
+                        question_count=thread.turn_count,
+                        duration_ms=duration_ms,
+                    )
+                    thread.status = "completed"
+                    await db.commit()
 
-            # Store assistant message
-            assistant_msg = ChatMessageModel(
-                thread_id=thread_id,
-                role="assistant",
-                content=full_response,
-                token_count=total_tokens,
-                tool_calls_made=tool_calls_made,
-            )
-            self.db.add(assistant_msg)
-
-            # Update thread totals
-            thread.total_tokens += total_tokens
-            thread.turn_count += 1
-            self.db.commit()
-
-            # Record telemetry for this interaction
-            telemetry.record_tool_call("agent_run", 0, total_tokens)
-
-            # Check if approaching limits and emit status
-            new_remaining_tokens = self.MAX_TOKENS_PER_CONVERSATION - thread.total_tokens
-            new_remaining_turns = self.MAX_TURNS_PER_CONVERSATION - thread.turn_count
-            is_session_complete = new_remaining_turns <= 0 or new_remaining_tokens <= 0
-
-            if new_remaining_tokens < (self.MAX_TOKENS_PER_CONVERSATION * (1 - self.TOKEN_WARNING_THRESHOLD)):
-                yield ConversationStatusEvent(
-                    status="One more question available",
-                    remaining_tokens=max(0, new_remaining_tokens),
-                    remaining_turns=max(0, new_remaining_turns),
+                yield CompleteEvent(
+                    thread_id=thread_id,
+                    tokens_used=total_tokens,
                     data={
-                        "status": "limit_approaching",
+                        "thread_id": thread_id,
+                        "tokens_used": total_tokens,
+                        "tool_calls": tool_calls_made,
                         "remaining_tokens": max(0, new_remaining_tokens),
                         "remaining_turns": max(0, new_remaining_turns),
                     }
                 )
-
-            # Record completion metrics if session is done
-            if is_session_complete:
-                duration_ms = (time.time() - start_time) * 1000
-                telemetry.record_session_completed(
-                    tokens=thread.total_tokens,
-                    question_count=thread.turn_count,
-                    duration_ms=duration_ms,
-                )
-                thread.status = "completed"
-                self.db.commit()
-                self._audit_log("session_completed", thread_id, "success", thread.total_tokens, {})
-
-            yield CompleteEvent(
-                thread_id=thread_id,
-                tokens_used=total_tokens,
-                data={
-                    "thread_id": thread_id,
-                    "tokens_used": total_tokens,
-                    "tool_calls": tool_calls_made,
-                    "remaining_tokens": max(0, new_remaining_tokens),
-                    "remaining_turns": max(0, new_remaining_turns),
-                }
-            )
 
         except Exception as e:
             logger.error(f"Execution error: {e}")
@@ -327,14 +317,6 @@ class ChatExecutor:
             if isinstance(e, Exception):
                 try:
                     error_type, is_retryable = ErrorClassifier.classify_llm_error(e)
-                    self._audit_log(
-                        "execution_error",
-                        thread_id,
-                        "failure",
-                        0,
-                        {"error_type": error_type, "retryable": is_retryable},
-                        error_message=str(e),
-                    )
                 except:
                     pass
 
@@ -344,8 +326,6 @@ class ChatExecutor:
                 event="error",
                 data={"error": error_message}
             )
-        finally:
-            self.db.close()
 
     def _get_user_friendly_error(self, error_str: str) -> str:
         """Convert technical errors into user-friendly messages."""
@@ -458,22 +438,21 @@ class ChatExecutor:
         Fallback: Search database only when LLM is unavailable.
         Simple keyword search without AI enhancement.
         """
-        try:
-            if not db_circuit_breaker.is_available():
-                yield ResponseEvent(
-                    message="🔧 Both AI and database services are unavailable. Try again later.",
-                    tokens=20,
-                    data={"message": "Services unavailable.", "tokens": 20, "error": True},
-                )
-                return
-
-            # DB fallback search disabled during async migration
+        if not db_circuit_breaker.is_available():
             yield ResponseEvent(
-                message="Database fallback search temporarily unavailable. Please try again.",
-                tokens=15,
-                data={"message": "DB search unavailable", "tokens": 15, "error": True},
+                message="🔧 Both AI and database services are unavailable. Try again later.",
+                tokens=20,
+                data={"message": "Services unavailable.", "tokens": 20, "error": True},
             )
             return
+
+        # DB fallback search disabled during async migration
+        yield ResponseEvent(
+            message="Database fallback search temporarily unavailable. Please try again.",
+            tokens=15,
+            data={"message": "DB search unavailable", "tokens": 15, "error": True},
+        )
+        return
 
 
     def _audit_log(

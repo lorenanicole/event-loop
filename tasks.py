@@ -238,11 +238,31 @@ def security_audit(c):
 
 
 @task
+def dev(c):
+    """Run backend server with uv."""
+    print_header("Starting Backend (EventLoop API)")
+    print(f"{YELLOW}Running: uv run python main.py{RESET}\n")
+    c.run("uv run python main.py")
+
+
+@task
+def frontend(c):
+    """Run frontend dev server."""
+    print_header("Starting Frontend (Vite)")
+    print(f"{YELLOW}Running: npm run dev{RESET}\n")
+    c.run("cd frontend && npm run dev", pty=True)
+
+
+@task
 def info(c):
     """Show project info and commands."""
     print_header("Chicago Events Chatbot - Development")
 
     print(f"""
+{BOLD}Development:{RESET}
+  invoke dev               # Start backend with uv (port 8000)
+  invoke frontend          # Start frontend dev server (port 5173)
+
 {BOLD}Quick Commands:{RESET}
   invoke test              # Run all tests
   invoke test --file security  # Run security tests
@@ -281,6 +301,8 @@ def info(c):
 
 # Create command collection
 ns = Collection()
+ns.add_task(dev)
+ns.add_task(frontend)
 ns.add_task(test)
 ns.add_task(test_quick)
 ns.add_task(lint)

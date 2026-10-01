@@ -232,7 +232,7 @@ class TestScraperErrorRecovery:
         from src.resilience import RetryPolicy
 
         policy = RetryPolicy(max_retries=3, initial_delay_ms=10)
-        result = await policy.execute(flaky_scraper(), "test_scrape")
+        result = await policy.execute(flaky_scraper, "test_scrape")
 
         assert result["events"] == []
         assert attempt_count == 3

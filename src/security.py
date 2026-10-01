@@ -172,7 +172,7 @@ class RateLimiter:
     def __init__(self):
         self.injection_attempts = {}  # thread_id -> count
         self.MAX_INJECTIONS_PER_SESSION = 3  # Allow 3 attempts before blocking
-        self.BLOCK_THRESHOLD = 5  # Block session after 5 failed attempts
+        self.BLOCK_THRESHOLD = 3  # Block session after 3 failed attempts
 
     def record_injection_attempt(self, thread_id: str) -> bool:
         """

@@ -29,10 +29,9 @@ lint.ignore = [
 ]
 
 # Per-file-ignores
-lint.per-file-ignores = {
-    "__init__.py" = ["F401"],  # Unused imports in __init__
-    "tests/*" = ["T201"],  # Allow print in tests
-}
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/*" = ["T201"]
 
 # McCabe complexity threshold
 lint.mccabe.max-complexity = 10

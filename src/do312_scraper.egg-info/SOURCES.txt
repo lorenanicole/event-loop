@@ -2,6 +2,7 @@ LICENSE
 README.md
 pyproject.toml
 src/__init__.py
+src/logging.py
 src/resilience.py
 src/security.py
 src/telemetry.py

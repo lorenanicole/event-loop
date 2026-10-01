@@ -65,8 +65,8 @@ class CircuitBreaker:
             return True
 
         if self.status == ServiceStatus.UNHEALTHY:
-            # Try recovery after timeout
-            if self.last_failure_time:
+            # Try recovery after timeout (only if recovery timeout is configured)
+            if self.last_failure_time and self.recovery_timeout.total_seconds() > 0:
                 if datetime.utcnow() >= self.last_failure_time + self.recovery_timeout:
                     logger.info(f"CircuitBreaker({self.name}): Attempting recovery...")
                     self.failure_count = 0
@@ -90,12 +90,19 @@ class RetryPolicy:
         self.initial_delay_ms = initial_delay_ms
         self.max_delay_ms = max_delay_ms
 
-    async def execute(self, coro, operation_name: str = "operation"):
-        """Execute coroutine with exponential backoff."""
+    async def execute(self, coro_func, operation_name: str = "operation"):
+        """Execute coroutine with exponential backoff.
+
+        Args:
+            coro_func: A callable that returns a coroutine (not a coroutine object itself)
+            operation_name: Name of the operation for logging
+        """
         delay_ms = self.initial_delay_ms
 
         for attempt in range(self.max_retries + 1):
             try:
+                # Call the function to create a fresh coroutine each time
+                coro = coro_func()
                 return await coro
             except Exception as e:
                 if attempt < self.max_retries:
@@ -123,20 +130,20 @@ class ErrorClassifier:
         error_str = str(error).lower()
 
         # Authentication/Authorization errors (permanent)
-        if any(x in error_str for x in ["invalid_api_key", "unauthorized", "403", "401"]):
+        if any(x in error_str for x in ["invalid api key", "invalid_api_key", "unauthorized", "403", "401"]):
             return ("auth_error", False)
 
-        # Rate limiting (transient)
-        if any(x in error_str for x in ["rate_limit", "429", "quota"]):
+        # Rate limiting (transient) - check this before "quota" in insufficient_quota
+        if any(x in error_str for x in ["rate limit", "rate_limit", "429"]):
             return ("rate_limit", True)
+
+        # Out of tokens (permanent for this request) - check before other patterns
+        if any(x in error_str for x in ["insufficient quota", "insufficient_quota"]):
+            return ("insufficient_quota", False)
 
         # Service unavailable (transient)
         if any(x in error_str for x in ["unavailable", "503", "timeout", "connection"]):
             return ("service_unavailable", True)
-
-        # Out of tokens (permanent for this request)
-        if any(x in error_str for x in ["insufficient_quota", "token", "max_tokens"]):
-            return ("insufficient_quota", False)
 
         # Unknown (assume transient)
         return ("unknown", True)

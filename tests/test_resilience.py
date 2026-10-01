@@ -79,7 +79,7 @@ class TestRetryPolicy:
             call_count += 1
             return "success"
 
-        result = await policy.execute(success_coro(), "test_op")
+        result = await policy.execute(success_coro, "test_op")
         assert result == "success"
         assert call_count == 1
 
@@ -96,7 +96,7 @@ class TestRetryPolicy:
                 raise ValueError("Temporary failure")
             return "success"
 
-        result = await policy.execute(fail_then_succeed(), "test_op")
+        result = await policy.execute(fail_then_succeed, "test_op")
         assert result == "success"
         assert call_count == 2
 
@@ -109,7 +109,7 @@ class TestRetryPolicy:
             raise ValueError("Persistent failure")
 
         with pytest.raises(ValueError):
-            await policy.execute(always_fails(), "test_op")
+            await policy.execute(always_fails, "test_op")
 
     @pytest.mark.asyncio
     async def test_exponential_backoff(self):

@@ -128,7 +128,7 @@ class TestChatEndpoints:
         )
         # If it doesn't error on structure
         if response.status_code == 200:
-            assert response.headers.get("content-type") == "text/event-stream"
+            assert "text/event-stream" in response.headers.get("content-type", "")
             assert "no-cache" in response.headers.get("cache-control", "")
 
 
