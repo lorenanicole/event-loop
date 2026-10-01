@@ -26,6 +26,19 @@ async def startup_event():
     """Initialize database on startup"""
     await init_db()
     logger.info("Database initialized")
+
+    # Backfill cost and age_range for existing events
+    try:
+        from scripts.backfill_events import backfill_cost_and_age_range
+        stats = await backfill_cost_and_age_range()
+        logger.info(
+            f"Backfill complete: {stats['cost_updated']} cost, "
+            f"{stats['age_range_updated']} age_range, "
+            f"{stats['errors']} errors"
+        )
+    except Exception as e:
+        logger.warning(f"Backfill skipped or failed: {e}")
+
     # For telemetry, we'll use AsyncSessionLocal when metrics are accessed
 
 

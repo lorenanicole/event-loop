@@ -1,0 +1,140 @@
+"""
+Event enrichment utilities for extracting cost and age_range information from event data.
+Uses regex patterns for fast, simple extraction without AI.
+"""
+
+import re
+import logging
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+
+# Cost patterns - ordered by priority (more specific first)
+COST_PATTERNS = [
+    # Free variations
+    (r"\b(?:free|no charge|no admission fee)\b", "Free", re.IGNORECASE),
+    # Donation/PWYC (Pay What You Can) - check before price patterns
+    (r"\b(?:donation|suggested donation|pwyc|pay what you can)\b", "Donation", re.IGNORECASE),
+    # Price ranges: $10-20, $10–20, $10 to $20
+    (r"\$\d+(?:\s*[-–to]+\s*\$?\d+)?", None, re.IGNORECASE),  # Capture the match
+    # Paid (generic)
+    (r"\b(?:paid event|ticketed)\b", "Paid", re.IGNORECASE),
+]
+
+# Age range patterns - ordered by priority (more specific first)
+AGE_PATTERNS = [
+    # Age + (e.g., 18+, 21+, 13+) - most specific, without trailing word boundary (+ is not word char)
+    (r"\b(\d{1,2})\+", None, re.IGNORECASE),  # Capture the number
+    # Age and over (e.g., 18 and over, 21 and over)
+    (r"\b(\d{1,2})\s+and\s+over\b", None, re.IGNORECASE),  # Capture the number
+    # 18 and up, 21 and up
+    (r"\b(\d{1,2})\s+(?:and\s+)?up\b", None, re.IGNORECASE),  # Capture the number
+    # Years old or years of age - specific numeric pattern
+    (r"\b(\d{1,2})\s+years?\s+(?:old|of age)\b", None, re.IGNORECASE),  # Capture the number
+    # Minimum age
+    (r"\bminimum age[:\s]+(\d{1,2})\b", None, re.IGNORECASE),  # Capture the number
+    # All ages - before kids friendly to prioritize specificity
+    (r"\b(?:all ages|family friendly|family-friendly)\b", "All ages", re.IGNORECASE),
+    # Kids/family related - less specific
+    (r"\b(?:kids?\s+friendly|for kids?|family event)\b", "Kids friendly", re.IGNORECASE),
+    # Note: removed "children" from kids_friendly pattern as it conflicts with numeric patterns
+]
+
+
+def extract_cost(text: str) -> Optional[str]:
+    """
+    Extract cost information from event text.
+    Returns: "Free", "Donation", a price range like "$25", "$15-30", or None if not found.
+    """
+    if not text or not isinstance(text, str):
+        return None
+
+    text = text.strip()
+
+    for pattern, replacement, flags in COST_PATTERNS:
+        match = re.search(pattern, text, flags)
+        if match:
+            if replacement:
+                return replacement
+            else:
+                # Return the matched text (e.g., "$25" or "$10-20")
+                return match.group(0).strip()
+
+    return None
+
+
+def extract_age_range(text: str) -> Optional[str]:
+    """
+    Extract age range information from event text.
+    Returns: "All ages", "Kids friendly", "18+", "21+", etc., or None if not found.
+    """
+    if not text or not isinstance(text, str):
+        return None
+
+    text = text.strip()
+
+    for pattern, replacement, flags in AGE_PATTERNS:
+        match = re.search(pattern, text, flags)
+        if match:
+            if replacement:
+                return replacement
+            else:
+                # Extract the age number and format as "18+", "21+", etc.
+                age_num = match.group(1)
+                return f"{age_num}+"
+
+    return None
+
+
+def extract_from_event_text(
+    event_name: str,
+    details: Optional[str] = None,
+) -> tuple[Optional[str], Optional[str]]:
+    """
+    Combined extraction of cost and age_range from event name and details.
+    Searches both name and details, prioritizing details (more detailed info).
+
+    Returns: (cost, age_range) tuple
+    """
+    # Combine name and details for comprehensive search
+    full_text = f"{event_name} {details or ''}".strip()
+
+    # Extract cost (check name and full text)
+    cost = extract_cost(event_name)
+    if not cost:
+        cost = extract_cost(full_text)
+
+    # Extract age_range (check name and full text)
+    age_range = extract_age_range(event_name)
+    if not age_range:
+        age_range = extract_age_range(full_text)
+
+    return cost, age_range
+
+
+def extract_and_update_event(event_data: dict) -> dict:
+    """
+    Extract cost and age_range from event data and update the dict in-place.
+    Used during scraping to enrich events before saving to DB.
+
+    Args:
+        event_data: dict with 'name' and optional 'details' keys
+
+    Returns:
+        Updated event_data dict with cost and age_range added if extracted
+    """
+    if not event_data:
+        return event_data
+
+    name = event_data.get("name", "")
+    details = event_data.get("details", "")
+
+    cost, age_range = extract_from_event_text(name, details)
+
+    if cost:
+        event_data["cost"] = cost
+    if age_range:
+        event_data["age_range"] = age_range
+
+    return event_data

@@ -9,6 +9,8 @@ class EventCreate(BaseModel):
     category: str
     details: Optional[str] = None
     origination_url: str
+    cost: Optional[str] = None
+    age_range: Optional[str] = None
     date_retrieved: datetime = Field(default_factory=datetime.utcnow)
 
 

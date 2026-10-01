@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 import httpx
 from src.models import EventCreate
 from src.database.models import EventModel
+from src.ai.event_enrichment import extract_from_event_text
 
 logger = logging.getLogger(__name__)
 
@@ -116,13 +117,24 @@ class YourChicagoGuideScraper:
             if not origination_url:
                 return None
 
-            return EventCreate(
+            # Extract cost and age_range from title and details
+            cost, age_range = extract_from_event_text(title, details)
+
+            event = EventCreate(
                 name=title,
                 date=event_date,
                 category=category,
                 details=details,
                 origination_url=origination_url,
             )
+
+            # Add cost and age_range to the event if extracted
+            if cost:
+                event.cost = cost
+            if age_range:
+                event.age_range = age_range
+
+            return event
 
         except Exception as e:
             logger.debug(f"Parse error: {e}")

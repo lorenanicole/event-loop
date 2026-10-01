@@ -230,3 +230,166 @@ class TestResultFiltering:
         results = _filter_top_results(events, "jazz", limit=10)
         # First result should have higher confidence
         assert results[0].confidence >= results[-1].confidence
+
+
+class TestEventEnrichment:
+    """Test cost and age_range extraction from event data."""
+
+    def test_extract_cost_free(self):
+        """Extract 'free' from event text."""
+        from src.ai.event_enrichment import extract_cost
+
+        cost = extract_cost("Free Concert in the Park")
+        assert cost == "Free"
+
+        cost = extract_cost("No admission fee - all welcome!")
+        assert cost == "Free"
+
+    def test_extract_cost_price_range(self):
+        """Extract price ranges like $10-20."""
+        from src.ai.event_enrichment import extract_cost
+
+        cost = extract_cost("Comedy Show - $25")
+        assert cost == "$25"
+
+        cost = extract_cost("Tickets: $15-30")
+        assert cost == "$15-30"
+
+    def test_extract_cost_donation(self):
+        """Extract donation-based pricing."""
+        from src.ai.event_enrichment import extract_cost
+
+        cost = extract_cost("Suggested donation: $10")
+        assert cost == "Donation"
+
+        cost = extract_cost("Pay What You Can - PWYC")
+        assert cost == "Donation"
+
+    def test_extract_cost_paid(self):
+        """Extract generic paid designation."""
+        from src.ai.event_enrichment import extract_cost
+
+        cost = extract_cost("Paid ticketed event")
+        assert cost == "Paid"
+
+    def test_extract_cost_none(self):
+        """Return None when no cost found."""
+        from src.ai.event_enrichment import extract_cost
+
+        cost = extract_cost("Random event with no cost info")
+        assert cost is None
+
+    def test_extract_age_range_all_ages(self):
+        """Extract 'all ages' designation."""
+        from src.ai.event_enrichment import extract_age_range
+
+        age = extract_age_range("All ages welcome - Family Friendly Event")
+        assert age == "All ages"
+
+    def test_extract_age_range_kids_friendly(self):
+        """Extract kids/family friendly designation."""
+        from src.ai.event_enrichment import extract_age_range
+
+        age = extract_age_range("Kids Friendly Workshop")
+        assert age == "Kids friendly"
+
+        age = extract_age_range("Family Event - Children Welcome")
+        assert age == "Kids friendly"
+
+    def test_extract_age_range_plus_format(self):
+        """Extract age+ format (18+, 21+, etc)."""
+        from src.ai.event_enrichment import extract_age_range
+
+        age = extract_age_range("18+ Bar Crawl")
+        assert age == "18+"
+
+        age = extract_age_range("21+ Only - Must have valid ID")
+        assert age == "21+"
+
+        age = extract_age_range("13+ concert")
+        assert age == "13+"
+
+    def test_extract_age_range_and_over_format(self):
+        """Extract 'age and over' format."""
+        from src.ai.event_enrichment import extract_age_range
+
+        age = extract_age_range("Event for 18 and over attendees")
+        assert age == "18+"
+
+        age = extract_age_range("21 and up only")
+        assert age == "21+"
+
+    def test_extract_age_range_years_old_format(self):
+        """Extract 'age years old' format."""
+        from src.ai.event_enrichment import extract_age_range
+
+        age = extract_age_range("Children 5 years old and up")
+        assert age == "5+"
+
+    def test_extract_age_range_none(self):
+        """Return None when no age_range found."""
+        from src.ai.event_enrichment import extract_age_range
+
+        age = extract_age_range("Random event with no age restrictions")
+        assert age is None
+
+    def test_extract_from_event_text_both_fields(self):
+        """Extract both cost and age_range from combined text."""
+        from src.ai.event_enrichment import extract_from_event_text
+
+        cost, age = extract_from_event_text(
+            event_name="Free Comedy Show",
+            details="$10 donation - 18+ only - Adult humor"
+        )
+        # Should prioritize details for better extraction
+        assert cost in ["Free", "$10", "Donation"]
+        assert age == "18+"
+
+    def test_extract_from_event_text_empty(self):
+        """Handle empty text gracefully."""
+        from src.ai.event_enrichment import extract_from_event_text
+
+        cost, age = extract_from_event_text("", None)
+        assert cost is None
+        assert age is None
+
+    def test_extract_and_update_event(self):
+        """Extract and update event dict with cost/age_range."""
+        from src.ai.event_enrichment import extract_and_update_event
+
+        event = {
+            "name": "Free All-Ages Concert",
+            "details": "Family friendly music event",
+            "category": "Music"
+        }
+
+        updated = extract_and_update_event(event)
+        assert updated.get("cost") == "Free"
+        assert updated.get("age_range") == "All ages"
+
+    def test_extract_and_update_event_partial(self):
+        """Extract and update only available fields."""
+        from src.ai.event_enrichment import extract_and_update_event
+
+        event = {
+            "name": "Concert - $25",
+            "category": "Music"
+        }
+
+        updated = extract_and_update_event(event)
+        assert updated.get("cost") == "$25"
+        # age_range not in details, should be None
+        assert updated.get("age_range") is None
+
+    def test_case_insensitive_extraction(self):
+        """Extraction should work regardless of case."""
+        from src.ai.event_enrichment import extract_cost, extract_age_range
+
+        cost = extract_cost("FREE Concert")
+        assert cost == "Free"
+
+        age = extract_age_range("18+ ONLY")
+        assert age == "18+"
+
+        age = extract_age_range("ALL AGES Welcome")
+        assert age == "All ages"

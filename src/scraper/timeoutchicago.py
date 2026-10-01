@@ -6,6 +6,7 @@ from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 from src.models import EventCreate
 from src.database.models import EventModel
+from src.ai.event_enrichment import extract_from_event_text
 
 logger = logging.getLogger(__name__)
 
@@ -118,13 +119,24 @@ class TimeoutChicagoScraper:
             venue = self._extract_venue(card)
             description = venue if venue else None
 
-            return EventCreate(
+            # Extract cost and age_range from title and details
+            cost, age_range = extract_from_event_text(title, description)
+
+            event = EventCreate(
                 name=title,
                 date=event_date,
                 category=category,
                 details=description,
                 origination_url=url,
             )
+
+            # Add cost and age_range to the event if extracted
+            if cost:
+                event.cost = cost
+            if age_range:
+                event.age_range = age_range
+
+            return event
 
         except Exception as e:
             logger.debug(f"Error parsing event card: {e}")
