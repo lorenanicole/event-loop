@@ -328,11 +328,13 @@ def _score_event_relevance(event: EventModel, query: str, query_categories: list
     score = 0.0
     query_lower = query.lower()
 
-    # Keyword matching (0-0.4)
+    # Keyword matching (0-0.5) - more generous with expanded synonyms
     keywords = _extract_keywords(query_lower)
     event_text = f"{event.name} {event.category or ''}".lower()
     matching_keywords = sum(1 for kw in keywords if kw in event_text)
-    score += min(0.4, (matching_keywords / max(len(keywords), 1)) * 0.4)
+    # Give credit for any keyword match; with synonyms we have many candidates
+    if matching_keywords > 0:
+        score += min(0.5, 0.2 + (matching_keywords / max(len(keywords), 1)) * 0.3)
 
     # Category match (0-0.3)
     if event.category and query_categories:
