@@ -416,8 +416,12 @@ def _extract_keywords(query: str) -> list[str]:
     words = query.split()
     keywords = [w for w in words if w not in stop_words and len(w) > 2]
 
+    if not keywords:
+        return []
+
     # Expand keywords with NLTK WordNet synonyms
     expanded_keywords = set(keywords)
+    logger.debug(f"Base keywords before NLTK: {keywords}")
 
     if NLTK_AVAILABLE:
         for kw in keywords:
