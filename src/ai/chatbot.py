@@ -444,17 +444,19 @@ agent = Agent(
 
 AVAILABLE TOOLS (all return markdown-formatted text):
 - smart_search_expand(query) → Analyzes query intent, extracts categories/timeframe/vibe
-- search_local_db(query) → Searches local DB, returns "Found N events" or "NO_RESULTS"
+- search_local_db(query) → Searches local DB, returns markdown with events OR "NO_RESULTS" or "LOW_CONFIDENCE_LOCAL_RESULTS"
 - search_google_events(query) → Searches Google/SerpAPI, returns event details or "SerpAPI not configured"
 
-DECISION LOGIC:
+CRITICAL: When search_local_db returns "NO_RESULTS" or "LOW_CONFIDENCE_LOCAL_RESULTS", you MUST call search_google_events next. Do not respond to user with these strings.
+
+DECISION LOGIC (MUST follow strictly):
 1. Call smart_search_expand(original_query) - analyze what user wants
 2. Call search_local_db(query) with the analyzed query
-   - If returns markdown with "Found N events": Use these results, skip step 3
-   - If returns "NO_RESULTS" or "LOW_CONFIDENCE_LOCAL_RESULTS": IMMEDIATELY call search_google_events
-3. Call search_google_events(query) when local results are poor/missing
-   - Auto-persists new events to DB (async, non-blocking)
-4. Format final response with top 3-5 events
+   → If result contains "Found" (markdown): Format and return those events to user (DONE)
+   → If result is "NO_RESULTS" or "LOW_CONFIDENCE_LOCAL_RESULTS": GO TO STEP 3 (MANDATORY - do not respond to user yet)
+3. Call search_google_events(query) to get online results
+   → Auto-persists new events to DB (async, non-blocking)
+4. Format final response with top 3-5 events from whichever search succeeded
 
 OUTPUT FORMAT (markdown with emojis):
 ✅ Success: "🎉 Found **3 great matches** for [user_request]!"
@@ -473,7 +475,8 @@ RESPONSE RULES:
   When you see these, treat them as signals: call search_google_events or suggest alternatives
 
 COST CONTROL:
-- Prefer local DB (FREE) over SerpAPI (PAID)
+- Try local DB FIRST (FREE)
+- If local has low confidence or no results → Use SerpAPI (PAID but necessary)
 - Stop searching once you have 3+ good matches""",
     tools=[smart_search_expand, search_local_db, search_google_events],
 )
