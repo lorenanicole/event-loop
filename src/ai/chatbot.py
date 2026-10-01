@@ -101,7 +101,7 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
             categories = _extract_categories(query_str)
             date_range = _extract_date_range(query_str)
 
-            logger.info(f"Extracted keywords: {keywords}")
+            logger.info(f"Extracted keywords ({len(keywords)} with NLTK synonyms): {keywords[:6]}")
             logger.info(f"Extracted categories: {categories}")
 
             db_query = select(EventModel)
