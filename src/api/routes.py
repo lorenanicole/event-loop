@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, Path, HTTPException
@@ -82,7 +83,22 @@ async def get_event_categories(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(EventModel.category).distinct().filter(EventModel.category.isnot(None))
     )
-    categories = sorted([cat for cat in result.scalars().all() if cat])
+
+    def is_valid_category(cat: str) -> bool:
+        if not cat or len(cat.strip()) < 3:
+            return False
+        cat_lower = cat.lower()
+        date_patterns = [
+            r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)',
+            r'^\d+\s*,',
+            r'until\s+',
+            r'\d{4}',
+        ]
+        has_date = any(re.search(pattern, cat_lower, re.IGNORECASE) for pattern in date_patterns)
+        has_digit = bool(re.search(r'\d', cat_lower))
+        return not (has_date or has_digit)
+
+    categories = sorted([cat for cat in result.scalars().all() if is_valid_category(cat)])
     return categories
 
 
