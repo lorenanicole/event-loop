@@ -408,7 +408,9 @@ def _extract_keywords(query: str) -> list[str]:
         "the", "a", "an", "and", "or", "is", "are", "in", "on", "at",
         "this", "that", "these", "those", "what", "when", "where", "why",
         "find", "get", "search", "show", "tell", "give", "all", "want",
-        "looking", "events", "event", "i", "want", "to", "for", "any"
+        "looking", "events", "event", "i", "want", "to", "for", "any",
+        # Location/context - filter out to avoid matching irrelevant events
+        "chicago", "city", "illinois", "windy", "area", "town", "region"
     }
 
     words = query.split()
