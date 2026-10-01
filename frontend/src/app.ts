@@ -4,6 +4,7 @@ export class SearchApp {
   private container: HTMLElement
   private stats: Stats | null = null
   private events: Event[] = []
+  private categories: string[] = []
   private isLoading = false
   private selectedKeyword = 'music'
   private selectedTimeframe = 'this weekend'
@@ -13,6 +14,7 @@ export class SearchApp {
   }
 
   async render() {
+    await this.loadCategories()
     await this.loadStats()
     this.container.innerHTML = `
       <div class="min-h-screen bg-white flex flex-col">
@@ -27,7 +29,9 @@ export class SearchApp {
   }
 
   private renderMainInterface() {
-    const keywords = ['music', 'comedy', 'theater', 'sports', 'art', 'food', 'film', 'dance']
+    const keywords = this.categories.length > 0
+      ? this.categories
+      : ['music', 'comedy', 'theater', 'sports', 'art', 'food', 'film', 'dance']
     const timeframes = [
       'tonight',
       'this weekend',
@@ -272,6 +276,19 @@ export class SearchApp {
       }
     } finally {
       this.isLoading = false
+    }
+  }
+
+  private async loadCategories() {
+    try {
+      const response = await fetch('/api/events/categories')
+      if (response.ok) {
+        this.categories = await response.json()
+      }
+    } catch (error) {
+      console.error('Error loading categories:', error)
+      // Fall back to hardcoded categories on error
+      this.categories = ['music', 'comedy', 'theater', 'sports', 'art', 'food', 'film', 'dance']
     }
   }
 
