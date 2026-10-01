@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:activenights.com)",
+      "Bash(uv sync *)",
+      "Bash(python -c ' *)",
+      "Bash(uv run python -c ' *)",
+      "Bash(uv pip *)",
+      "Bash(uv run *)",
+      "Bash(sqlite3 data/events.db \"SELECT COUNT\\(*\\) as total FROM events;\")",
+      "Bash(sqlite3 data/events.db \"SELECT COUNT\\(*\\), category FROM events GROUP BY category LIMIT 10;\")",
+      "Bash(curl -s http://localhost:8000/api/events)",
+      "Bash(curl \"http://localhost:8000/api/events?limit=1\")",
+      "Bash(python -m json.tool)",
+      "Bash(npm install *)",
+      "Bash(npx vite *)",
+      "Bash(curl -s \"https://do312.com/events.json?start_date=2026-10-01&page=1\")",
+      "Bash(curl -s \"https://do312.com/events.json?page=2\")",
+      "Bash(curl -s \"https://yourchicagoguide.com/wp-json/wp/v2/posts?categories=48&per_page=1\")",
+      "Bash(curl -s \"https://yourchicagoguide.com/wp-json/wp/v2/categories\")",
+      "Bash(curl -s \"https://yourchicagoguide.com/wp-json/wp/v2/posts?categories=47&per_page=5\")",
+      "Bash(curl -s \"https://discover.events.com/api/v2/events?city=chicago&state=illinois&country=united_states&limit=100\")",
+      "Bash(curl -s \"https://discover.events.com/forme?lat=41.8756&lng=-87.6244&day=2026-10-01\" -H \"User-Agent: Mozilla/5.0\")",
+      "Bash(.venv/bin/python scrape_events.py --init-db --sources all)",
+      "Bash(.venv/bin/python)"
+    ]
+  }
+}

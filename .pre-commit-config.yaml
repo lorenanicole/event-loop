@@ -1,0 +1,80 @@
+# Pre-commit git hooks configuration
+# Runs automatically on 'git commit'
+# Install with: invoke setup-hooks
+
+repos:
+  # Ruff linting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+        name: "Ruff lint (auto-fix)"
+
+  # Ruff formatting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.0
+    hooks:
+      - id: ruff-format
+        name: "Ruff format"
+
+  # Trailing whitespace
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        name: "Trim trailing whitespace"
+
+      - id: end-of-file-fixer
+        name: "Fix end-of-file"
+
+      - id: check-yaml
+        name: "Check YAML syntax"
+        args: [--safe]
+
+      - id: check-toml
+        name: "Check TOML syntax"
+
+      - id: debug-statements
+        name: "Check for debug statements"
+
+  # Python security
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.5
+    hooks:
+      - id: bandit
+        name: "Security check (Bandit)"
+        args: [-c, .bandit, -r, src/]
+        types: [python]
+
+  # Core tests (security + core functionality)
+  - repo: local
+    hooks:
+      - id: pytest-security
+        name: "Security tests"
+        entry: pytest tests/test_security.py -q
+        language: system
+        types: [python]
+        stages: [commit]
+        pass_filenames: false
+
+      - id: pytest-core
+        name: "Core functionality tests"
+        entry: pytest tests/test_resilience.py tests/test_chatbot.py -q
+        language: system
+        types: [python]
+        stages: [commit]
+        pass_filenames: false
+
+# Configuration
+default_language_version:
+  python: python3.15
+
+# Only run on these files (speed up for large repos)
+files: ^(src/|tests/|tasks\.py)
+
+# Skip slow hooks on rebase/merge
+stages: [commit]
+
+# Verbose output
+verbose: false
