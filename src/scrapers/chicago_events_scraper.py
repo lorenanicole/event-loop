@@ -303,6 +303,186 @@ CHICAGO_VENUES = {
             extractor_fn=extract_salt_shed,
         ),
     ],
+
+    "Rogers Park": [
+        VenueConfig(
+            name="Loyola University Performing Arts Center",
+            website_url="https://www.luc.edu/performingarts",
+            event_page_url="https://www.luc.edu/performingarts/calendar",
+            category="theater",
+            address="6525 N Sheridan Rd",
+            selectors={},
+            use_playwright=True,
+        ),
+        VenueConfig(
+            name="Rogers Park Music Venue",
+            website_url="https://www.rogersparkcenter.org",
+            event_page_url="https://www.rogersparkcenter.org/events",
+            category="music",
+            address="7211 N Clark St",
+            selectors={},
+            use_playwright=True,
+        ),
+    ],
+
+    "Uptown": [
+        VenueConfig(
+            name="Byline Bank Aragon Ballroom",
+            website_url="https://www.aragonchicago.com",
+            event_page_url="https://www.aragonchicago.com/events",
+            category="music",
+            address="1106 W Lawrence Ave",
+            selectors={},
+            use_playwright=True,
+        ),
+        VenueConfig(
+            name="Riviera Theatre",
+            website_url="https://www.rivierachicago.com",
+            event_page_url="https://www.rivierachicago.com/events",
+            category="music",
+            address="4746 N Broadway St",
+            selectors={},
+            use_playwright=True,
+        ),
+    ],
+
+    "Lincoln Square": [
+        VenueConfig(
+            name="Lincoln Theatre",
+            website_url="https://www.lincolntheatre.org",
+            event_page_url="https://www.lincolntheatre.org/calendar",
+            category="theater",
+            address="4415 N Lincoln Ave",
+            selectors={},
+            use_playwright=True,
+        ),
+        VenueConfig(
+            name="Old Town School of Folk Music",
+            website_url="https://www.oldtownschool.org",
+            event_page_url="https://www.oldtownschool.org/events",
+            category="music",
+            address="4544 N Lincoln Ave",
+            selectors={},
+            use_playwright=True,
+        ),
+    ],
+
+    "Lakeview": [
+        VenueConfig(
+            name="Schubas Tavern",
+            website_url="https://www.schubastavern.com",
+            event_page_url="https://www.schubastavern.com/events",
+            category="music",
+            address="3159 N Southport Ave",
+            selectors={},
+            use_playwright=True,
+        ),
+        VenueConfig(
+            name="The Vic Theatre",
+            website_url="https://www.thevictheatre.com",
+            event_page_url="https://www.thevictheatre.com/events",
+            category="music",
+            address="3145 N Sheffield Ave",
+            selectors={},
+            use_playwright=True,
+        ),
+    ],
+
+    "Logan Square": [
+        VenueConfig(
+            name="Lincoln Hall",
+            website_url="https://www.lincolnhallchicago.com",
+            event_page_url="https://www.lincolnhallchicago.com/events",
+            category="music",
+            address="2424 N Lincoln Ave",
+            selectors={},
+            use_playwright=True,
+        ),
+        VenueConfig(
+            name="Thalia Hall",
+            website_url="https://www.thaliahall.com",
+            event_page_url="https://www.thaliahall.com/events",
+            category="music",
+            address="1807 S Allport St",
+            selectors={},
+            use_playwright=True,
+        ),
+    ],
+
+    "Humboldt Park": [
+        VenueConfig(
+            name="Martyrs'",
+            website_url="https://www.martyrschicago.com",
+            event_page_url="https://www.martyrschicago.com/events",
+            category="music",
+            address="3855 N Lincoln Ave",
+            selectors={},
+            use_playwright=True,
+        ),
+        VenueConfig(
+            name="The Loft on Lake",
+            website_url="https://www.theloftonlake.com",
+            event_page_url="https://www.theloftonlake.com/events",
+            category="music",
+            address="3453 W Lake St",
+            selectors={},
+            use_playwright=True,
+        ),
+    ],
+
+    "West Town": [
+        VenueConfig(
+            name="Morgan Manufacturing",
+            website_url="https://www.morganmanufacturing.com",
+            event_page_url="https://www.morganmanufacturing.com/events",
+            category="music",
+            address="401 N Spaulding Ave",
+            selectors={},
+            use_playwright=True,
+        ),
+        VenueConfig(
+            name="Morgan Ballroom",
+            website_url="https://www.morganballroom.com",
+            event_page_url="https://www.morganballroom.com/events",
+            category="music",
+            address="401 N Spaulding Ave",
+            selectors={},
+            use_playwright=True,
+        ),
+    ],
+
+    "West Loop": [
+        VenueConfig(
+            name="Green Dolphin Street",
+            website_url="https://www.greendolphinchicago.com",
+            event_page_url="https://www.greendolphinchicago.com/events",
+            category="music",
+            address="2200 N Ashland Ave",
+            selectors={},
+            use_playwright=True,
+        ),
+        VenueConfig(
+            name="Morgan Manufacturing West",
+            website_url="https://www.morganmanufacturing.com",
+            event_page_url="https://www.morganmanufacturing.com/events",
+            category="music",
+            address="401 N Spaulding Ave",
+            selectors={},
+            use_playwright=True,
+        ),
+    ],
+
+    "Near West Side": [
+        VenueConfig(
+            name="United Center",
+            website_url="https://www.unitedcenter.com",
+            event_page_url="https://www.unitedcenter.com/events",
+            category="music",
+            address="1901 W Madison St",
+            selectors={},
+            use_playwright=True,
+        ),
+    ],
 }
 
 
