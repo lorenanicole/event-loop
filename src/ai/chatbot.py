@@ -137,7 +137,7 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
                 return "NO_RESULTS"
 
             # Score and filter to top 5 most relevant events
-            top_events = _filter_top_results(results, query, limit=5)
+            top_events = _filter_top_results(results, query, keywords, categories, limit=5)
 
             if not top_events:
                 logger.info(f"No results after scoring for query: {query}")
@@ -332,16 +332,15 @@ async def search_google_events(context: RunContext[str], query: str) -> str:
         return f"Error: {str(e)}"
 
 
-def _score_event_relevance(event: EventModel, query: str, query_categories: list[str]) -> float:
+def _score_event_relevance(event: EventModel, keywords: list[str], query_categories: list[str]) -> float:
     """
     Score event relevance to query (0.0-1.0).
     Combines keyword matching, category match, and date proximity.
+    Uses pre-extracted keywords to ensure consistent scoring.
     """
     score = 0.0
-    query_lower = query.lower()
 
     # Keyword matching (0-0.5) - more generous with expanded synonyms
-    keywords = _extract_keywords(query_lower)
     event_text = f"{event.name} {event.category or ''}".lower()
     matching_keywords = sum(1 for kw in keywords if kw in event_text)
     # Give credit for any keyword match; with synonyms we have many candidates
@@ -375,13 +374,12 @@ def _truncate_summary(text: str, words: int = 10) -> str:
     return " ".join(text.split()[:words]) + ("..." if len(text.split()) > words else "")
 
 
-def _filter_top_results(events: list[EventModel], query: str, limit: int = 5) -> list[ScoredEvent]:
+def _filter_top_results(events: list[EventModel], query: str, keywords: list[str], categories: list[str], limit: int = 5) -> list[ScoredEvent]:
     """
     Score and filter events to top N results by relevance.
     Returns only high-confidence matches to avoid overwhelming user.
+    Uses pre-extracted keywords and categories to avoid re-extraction.
     """
-    categories = _extract_categories(query)
-
     scored = [
         ScoredEvent(
             title=event.name,
@@ -395,7 +393,7 @@ def _filter_top_results(events: list[EventModel], query: str, limit: int = 5) ->
             age_range=event.age_range if hasattr(event, 'age_range') else None,
             is_outdoor=event.is_outdoor if hasattr(event, 'is_outdoor') else None,
             address=event.address if hasattr(event, 'address') else None,
-            confidence=_score_event_relevance(event, query, categories),
+            confidence=_score_event_relevance(event, keywords, categories),
         )
         for event in events
     ]
