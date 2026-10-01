@@ -6,6 +6,8 @@ Supports multiple scraping strategies:
 1. Playwright (JS rendering) - For dynamic sites
 2. BeautifulSoup (direct HTML) - Fast fallback
 3. SerpAPI search - Last resort fallback
+
+Venues sourced from chicago_venues_expanded.py (100+ venues across 13 neighborhoods)
 """
 
 import httpx
@@ -16,6 +18,11 @@ from bs4 import BeautifulSoup
 from dataclasses import dataclass
 from typing import Optional
 from abc import ABC, abstractmethod
+from src.scrapers.chicago_venues_expanded import (
+    get_venues_for_neighborhood,
+    get_all_neighborhoods,
+    get_venue_count_by_neighborhood
+)
 
 logger = logging.getLogger(__name__)
 
@@ -435,13 +442,26 @@ async def scrape_neighborhood(neighborhood: str) -> list[VenueEvent]:
     Returns:
         List of VenueEvent objects discovered across all venues in neighborhood
     """
-    if neighborhood not in NEIGHBORHOOD_VENUES:
-        available = ", ".join(sorted(NEIGHBORHOOD_VENUES.keys()))
+    available_neighborhoods = get_all_neighborhoods()
+    if neighborhood not in available_neighborhoods:
+        available = ", ".join(sorted(available_neighborhoods))
         raise ValueError(f"Unknown neighborhood '{neighborhood}'. Available: {available}")
 
     all_events = []
     serp_api_key = os.environ.get("SERP_API_KEY")
-    venue_configs = NEIGHBORHOOD_VENUES[neighborhood]
+
+    # Load venues from expanded venue list
+    venue_list = get_venues_for_neighborhood(neighborhood)
+    venue_configs = [
+        VenueConfig(
+            name=v["name"],
+            website_url=v["url"],
+            event_page_url=v["url"],
+            category=v["category"],
+            address=v["address"]
+        )
+        for v in venue_list
+    ]
 
     logger.info(f"Scraping {len(venue_configs)} venues in {neighborhood}")
 
@@ -460,11 +480,12 @@ async def scrape_neighborhood(neighborhood: str) -> list[VenueEvent]:
 
 def list_neighborhoods() -> list[str]:
     """Get list of available neighborhoods."""
-    return sorted(NEIGHBORHOOD_VENUES.keys())
+    return sorted(get_all_neighborhoods())
 
 
-def list_venues_in_neighborhood(neighborhood: str) -> list[str]:
-    """Get list of venues in a neighborhood."""
-    if neighborhood not in NEIGHBORHOOD_VENUES:
+def list_venues_in_neighborhood(neighborhood: str) -> list[tuple]:
+    """Get list of venues in a neighborhood with counts."""
+    venues = get_venues_for_neighborhood(neighborhood)
+    if not venues:
         raise ValueError(f"Unknown neighborhood '{neighborhood}'")
-    return [v.name for v in NEIGHBORHOOD_VENUES[neighborhood]]
+    return [(v["name"], v["category"]) for v in venues]
