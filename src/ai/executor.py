@@ -377,6 +377,19 @@ class ChatExecutor:
                     operation_name="llm_agent_run",
                 )
                 response_text = result.output
+
+                # If agent returned raw tool outputs (dict-like), extract and format nicely
+                if response_text.startswith('{"') and '"search_local_db"' in response_text:
+                    try:
+                        import json
+                        tool_outputs = json.loads(response_text)
+                        if "search_local_db" in tool_outputs and tool_outputs["search_local_db"] != "NO_RESULTS":
+                            # Use the formatted results from search_local_db
+                            response_text = tool_outputs["search_local_db"]
+                    except (json.JSONDecodeError, KeyError):
+                        # If parsing fails, use the original response
+                        pass
+
                 llm_circuit_breaker.record_success()
 
                 # SECURITY: Validate LLM output doesn't leak sensitive info
