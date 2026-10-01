@@ -241,12 +241,15 @@ export class SearchApp {
       this.performSearch()
     })
 
-    // Allow Enter key to trigger search
-    document.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        this.performSearch()
-      }
-    })
+    // Allow Enter key to trigger search (only in search inputs)
+    const keywordInput = document.getElementById('keyword-input')
+    if (keywordInput) {
+      keywordInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          this.performSearch()
+        }
+      })
+    }
   }
 
   private async performSearch() {
