@@ -121,6 +121,11 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
             if not top_events:
                 return "NO_RESULTS"
 
+            # Check confidence - if average < 0.4, suggest Google search
+            avg_confidence = sum(e.confidence for e in top_events) / len(top_events)
+            if avg_confidence < 0.4:
+                return "LOW_CONFIDENCE_LOCAL_RESULTS"
+
             # Build response with event details
             results_text = f"📍 **Found {len(top_events)} great match{'es' if len(top_events) != 1 else ''}:**\n\n"
             for i, event in enumerate(top_events, 1):
