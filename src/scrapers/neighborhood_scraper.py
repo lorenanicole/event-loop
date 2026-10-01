@@ -88,6 +88,41 @@ NEIGHBORHOOD_VENUES = {
             category="music",
             address="2047 N Milwaukee Ave"
         ),
+        VenueConfig(
+            name="Salt Shed",
+            website_url="https://www.saltshedchicago.com",
+            event_page_url="https://www.saltshedchicago.com/events",
+            category="music",
+            address="1357 N Elston Ave"
+        ),
+        VenueConfig(
+            name="Outset",
+            website_url="https://www.outsetbar.com",
+            event_page_url="https://www.outsetbar.com/events",
+            category="music",
+            address="1675 N Elston Ave"
+        ),
+        VenueConfig(
+            name="Morgan Manufacturing",
+            website_url="https://www.morganmfgchicago.com",
+            event_page_url="https://www.morganmfgchicago.com/events",
+            category="other",
+            address="1837 W Hubbard St"
+        ),
+        VenueConfig(
+            name="Emporium Chicago",
+            website_url="https://www.emporiumchicago.com",
+            event_page_url="https://www.emporiumchicago.com/events",
+            category="music",
+            address="1366 N Milwaukee Ave"
+        ),
+        VenueConfig(
+            name="Rosa's Lounge",
+            website_url="https://www.rosaslounge.com",
+            event_page_url="https://www.rosaslounge.com/events",
+            category="music",
+            address="3420 W North Ave"
+        ),
     ],
     "Wicker Park": [
         VenueConfig(
