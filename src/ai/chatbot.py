@@ -26,9 +26,6 @@ SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 CLAUDE_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 DB_RESULT_THRESHOLD = 5  # Minimum results before using SerpAPI
 
-print(f"🔍 DEBUG chatbot.py init: CLAUDE_API_KEY = {CLAUDE_API_KEY[:20] if CLAUDE_API_KEY else None}...")
-
-
 class EventResult(BaseModel):
     title: str
     date: str
@@ -448,7 +445,6 @@ def _extract_date_range(query: str) -> Optional[tuple[datetime, datetime]]:
 
 
 _model = AnthropicModel("claude-sonnet-5-5") if CLAUDE_API_KEY else None  # AnthropicModel wraps the model name
-print(f"🔍 DEBUG chatbot.py: _model = {_model}")
 
 agent = Agent(
     model=_model or "test",

@@ -355,12 +355,6 @@ class ChatExecutor:
         If LLM fails: fall back to simple database search.
         """
         try:
-            print(f"\n🔍 DEBUG: Agent model = {agent.model}")
-            print(f"🔍 DEBUG: Agent has _tools attr? {hasattr(agent, '_tools')}")
-            if hasattr(agent, '_tools'):
-                print(f"🔍 DEBUG: Agent._tools = {agent._tools}")
-            logger.info(f"Agent model: {agent.model}")
-
             # Check LLM circuit breaker
             if not llm_circuit_breaker.is_available():
                 logger.warning("LLM circuit breaker OPEN - degraded mode")
@@ -378,14 +372,11 @@ class ChatExecutor:
             )
 
             try:
-                print(f"\n🔍 DEBUG: Calling agent.run() with message: {message[:50]}...")
                 result = await default_retry_policy.execute(
                     lambda: agent.run(message),
                     operation_name="llm_agent_run",
                 )
                 response_text = result.output
-                print(f"🔍 DEBUG: agent.run() returned: {response_text[:100]}")
-                print(f"🔍 DEBUG: result type: {type(result)}, result.data: {result.data if hasattr(result, 'data') else 'N/A'}")
 
                 # If agent returned raw tool outputs (dict-like), extract and format nicely
                 if response_text.startswith('{"') and '"search_local_db"' in response_text:
