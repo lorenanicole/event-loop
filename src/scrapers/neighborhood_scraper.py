@@ -62,21 +62,21 @@ NEIGHBORHOOD_VENUES = {
         VenueConfig(
             name="Subterranean",
             website_url="https://www.subt.net",
-            event_page_url="https://www.subt.net/calendar",
+            event_page_url="https://wl.seetickets.us/",  # Their ticketing partner
             category="music",
             address="2011 W North Ave"
         ),
         VenueConfig(
             name="Chop Shop",
             website_url="https://www.chopshopmusic.com",
-            event_page_url="https://www.chopshopmusic.com/events",
+            event_page_url="https://www.chopshopmusic.com",  # Homepage has event info
             category="music",
             address="2033 W North Ave"
         ),
         VenueConfig(
             name="Empty Bottle",
             website_url="https://www.emptybottle.com",
-            event_page_url="https://www.emptybottle.com/calendar",
+            event_page_url="https://www.emptybottle.com",  # Homepage lists events
             category="music",
             address="1035 N Western Ave"
         ),
