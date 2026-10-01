@@ -256,7 +256,7 @@ class TimeoutChicagoScraper:
 
         raise ValueError(f"Could not parse date: {date_text}")
 
-    async def scrape_and_save(self, db: Union[Session, AsyncSession], months: list[str] | None = None) -> int:
+    async def scrape_and_save(self, db: Union[Session, AsyncSession], days_ahead: int = 30, months: list[str] | None = None) -> int:
         """Fetch events and save new ones to database (sync or async)"""
         try:
             events = await self.fetch_events(months=months)
