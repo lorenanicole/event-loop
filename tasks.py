@@ -241,8 +241,8 @@ def security_audit(c):
 def scrape(c):
     """Scrape events from all Chicago sources and populate database."""
     print_header("Scraping Events from All Sources")
-    print(f"{YELLOW}Sources: DO312, Bandsintown, EventBrite, Ticketmaster,")
-    print(f"          TimeoutChicago, YourChicagoGuide, EventsCom{RESET}\n")
+    print(f"{YELLOW}Sources: DO312, BandsinTown, EventBrite, Ticketmaster,")
+    print(f"          TimeoutChicago, YourChicagoGuide{RESET}\n")
     c.run("uv run python scripts/scrape_events.py")
 
 
@@ -269,7 +269,7 @@ def info(c):
 
     print(f"""
 {BOLD}Development:{RESET}
-  invoke scrape            # Scrape from 7 event sources into database
+  invoke scrape            # Scrape from 6 event sources into database
   invoke dev               # Start backend with uv (port 8000)
   invoke frontend          # Start frontend dev server (port 5173)
 

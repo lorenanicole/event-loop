@@ -1,6 +1,6 @@
 """
 Scrape events from all sources and populate the database.
-Sources: DO312, Bandsintown, EventBrite, Ticketmaster, TimeoutChicago, YourChicagoGuide, EventsCom
+Sources: DO312, BandsinTown, EventBrite, Ticketmaster, TimeoutChicago, YourChicagoGuide
 Run with: uv run python scripts/scrape_events.py
 """
 
@@ -12,12 +12,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.scraper import (
     DO312Scraper,
-    BandsintownScraper,
-    EventBriteScraper,
+    BandsinTownScraper,
+    EventbriteScraper,
     TicketmasterScraper,
     TimeoutChicagoScraper,
     YourChicagoGuideScraper,
-    EventsComScraper,
 )
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
@@ -33,12 +32,11 @@ async def scrape_all_sources():
 
     scrapers = [
         ("DO312", DO312Scraper()),
-        ("Bandsintown", BandsintownScraper()),
-        ("EventBrite", EventBriteScraper()),
+        ("BandsinTown", BandsinTownScraper()),
+        ("EventBrite", EventbriteScraper()),
         ("Ticketmaster", TicketmasterScraper()),
         ("TimeoutChicago", TimeoutChicagoScraper()),
         ("YourChicagoGuide", YourChicagoGuideScraper()),
-        ("EventsCom", EventsComScraper()),
     ]
 
     total_events = 0
