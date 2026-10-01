@@ -375,7 +375,7 @@ class ChatExecutor:
                     lambda: agent.run(message),
                     operation_name="llm_agent_run",
                 )
-                response_text = result.data
+                response_text = result.output
                 llm_circuit_breaker.record_success()
 
                 # SECURITY: Validate LLM output doesn't leak sensitive info
