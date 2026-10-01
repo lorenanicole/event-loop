@@ -378,11 +378,14 @@ class ChatExecutor:
             )
 
             try:
+                print(f"\n🔍 DEBUG: Calling agent.run() with message: {message[:50]}...")
                 result = await default_retry_policy.execute(
                     lambda: agent.run(message),
                     operation_name="llm_agent_run",
                 )
                 response_text = result.output
+                print(f"🔍 DEBUG: agent.run() returned: {response_text[:100]}")
+                print(f"🔍 DEBUG: result type: {type(result)}, result.data: {result.data if hasattr(result, 'data') else 'N/A'}")
 
                 # If agent returned raw tool outputs (dict-like), extract and format nicely
                 if response_text.startswith('{"') and '"search_local_db"' in response_text:
