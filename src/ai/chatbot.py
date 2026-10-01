@@ -59,6 +59,8 @@ class ScoredEvent(BaseModel):
     location: Optional[str] = None
     url: Optional[str] = None
     source: str
+    category: Optional[str] = None
+    details: Optional[str] = None
     confidence: float = Field(description="Relevance score 0.0-1.0")
 
 
@@ -115,16 +117,28 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
             if not top_events:
                 return "NO_RESULTS"
 
-            # Build response with confidence indicators
+            # Build response with event details
             results_text = f"📍 **Found {len(top_events)} great match{'es' if len(top_events) != 1 else ''}:**\n\n"
             for i, event in enumerate(top_events, 1):
-                confidence_bar = "🟢" if event.confidence >= 0.7 else "🟡" if event.confidence >= 0.5 else "🔵"
-                results_text += f"{i}. **{event.title}** {confidence_bar}\n"
+                # Category label
+                category_tag = f" `{event.category}`" if event.category else ""
+                results_text += f"{i}. **{event.title}**{category_tag}\n"
+
+                # Date
                 results_text += f"   📅 {event.date}\n"
+
+                # Source/Location
                 if event.source:
                     results_text += f"   📌 {event.source}\n"
+
+                # Summary
+                if event.details:
+                    results_text += f"   📝 {event.details}\n"
+
+                # Clickable link
                 if event.url:
-                    results_text += f"   🔗 {event.url}\n"
+                    results_text += f"   🔗 [View Event]({event.url})\n"
+
                 results_text += "\n"
 
             return results_text
@@ -269,6 +283,13 @@ def _score_event_relevance(event: EventModel, query: str, query_categories: list
     return min(1.0, score)
 
 
+def _truncate_summary(text: str, words: int = 10) -> str:
+    """Truncate text to N words."""
+    if not text:
+        return ""
+    return " ".join(text.split()[:words]) + ("..." if len(text.split()) > words else "")
+
+
 def _filter_top_results(events: list[EventModel], query: str, limit: int = 5) -> list[ScoredEvent]:
     """
     Score and filter events to top N results by relevance.
@@ -283,6 +304,8 @@ def _filter_top_results(events: list[EventModel], query: str, limit: int = 5) ->
             location=None,
             url=event.origination_url,
             source=event.source or "Local DB",
+            category=event.category,
+            details=_truncate_summary(event.details) if event.details else None,
             confidence=_score_event_relevance(event, query, categories),
         )
         for event in events
