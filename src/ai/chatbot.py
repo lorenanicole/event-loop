@@ -186,8 +186,12 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
 
 async def _persist_events_to_db(events: list[EventResult]) -> None:
     """Background task: persist external events to DB (non-blocking)."""
+    if not events:
+        return
+
     try:
         async with AsyncSessionLocal() as db:
+            persisted_count = 0
             for event in events:
                 if not event.url:
                     continue
@@ -201,7 +205,7 @@ async def _persist_events_to_db(events: list[EventResult]) -> None:
 
                 try:
                     event_date = datetime.fromisoformat(event.date.replace('Z', '+00:00'))
-                except (ValueError, AttributeError):
+                except (ValueError, AttributeError, TypeError):
                     event_date = datetime.now() + timedelta(days=30)
 
                 new_event = EventModel(
@@ -211,13 +215,18 @@ async def _persist_events_to_db(events: list[EventResult]) -> None:
                     category="Online Search",
                     origination_url=event.url,
                     source="SerpAPI",
+                    details=event.date if hasattr(event, 'date') else None,
                 )
                 db.add(new_event)
+                persisted_count += 1
 
-            await db.commit()
-            logger.info(f"Persisted {len(events)} external events to DB")
+            if persisted_count > 0:
+                await db.commit()
+                logger.info(f"✅ Persisted {persisted_count} external events to DB")
+            else:
+                logger.info(f"No new events to persist (all {len(events)} already existed)")
     except Exception as e:
-        logger.error(f"Failed to persist events: {e}")
+        logger.error(f"❌ Failed to persist events: {e}", exc_info=True)
 
 
 async def search_google_events(context: RunContext[str], query: str) -> str:
