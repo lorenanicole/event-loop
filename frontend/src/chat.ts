@@ -56,6 +56,7 @@ class ChatWidget {
   private collapseChat(): void {
     this.isCollapsed = true;
     this.container.classList.add("collapsed");
+    document.body.classList.add("chat-collapsed");
     if (this.toggleBtn) {
       this.toggleBtn.textContent = "💬";
       this.toggleBtn.title = "Open chat";
@@ -68,6 +69,7 @@ class ChatWidget {
   private expandChat(): void {
     this.isCollapsed = false;
     this.container.classList.remove("collapsed");
+    document.body.classList.remove("chat-collapsed");
     if (this.toggleBtn) {
       this.toggleBtn.textContent = "✕";
       this.toggleBtn.title = "Close chat";

@@ -16,6 +16,10 @@
             grid-template-columns: 1fr 400px;
             gap: 0;
             background: #f5f5f5;
+            transition: grid-template-columns 0.3s ease;
+        }
+        body.chat-collapsed {
+            grid-template-columns: 1fr 0;
         }
         @media (max-width: 1200px) {
             body {
@@ -35,10 +39,12 @@
             display: flex;
             flex-direction: column;
             height: 100vh;
-            transition: all 0.3s ease;
+            width: 400px;
+            transition: width 0.3s ease;
+            overflow: hidden;
         }
         #chat-widget-container.collapsed {
-            width: 60px;
+            width: 0;
             border-left: none;
         }
         .chat-toggle-btn {
@@ -88,6 +94,13 @@
             display: flex;
             flex-direction: column;
             height: 100%;
+            visibility: visible;
+            opacity: 1;
+            transition: opacity 0.3s ease;
+        }
+        #chat-widget-container.collapsed #chat-widget {
+            visibility: hidden;
+            opacity: 0;
         }
         .chat-header {
             padding: 16px;
