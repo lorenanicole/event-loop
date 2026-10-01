@@ -456,7 +456,7 @@ async def scrape_neighborhood(neighborhood: str) -> list[VenueEvent]:
         VenueConfig(
             name=v["name"],
             website_url=v["url"],
-            event_page_url=v["url"],
+            event_page_url=v.get("event_page_url", v["url"]),
             category=v["category"],
             address=v["address"]
         )

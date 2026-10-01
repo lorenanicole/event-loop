@@ -3,6 +3,17 @@ Comprehensive Chicago Entertainment Venues Database
 All 77 Official Chicago Community Areas with 200+ verified entertainment venues
 Organized by neighborhood for geographic scoping and event discovery
 Production-ready data structure for EventLoop event discovery platform
+
+Venue Schema:
+{
+    "name": str,              # Venue name
+    "url": str,               # Main website URL
+    "event_page_url": str,    # Direct events/calendar page URL (for scraping)
+    "category": str,          # music|theater|comedy|cinema|other
+    "address": str,           # Street address
+}
+
+Note: event_page_url field is optional (may be empty string if not yet researched)
 """
 
 CHICAGO_VENUES_BY_NEIGHBORHOOD = {
@@ -138,11 +149,10 @@ CHICAGO_VENUES_BY_NEIGHBORHOOD = {
     ],
 
     "Wicker Park": [
-        {"name": "Subterranean", "url": "https://www.subt.net", "category": "music", "address": "2011 W North Ave"},
-        {"name": "Chop Shop", "url": "https://www.chopshopmusic.com", "category": "music", "address": "2033 W North Ave"},
-        {"name": "Empty Bottle", "url": "https://www.emptybottle.com", "category": "music", "address": "1035 N Western Ave"},
-        {"name": "Den Theatre", "url": "https://www.dentheatre.com", "category": "comedy", "address": "1331 N Milwaukee Ave"},
-        {"name": "Wicker Park Arts Center", "url": "https://www.wickerparkarts.org", "category": "other", "address": "1400 N Milwaukee Ave"},
+        {"name": "Subterranean", "url": "https://www.subt.net", "event_page_url": "https://subt.net/events", "category": "music", "address": "2011 W North Ave"},
+        {"name": "Chop Shop", "url": "https://chopshopchi.com", "event_page_url": "https://chopshopchi.com/calendar/index.html", "category": "music", "address": "2033 W North Ave"},
+        {"name": "Empty Bottle", "url": "https://www.emptybottle.com", "event_page_url": "https://www.emptybottle.com/ebp-events", "category": "music", "address": "1035 N Western Ave"},
+        {"name": "Den Theatre", "url": "https://www.dentheatre.com", "event_page_url": "https://thedentheatre.com/tickets-1", "category": "comedy", "address": "1331 N Milwaukee Ave"},
     ],
 
     "Humboldt Park": [
