@@ -45,7 +45,7 @@ class ChatWidget {
 
     this.ctaLabel = document.createElement("div");
     this.ctaLabel.className = "chat-cta";
-    this.ctaLabel.textContent = "🤖 Not sure?\nAsk Loopy!";
+    this.ctaLabel.textContent = "🤖 Not sure?\nAsk Loopara!";
     document.body.appendChild(this.ctaLabel);
   }
 
@@ -81,7 +81,7 @@ class ChatWidget {
   }
 
   private showWelcomeGreeting(): void {
-    const greeting = `🏙️ **Meet Loopy!**
+    const greeting = `🏙️ **Meet Loopara!**
 
 I'm your AI event discovery assistant, powered by Python 3.15, PydanticAI, and production-grade resilience patterns. Ready to find your next great event?
 
