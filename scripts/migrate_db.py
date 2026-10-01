@@ -5,8 +5,14 @@ Exports events from old DB, recreates with new schema, re-imports.
 
 import asyncio
 import os
+import sys
 import shutil
 from datetime import datetime
+from pathlib import Path
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from sqlalchemy import select, create_engine, text
 from sqlalchemy.orm import Session
 from src.database import AsyncSessionLocal, init_db
@@ -37,21 +43,42 @@ async def migrate_database():
 
     try:
         with Session(old_engine) as session:
-            result = session.query(EventModel).all()
-            for event in result:
+            # Query only columns that exist in old schema
+            result = session.execute(text("""
+                SELECT id, name, date, category, details, origination_url,
+                       date_retrieved, source
+                FROM events
+            """))
+
+            for row in result:
+                # Parse datetime strings if necessary
+                event_date = row[2]
+                if isinstance(event_date, str):
+                    try:
+                        event_date = datetime.fromisoformat(event_date.replace('Z', ''))
+                    except (ValueError, AttributeError):
+                        event_date = datetime.now()
+
+                date_retrieved = row[6]
+                if isinstance(date_retrieved, str):
+                    try:
+                        date_retrieved = datetime.fromisoformat(date_retrieved.replace('Z', ''))
+                    except (ValueError, AttributeError):
+                        date_retrieved = datetime.now()
+
                 events_data.append({
-                    "id": event.id,
-                    "name": event.name,
-                    "date": event.date,
-                    "category": event.category,
-                    "details": event.details,
-                    "origination_url": event.origination_url,
-                    "date_retrieved": event.date_retrieved,
-                    "source": event.source,
-                    "cost": getattr(event, "cost", None),
-                    "age_range": getattr(event, "age_range", None),
+                    "id": row[0],
+                    "name": row[1],
+                    "date": event_date,
+                    "category": row[3],
+                    "details": row[4],
+                    "origination_url": row[5],
+                    "date_retrieved": date_retrieved,
+                    "source": row[7],
+                    "cost": None,
+                    "age_range": None,
                 })
-        print(f"✅ Exported {len(events_data)} events")
+        print(f"✅ Exported {len(events_data)} events from old schema")
     except Exception as e:
         print(f"❌ Error exporting events: {e}")
         return
