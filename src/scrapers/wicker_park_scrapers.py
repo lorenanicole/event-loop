@@ -130,50 +130,60 @@ class ChopShopScraper(WickerParkVenueScraper):
             from playwright.async_api import async_playwright
 
             async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
-                page = await browser.new_page()
+                # Headless with stealth to bypass Cloudflare anti-bot detection
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=[
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-dev-shm-usage',
+                    ]
+                )
+                page = await browser.new_page(
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                )
+
+                # Add stealth script to hide automation
+                await page.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                """)
 
                 try:
-                    await page.goto(self.event_page_url, timeout=10000, wait_until="networkidle")
-
-                    # Wait for Dice widget to render
-                    try:
-                        await page.wait_for_selector(".dice-event-item", timeout=5000)
-                    except:
-                        logger.debug("Chop Shop: Dice widget selector not found, trying alternatives")
+                    await page.goto(self.event_page_url, timeout=15000, wait_until="networkidle")
+                    await page.wait_for_timeout(1000)
 
                     html = await page.content()
                     soup = BeautifulSoup(html, "html.parser")
 
-                    # Try different selectors for Dice widget
-                    event_items = soup.select(".dice-event-item")
-                    if not event_items:
-                        event_items = soup.select("[class*='event']")
+                    # Find Dice widget container with events
+                    dice_container = soup.select_one("div.dice_events")
+                    if not dice_container:
+                        logger.debug("Chop Shop: dice_events container not found")
+                        return events
 
-                    logger.info(f"Chop Shop: found {len(event_items)} event items")
+                    # Get event articles from Dice widget
+                    event_articles = dice_container.select("article")
+                    logger.info(f"Chop Shop: found {len(event_articles)} event articles")
 
-                    for item in event_items[:10]:
+                    for article in event_articles:
                         try:
-                            # Extract event details from Dice widget
-                            title_elem = item.find(["h3", "h2", "a"])
-                            if not title_elem:
+                            # Extract title from a.dice_event-title
+                            title_link = article.select_one("a.dice_event-title")
+                            if not title_link:
                                 continue
 
-                            event_name = title_elem.get_text(strip=True)
-                            if len(event_name) < 2:
+                            event_name = title_link.get_text(strip=True)
+                            if not event_name or len(event_name) < 2:
                                 continue
 
-                            # Look for date info
-                            date_elem = item.find(["span", "p"], class_=lambda x: x and "date" in x.lower() if x else False)
-                            event_date = date_elem.get_text(strip=True) if date_elem else None
-
-                            # Find ticket link
-                            ticket_link = item.find("a", href=lambda x: x and "dice.fm" in x)
+                            # Extract ticket link
+                            ticket_link = article.find("a", href=lambda x: x and "link.dice.fm" in x)
+                            if not ticket_link:
+                                ticket_link = title_link
                             ticket_url = ticket_link.get("href", self.website_url) if ticket_link else self.website_url
 
                             events.append(VenueEvent(
                                 name=event_name,
-                                date=event_date,
+                                date=None,  # Dice widget doesn't expose date in static HTML
                                 time=None,
                                 location=f"{self.venue_name}, {self.address}",
                                 url=ticket_url,
@@ -181,7 +191,7 @@ class ChopShopScraper(WickerParkVenueScraper):
                                 category=self.category
                             ))
                         except Exception as e:
-                            logger.debug(f"Chop Shop: failed to parse event: {e}")
+                            logger.debug(f"Chop Shop: failed to parse article: {e}")
 
                     logger.info(f"Chop Shop: extracted {len(events)} events")
 
