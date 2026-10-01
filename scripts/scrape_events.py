@@ -25,23 +25,37 @@ DATABASE_URL = "sqlite:///./data/events.db"
 
 
 async def scrape_all_sources():
-    """Scrape from all event sources in parallel."""
+    """Scrape from all event sources, skip those missing credentials."""
     print("🔍 Scraping events from all Chicago sources...\n")
 
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
-    scrapers = [
-        ("DO312", DO312Scraper()),
-        ("BandsinTown", BandsinTownScraper()),
-        ("EventBrite", EventbriteScraper()),
-        ("Ticketmaster", TicketmasterScraper()),
-        ("TimeoutChicago", TimeoutChicagoScraper()),
-        ("YourChicagoGuide", YourChicagoGuideScraper()),
+    scrapers_config = [
+        ("DO312", DO312Scraper),
+        ("BandsinTown", BandsinTownScraper),
+        ("EventBrite", EventbriteScraper),
+        ("Ticketmaster", TicketmasterScraper),
+        ("TimeoutChicago", TimeoutChicagoScraper),
+        ("YourChicagoGuide", YourChicagoGuideScraper),
     ]
 
     total_events = 0
+    skipped = []
 
-    for source_name, scraper in scrapers:
+    for source_name, scraper_class in scrapers_config:
+        # Try to instantiate - will fail if credentials missing
+        try:
+            scraper = scraper_class()
+        except ValueError as e:
+            print(f"⏭️  Skipped {source_name}: {str(e)[:50]}")
+            skipped.append(source_name)
+            continue
+        except Exception as e:
+            print(f"⏭️  Skipped {source_name}: {str(e)[:50]}")
+            skipped.append(source_name)
+            continue
+
+        # Scrape with this source
         try:
             with Session(engine) as db:
                 print(f"⏳ Scraping {source_name}...", end=" ", flush=True)
@@ -53,6 +67,8 @@ async def scrape_all_sources():
 
     print(f"\n{'='*60}")
     print(f"📊 Total events scraped: {total_events}")
+    if skipped:
+        print(f"⏭️  Skipped sources: {', '.join(skipped)}")
     print(f"{'='*60}")
     print("\n🚀 Database populated and ready!")
     print("Next steps:")
