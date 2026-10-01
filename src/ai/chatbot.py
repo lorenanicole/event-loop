@@ -185,47 +185,58 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
 
 
 async def _persist_events_to_db(events: list[EventResult]) -> None:
-    """Background task: persist external events to DB (non-blocking)."""
+    """Background task: persist external events to DB (non-blocking) with retry."""
     if not events:
         return
 
-    try:
-        async with AsyncSessionLocal() as db:
-            persisted_count = 0
-            for event in events:
-                if not event.url:
-                    continue
+    max_retries = 3
+    retry_delay = 0.5
 
-                result = await db.execute(
-                    select(EventModel).filter_by(origination_url=event.url)
-                )
-                existing = result.scalar_one_or_none()
-                if existing:
-                    continue
+    for attempt in range(max_retries):
+        try:
+            await asyncio.sleep(retry_delay)
+            async with AsyncSessionLocal() as db:
+                persisted_count = 0
+                for event in events:
+                    if not event.url:
+                        continue
 
-                try:
-                    event_date = datetime.fromisoformat(event.date.replace('Z', '+00:00'))
-                except (ValueError, AttributeError, TypeError):
-                    event_date = datetime.now() + timedelta(days=30)
+                    result = await db.execute(
+                        select(EventModel).filter_by(origination_url=event.url)
+                    )
+                    existing = result.scalar_one_or_none()
+                    if existing:
+                        continue
 
-                new_event = EventModel(
-                    name=event.title,
-                    date=event_date,
-                    address=event.location,
-                    category="Online Search",
-                    origination_url=event.url,
-                    source="SerpAPI",
-                )
-                db.add(new_event)
-                persisted_count += 1
+                    try:
+                        event_date = datetime.fromisoformat(event.date.replace('Z', '+00:00'))
+                    except (ValueError, AttributeError, TypeError):
+                        event_date = datetime.now() + timedelta(days=30)
 
-            if persisted_count > 0:
-                await db.commit()
-                logger.info(f"✅ Persisted {persisted_count} external events to DB")
+                    new_event = EventModel(
+                        name=event.title,
+                        date=event_date,
+                        address=event.location,
+                        category="Online Search",
+                        origination_url=event.url,
+                        source="SerpAPI",
+                    )
+                    db.add(new_event)
+                    persisted_count += 1
+
+                if persisted_count > 0:
+                    await db.commit()
+                    logger.info(f"✅ Persisted {persisted_count} external events to DB")
+                else:
+                    logger.info(f"No new events to persist (all {len(events)} already existed)")
+                return
+        except Exception as e:
+            if "database is locked" in str(e) and attempt < max_retries - 1:
+                retry_delay *= 2
+                logger.warning(f"DB locked (attempt {attempt + 1}/{max_retries}), retrying...")
             else:
-                logger.info(f"No new events to persist (all {len(events)} already existed)")
-    except Exception as e:
-        logger.error(f"❌ Failed to persist events: {e}", exc_info=True)
+                logger.error(f"❌ Failed to persist events: {e}", exc_info=True)
+                return
 
 
 async def search_google_events(context: RunContext[str], query: str) -> str:
