@@ -349,6 +349,35 @@ def extract_rosas_lounge(soup: BeautifulSoup, config: VenueConfig) -> list[Venue
     return events
 
 
+def extract_generic_listing(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Generic extractor for venues using div[class*='listing'] for event listings."""
+    events = []
+    try:
+        event_containers = soup.select("div[class*='listing']")
+        logger.info(f"{config.name}: found {len(event_containers)} div[class*='listing'] elements")
+
+        for container in event_containers:
+            text = container.get_text(strip=True)
+            if not text or len(text) < 10:
+                continue
+
+            skip_terms = ['menu', 'sidebar', 'nav', 'footer', 'home', 'login', 'cart']
+            if any(skip in text.lower() for skip in skip_terms):
+                continue
+
+            events.append(VenueEvent(
+                name=text[:200], date=None, time=None,
+                location=f"{config.name}, {config.address}",
+                url=config.event_page_url or config.website_url,
+                venue_name=config.name, category=config.category
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from div[class*='listing']")
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+    return events
+
+
 # ===== NEIGHBORHOOD CONFIGS =====
 
 CHICAGO_VENUES = {
@@ -740,24 +769,62 @@ CHICAGO_VENUES = {
         ),
     ],
 
-    "Logan Square": [
+    "River North": [
         VenueConfig(
-            name="Lincoln Hall",
-            website_url="https://www.lincolnhallchicago.com",
-            event_page_url="https://www.lincolnhallchicago.com/events",
+            name="Sound Bar",
+            website_url="https://sound-bar.com",
+            event_page_url="https://sound-bar.com/events",
             category="music",
-            address="2424 N Lincoln Ave",
+            address="226 W Ontario St",
             selectors={},
             use_playwright=True,
+            extractor_fn=extract_generic_li,
         ),
+    ],
+
+    "Pilsen": [
         VenueConfig(
             name="Thalia Hall",
-            website_url="https://www.thaliahall.com",
-            event_page_url="https://www.thaliahall.com/events",
+            website_url="https://thaliahallchicago.com",
+            event_page_url="https://thaliahallchicago.com/events",
             category="music",
             address="1807 S Allport St",
             selectors={},
             use_playwright=True,
+            extractor_fn=extract_generic_item_class,
+        ),
+    ],
+
+    "Logan Square": [
+        VenueConfig(
+            name="The Whistler",
+            website_url="https://whistlerchicago.com",
+            event_page_url="https://whistlerchicago.com/events",
+            category="music",
+            address="2421 N Milwaukee Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_event_div,
+        ),
+        VenueConfig(
+            name="Cole's Bar",
+            website_url="https://colesbarchicago.com",
+            event_page_url="https://do312.com/venues/cole-s-bar",
+            category="music",
+            address="2338 N Milwaukee Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_li,
+        ),
+        VenueConfig(
+            name="The Lincoln Lodge",
+            website_url="https://www.thelincolnlodge.com",
+            event_page_url="https://do312.com/venues/the-lincoln-lodge",
+            category="comedy",
+            address="2040 N Milwaukee Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_listing,
         ),
     ],
 
