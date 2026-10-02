@@ -600,6 +600,16 @@ CHICAGO_VENUES = {
             use_playwright=True,
             extractor_fn=extract_generic_card,
         ),
+        VenueConfig(
+            name="Riviera Theatre",
+            website_url="https://www.jamusa.com/riviera-theatre",
+            event_page_url="https://www.jamusa.com/riviera-theatre",
+            category="music",
+            address="4746 N Racine Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_item_class,
+        ),
     ],
 
     "Lincoln Park": [
@@ -821,72 +831,6 @@ CHICAGO_VENUES = {
             event_page_url="https://www.unitedcenter.com/events",
             category="music",
             address="1901 W Madison St",
-            selectors={},
-            use_playwright=True,
-        ),
-    ],
-
-    "Uptown": [
-        VenueConfig(
-            name="Green Mill Jazz Club",
-            website_url="https://www.greenmilljazz.com",
-            event_page_url="https://greenmilljazz.com/calendar/",
-            category="music",
-            address="4802 N Broadway Ave",
-            selectors={},
-            use_playwright=True,
-        ),
-    ],
-
-    "Lincoln Park": [
-        VenueConfig(
-            name="Steppenwolf Theatre Company",
-            website_url="https://www.steppenwolf.org",
-            event_page_url="https://www.steppenwolf.org/whats-on/current-season",
-            category="theater",
-            address="1650 N Halsted St",
-            selectors={},
-            use_playwright=True,
-        ),
-        VenueConfig(
-            name="Second City",
-            website_url="https://www.secondcity.com",
-            event_page_url="https://www.secondcity.com/shows",
-            category="comedy",
-            address="1616 N Wells St",
-            selectors={},
-            use_playwright=True,
-        ),
-    ],
-
-    "Lake View": [
-        VenueConfig(
-            name="Metro Chicago",
-            website_url="https://www.metrochicago.com",
-            event_page_url="https://www.metrochicago.com/events",
-            category="music",
-            address="3730 N Clark St",
-            selectors={},
-            use_playwright=True,
-        ),
-        VenueConfig(
-            name="The Vic Theatre",
-            website_url="https://www.victheater.com",
-            event_page_url="https://www.victheater.com/events",
-            category="music",
-            address="3145 N Sheffield Ave",
-            selectors={},
-            use_playwright=True,
-        ),
-    ],
-
-    "Lincoln Square": [
-        VenueConfig(
-            name="Old Town School of Folk Music",
-            website_url="https://www.oldtownschool.org",
-            event_page_url="https://www.oldtownschool.org/events",
-            category="music",
-            address="4544 N Lincoln Ave",
             selectors={},
             use_playwright=True,
         ),
