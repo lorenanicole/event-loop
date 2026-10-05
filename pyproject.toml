@@ -3,7 +3,7 @@ name = "do312-scraper"
 version = "0.1.0"
 description = "Event discovery platform that scrapes DO312, normalizes data, and provides natural language search via FastAPI"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.14"  # Supports 3.14 stable and 3.15 RC/stable
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
