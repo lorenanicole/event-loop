@@ -1,0 +1,35 @@
+{
+  "python_version": "3.14.3",
+  "benchmarks": [
+    {
+      "name": "startup_imports",
+      "duration_ms": 3394.6982020279393,
+      "iterations": 1,
+      "ops_per_sec": null
+    },
+    {
+      "name": "dict_operations",
+      "duration_ms": 1.19943602476269,
+      "iterations": 10000,
+      "ops_per_sec": 8337251.66957405
+    },
+    {
+      "name": "list_comprehension",
+      "duration_ms": 3.907803911715746,
+      "iterations": 10000,
+      "ops_per_sec": 2558982.03336652
+    },
+    {
+      "name": "json_operations",
+      "duration_ms": 104.94805499911308,
+      "iterations": 5000,
+      "ops_per_sec": 47642.61710273959
+    },
+    {
+      "name": "async_operations",
+      "duration_ms": 201.85393292922527,
+      "iterations": 1000,
+      "ops_per_sec": 4954.0773642028735
+    }
+  ]
+}
