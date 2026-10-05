@@ -80,6 +80,31 @@ npm run dev
 - 📊 **Analytics**: http://localhost:8000/analytics
 - ✅ **Health Check**: http://localhost:8000/health
 
+### **Alternative: Using Invoke Task Automation**
+
+For faster development with automated commands:
+
+```bash
+# Install invoke (included in dependencies)
+uv pip install invoke
+
+# List all available tasks
+inv --list
+
+# Available tasks:
+inv test              # Run all tests
+inv lint              # Check code style  
+inv format            # Auto-format code
+inv pre-commit        # Pre-commit checks (tests + lint)
+inv coverage          # Generate coverage report
+```
+
+**Task automation helps with**:
+- ✅ Auto-formatting code before commits
+- ✅ Running linting checks
+- ✅ Running test suites
+- ✅ Pre-commit hooks integration
+
 ## 📋 Tech Stack
 
 **Language & Runtime**
