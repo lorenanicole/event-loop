@@ -37,34 +37,48 @@ This project demonstrates real-world Python 3.15 adoption:
 - ✅ **Quality Gating** - Git hooks run tests + linting before commit
 - 📈 **Token Budgets** - 4,000 tokens/session, 5 turns max (focused chats)
 
-## 🚀 Quick Start
+## 🚀 Quick Start (5 minutes)
 
+### **Full Stack (Backend + Frontend)**
+
+**Terminal 1: Backend**
 ```bash
 # 1. Clone and setup
-git clone <repo>
+git clone https://github.com/lorenanicole/event-loop.git
 cd python315
-uv venv
-source .venv/bin/activate
 
-# 2. Install dependencies
+# 2. Create Python environment
+uv venv
+
+# 3. Install Python dependencies
 uv pip install -e ".[dev,test]"
 
-# 3. Setup environment
+# 4. Setup environment
 cp .env.example .env
-# Add ANTHROPIC_API_KEY to .env
+# Edit .env and add ANTHROPIC_API_KEY
 
-# 4. Install git hooks
-invoke setup-hooks
+# 5. Initialize database
+python -c "from src.database import init_db; import asyncio; asyncio.run(init_db())"
 
-# 5. Run tests
-invoke test
-
-# 6. Start server
+# 6. Start backend
 python main.py
-
-# 7. Chat
-# Open http://localhost:8000 in browser
+# Backend running at http://localhost:8000
 ```
+
+**Terminal 2: Frontend**
+```bash
+# From python315 directory:
+cd frontend
+npm install
+npm run dev
+# Frontend running at http://localhost:5173
+```
+
+### **Access the App**
+- 🎯 **Chat UI**: http://localhost:5173
+- 🔌 **API**: http://localhost:8000
+- 📊 **Analytics**: http://localhost:8000/analytics
+- ✅ **Health Check**: http://localhost:8000/health
 
 ## 📋 Tech Stack
 
