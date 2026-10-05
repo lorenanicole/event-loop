@@ -902,6 +902,62 @@ CHICAGO_VENUES = {
             use_playwright=True,
         ),
     ],
+
+    "Old Town": [
+        VenueConfig(
+            name="Zanies Comedy Club",
+            website_url="https://chicago.zanies.com",
+            event_page_url="https://chicago.zanies.com/chicago",
+            category="comedy",
+            address="1548 N Wells St",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_item_class,
+        ),
+        VenueConfig(
+            name="A Red Orchid Theatre",
+            website_url="https://aredorchidtheatre.org",
+            event_page_url="https://aredorchidtheatre.org",
+            category="theater",
+            address="1641 N Halsted St",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_item_class,
+        ),
+    ],
+
+    "West Loop": [
+        VenueConfig(
+            name="City Winery",
+            website_url="https://citywinery.com",
+            event_page_url="https://citywinery.com/pages/events/chicago",
+            category="music",
+            address="1200 W Randolph St",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_event_div,
+        ),
+        VenueConfig(
+            name="Cobra Lounge",
+            website_url="https://cobralounge.com",
+            event_page_url="https://cobralounge.com/events",
+            category="music",
+            address="235 N Ashland Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_item_class,
+        ),
+        VenueConfig(
+            name="Epiphany Center for the Arts",
+            website_url="https://epiphanychi.com",
+            event_page_url="https://epiphanychi.com/art-events",
+            category="arts",
+            address="311 W Carroll Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_li,
+        ),
+    ],
 }
 
 
