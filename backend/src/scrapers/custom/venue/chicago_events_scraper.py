@@ -419,6 +419,60 @@ def extract_hideout(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
 
 
 
+def extract_generic_javascript_events(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Generic extractor for JavaScript-rendered event pages using Playwright."""
+    events = []
+    try:
+        # Look for event-containing elements in rendered HTML
+        for selector in ['.event', '[class*="event"]', 'article', '[class*="show"]', '.item']:
+            containers = soup.select(selector)
+
+            for container in containers:
+                text = container.get_text(strip=True)
+
+                # Skip if too short or too long
+                if len(text) < 50 or len(text) > 500:
+                    continue
+
+                # Look for date pattern
+                import re
+                date_match = re.search(r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})', text)
+
+                # Look for title (usually first line or first meaningful text)
+                lines = text.split('\n')
+                title = None
+                for line in lines:
+                    if len(line.strip()) > 10 and len(line.strip()) < 150:
+                        title = line.strip()
+                        break
+
+                if title and date_match:
+                    events.append(VenueEvent(
+                        name=title,
+                        date=f"{date_match.group(1)} {date_match.group(2)}, 2026",
+                        time=None,
+                        location=f"{config.name}, {config.address}",
+                        url=config.website_url,
+                        venue_name=config.name,
+                        category=config.category
+                    ))
+
+        # Deduplicate by title
+        seen = set()
+        unique_events = []
+        for e in events:
+            if e.name not in seen:
+                seen.add(e.name)
+                unique_events.append(e)
+
+        logger.info(f"{config.name}: extracted {len(unique_events)} events")
+        return unique_events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
 def extract_zanies_calendar(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from FullCalendar grid (Zanies uses calendar widget)."""
     events = []
@@ -568,13 +622,9 @@ CHICAGO_VENUES = {
             event_page_url="https://www.auditoriumtheatre.org/events",
             category="theater",
             address="50 E Congress Pkwy",
-            selectors={
-                "event_container": '.eventItem',
-                "title": 'h2, h3, .event-title, [class*="title"]',
-                "date": '[class*="date"], .date, time, [data-date]'
-            },
+            selectors={},
             use_playwright=True,
-            extractor_fn=None,
+            extractor_fn=extract_generic_javascript_events,
         ),
         VenueConfig(
             name="CIBC Theatre",
@@ -1089,13 +1139,9 @@ CHICAGO_VENUES = {
             event_page_url="https://www.thelincolnlodge.com",
             category="comedy",
             address="2040 N Milwaukee Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            selectors={},
             use_playwright=True,
-            extractor_fn=None,
+            extractor_fn=extract_generic_javascript_events,
         ),
     ],
 
@@ -1242,14 +1288,9 @@ CHICAGO_VENUES = {
             event_page_url="https://cobralounge.com/events",
             category="music",
             address="235 N Ashland Ave",
-            selectors={
-                "event_container": "article",
-                "title": "a.dice_event-title",
-                "date": "[class*='eASHTw'], [class*='glUrQd'] ~ div",
-                "url": "a.dice_event-title"
-            },
+            selectors={},
             use_playwright=True,
-            extractor_fn=None,
+            extractor_fn=extract_generic_javascript_events,
         ),
         VenueConfig(
             name="Epiphany Center for the Arts",
@@ -1274,13 +1315,9 @@ CHICAGO_VENUES = {
             event_page_url="https://www.rhapsodytheater.com/events",
             category="theater",
             address="1328 W Morse Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            selectors={},
             use_playwright=True,
-            extractor_fn=None,
+            extractor_fn=extract_generic_javascript_events,
         ),
         VenueConfig(
             name="Lifeline Theatre",
