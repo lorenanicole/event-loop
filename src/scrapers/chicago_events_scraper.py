@@ -958,6 +958,65 @@ CHICAGO_VENUES = {
             extractor_fn=extract_generic_li,
         ),
     ],
+
+    "Rogers Park": [
+        VenueConfig(
+            name="Rhapsody Theater",
+            website_url="https://www.rhapsodytheater.com",
+            event_page_url="https://do312.com/venues/the-rhapsody-theater",
+            category="theater",
+            address="1328 W Morse Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_li,
+        ),
+        VenueConfig(
+            name="Lifeline Theatre",
+            website_url="https://lifelinetheatre.com",
+            event_page_url="https://lifelinetheatre.com",
+            category="theater",
+            address="4912 N Clark St",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_item_class,
+        ),
+    ],
+
+    "Andersonville": [
+        VenueConfig(
+            name="Bramble Arts Loft",
+            website_url="https://www.brambleartsloft.com",
+            event_page_url="https://www.brambleartsloft.com",
+            category="arts",
+            address="5545 N Clark St",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_item_class,
+        ),
+        VenueConfig(
+            name="Patio Theater",
+            website_url="https://www.thepatiotheater.com",
+            event_page_url="https://www.thepatiotheater.com",
+            category="music",
+            address="6008 W Irving Park Rd",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_li,
+        ),
+    ],
+
+    "Edgewater": [
+        VenueConfig(
+            name="Uncommon Ground",
+            website_url="https://www.uncommonground.com",
+            event_page_url="https://www.uncommonground.com",
+            category="music",
+            address="1401 W Devon Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_generic_item_class,
+        ),
+    ],
 }
 
 
