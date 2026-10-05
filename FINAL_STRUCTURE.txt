@@ -1,0 +1,127 @@
+EventLoop - Final Project Structure
+====================================
+
+eventloop/
+├── app/                          # Python 3.15 FastAPI Backend
+│   ├── src/                      # Application source code
+│   │   ├── __init__.py
+│   │   ├── main.py              # FastAPI entry point
+│   │   ├── api/                 # API routes
+│   │   ├── ai/                  # AI/chatbot features
+│   │   ├── scraper/             # External API scrapers
+│   │   ├── logging.py           # Logging setup
+│   │   ├── security.py          # Auth & rate limiting
+│   │   ├── telemetry.py         # Metrics/observability
+│   │   └── resilience.py        # Circuit breaker, retry logic
+│   ├── tests/                    # App-specific tests
+│   │   ├── __init__.py
+│   │   ├── conftest.py
+│   │   ├── test_api.py
+│   │   ├── test_chat_sse.py
+│   │   ├── test_chatbot.py
+│   │   ├── test_core_functionality.py
+│   │   ├── test_database.py
+│   │   ├── test_resilience.py
+│   │   └── test_security.py
+│   ├── pyproject.toml
+│   └── requirements.txt (optional)
+│
+├── parser/                       # Python 3.14 Web Scraper
+│   ├── src/                      # Parser source code
+│   │   ├── __init__.py
+│   │   ├── scrapers/            # Chicago venue scrapers
+│   │   │   ├── chicago_events_scraper.py
+│   │   │   ├── venue_scraper.py
+│   │   │   └── ...
+│   │   └── scraper/             # External API scrapers
+│   │       ├── scraper.py
+│   │       ├── ticketmaster.py
+│   │       ├── eventbrite.py
+│   │       └── ...
+│   ├── tests/                    # Parser-specific tests
+│   │   ├── __init__.py
+│   │   └── test_scrapers.py
+│   ├── pyproject.toml
+│   └── requirements.txt (optional)
+│
+├── shared/                       # Shared Database & Models
+│   ├── src/                      # Shared source code
+│   │   ├── __init__.py
+│   │   ├── database/            # SQLAlchemy ORM
+│   │   │   ├── models.py        # EventModel, VenueModel, etc.
+│   │   │   └── database.py      # Engine, session factory
+│   │   └── models/              # Pydantic schemas
+│   │       └── __init__.py
+│   ├── tests/                    # Shared tests (if any)
+│   │   └── __init__.py
+│   └── pyproject.toml
+│
+├── frontend/                     # React 18 + Vite
+│   ├── src/
+│   │   ├── app.ts
+│   │   ├── chat.ts
+│   │   └── ...
+│   ├── package.json
+│   └── vite.config.js
+│
+├── scripts/                      # Utility scripts
+│   ├── migrate_scraper_to_main.py
+│   ├── migrate_db.py
+│   └── backfill_*.py
+│
+├── benchmarks/                   # Performance benchmarks
+│   ├── perf_compare.py
+│   ├── compare_results.py
+│   ├── results/
+│   └── README.md
+│
+├── data/                         # Runtime data
+│   ├── events.db                # SQLite database (shared)
+│   └── events.db.pre-migration-*.backup
+│
+├── .claude/                      # Claude Code memory
+├── .venv/                        # Python 3.15 venv
+├── .venv-new/                    # Python 3.14 venv
+│
+├── README.md                     # Main documentation
+├── PROJECT_STRUCTURE.md          # Detailed structure guide
+├── RESTRUCTURE_SUMMARY.md        # What changed
+├── TESTING.md                    # Testing guide
+├── DEVELOPMENT.md                # Development guide
+│
+└── pyproject.toml                # Root monorepo config
+
+Key Features
+============
+
+✅ src/ + tests/ side-by-side in each package
+✅ Separate Python versions (3.15 for app, 3.14 for parser)
+✅ Shared database and models (in shared/)
+✅ Independent deployment and scaling
+✅ Clear import paths and dependencies
+✅ Ready for microservices architecture
+
+Running the Project
+===================
+
+Backend (Python 3.15):
+  cd app/
+  uv run --python 3.15 python -m uvicorn src.main:app --port 8000
+
+Parser (Python 3.14):
+  cd parser/
+  uv run --python 3.14 python -m parser.src.scrapers.chicago_events_scraper
+
+Frontend:
+  cd frontend/
+  npm run dev
+
+Tests:
+  pytest app/tests/
+  pytest parser/tests/
+  pytest shared/tests/
+
+Database:
+  Shared SQLite: data/events.db
+  Used by: app/src and parser/src
+  Models: shared/src/database/models.py
