@@ -419,6 +419,46 @@ def extract_hideout(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
 
 
 
+def extract_cobra_lounge(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from Cobra Lounge (uses article containers with Dice FM)."""
+    events = []
+    try:
+        # Cobra Lounge uses article tags
+        articles = soup.select('article')
+
+        for article in articles:
+            # Get img alt text (event title)
+            img = article.find('img')
+            if img and img.get('alt'):
+                title = img.get('alt').strip()
+
+                # Cobra events might not have visible dates, so use None
+                # Extract any visible text that might be date-related
+                text = article.get_text()
+                import re
+                date_match = re.search(r'(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)', text)
+                date_str = None
+                if date_match:
+                    date_str = f"{date_match.group(2)} {date_match.group(1)}, 2026"
+
+                events.append(VenueEvent(
+                    name=title,
+                    date=date_str,
+                    time=None,
+                    location=f"{config.name}, {config.address}",
+                    url=config.website_url,
+                    venue_name=config.name,
+                    category=config.category
+                ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from articles")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
 def extract_auditorium_theatre(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from Auditorium Theatre (uses eventItem divs)."""
     import re
@@ -1223,7 +1263,7 @@ CHICAGO_VENUES = {
         VenueConfig(
             name="The Lincoln Lodge",
             website_url="https://www.thelincolnlodge.com",
-            event_page_url="https://www.thelincolnlodge.com",
+            event_page_url="https://www.thelincolnlodge.com/calendar",
             category="comedy",
             address="2040 N Milwaukee Ave",
             selectors={},
@@ -1377,7 +1417,7 @@ CHICAGO_VENUES = {
             address="235 N Ashland Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_generic_javascript_events,
+            extractor_fn=extract_cobra_lounge,
         ),
         VenueConfig(
             name="Epiphany Center for the Arts",
@@ -1399,7 +1439,7 @@ CHICAGO_VENUES = {
         VenueConfig(
             name="Rhapsody Theater",
             website_url="https://www.rhapsodytheater.com",
-            event_page_url="https://www.rhapsodytheater.com/events",
+            event_page_url="https://www.rhapsodytheater.com",
             category="theater",
             address="1328 W Morse Ave",
             selectors={},
