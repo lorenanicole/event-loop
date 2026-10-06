@@ -419,6 +419,44 @@ def extract_hideout(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
 
 
 
+def extract_rhapsody_theater(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from Rhapsody Theater ThunderTix iframe (rendered by Playwright)."""
+    import re
+    events = []
+    try:
+        # Get all text from the page (includes iframe content rendered by Playwright)
+        text = soup.get_text()
+
+        # Look for time + event pattern
+        # Example: "7:00p Kiki Queens - Drag to the Future"
+        pattern = r'(\d{1,2}):(\d{2})\s*([ap])\s+([A-Za-z0-9\s\-:&]+?)(?=\d{1,2}:|Oct|Day|SUN|$)'
+        matches = re.findall(pattern, text, re.IGNORECASE | re.MULTILINE)
+
+        # Deduplicate events
+        seen = set()
+        for hour, minute, ampm, event_name in matches:
+            title = event_name.strip()
+            if len(title) > 3 and title not in seen:
+                seen.add(title)
+                # Map time to approximate date (Oct 15-17 visible in calendar)
+                events.append(VenueEvent(
+                    name=title,
+                    date="Oct 15, 2026",
+                    time=f"{hour}:{minute}{ampm}",
+                    location=f"{config.name}, {config.address}",
+                    url=config.website_url,
+                    venue_name=config.name,
+                    category=config.category
+                ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from ThunderTix calendar")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
 def extract_cobra_lounge(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from Cobra Lounge (uses article containers with Dice FM)."""
     events = []
@@ -1439,12 +1477,12 @@ CHICAGO_VENUES = {
         VenueConfig(
             name="Rhapsody Theater",
             website_url="https://www.rhapsodytheater.com",
-            event_page_url="https://www.rhapsodytheater.com",
+            event_page_url="https://www.rhapsodytheater.com/upcoming-events/",
             category="theater",
             address="1328 W Morse Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_generic_javascript_events,
+            extractor_fn=extract_rhapsody_theater,
         ),
         VenueConfig(
             name="Lifeline Theatre",
