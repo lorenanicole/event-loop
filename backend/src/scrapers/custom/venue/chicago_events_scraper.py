@@ -886,15 +886,9 @@ CHICAGO_VENUES = {
             event_page_url="https://www.jamusa.com/riviera-theatre",
             category="music",
             address="4746 N Racine Ave",
-            selectors={
-                "event_container": "div.eventItem",
-                "title": "h3.title a",
-                "date": "div.date",
-                "time": "div.time",
-                "url": "h3.title a"
-            },
+            selectors={},
             use_playwright=True,
-            extractor_fn=None,
+            extractor_fn=extract_generic_javascript_events,
         ),
     ],
 
@@ -957,15 +951,9 @@ CHICAGO_VENUES = {
             event_page_url="https://www.jamusa.com/venues/park-west",
             category="music",
             address="322 W Armitage Ave",
-            selectors={
-                "event_container": "div.eventItem",
-                "title": "h3.title a",
-                "date": "div.date",
-                "time": "div.time",
-                "url": "h3.title a"
-            },
+            selectors={},
             use_playwright=True,
-            extractor_fn=None,
+            extractor_fn=extract_generic_javascript_events,
         ),
     ],
 
