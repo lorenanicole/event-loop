@@ -455,6 +455,57 @@ def extract_rhapsody_theater(soup: BeautifulSoup, config: VenueConfig) -> list[V
         return []
 
 
+def extract_salt_shed(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from Salt Shed (ve-events__card articles)."""
+    import re
+    events = []
+    try:
+        # Salt Shed uses article.ve-events__card for each event
+        articles = soup.select('article.ve-events__card')
+
+        for article in articles:
+            text = article.get_text(strip=True)
+
+            # Look for date pattern: "Sat, Feb 20" or similar
+            date_match = re.search(r'(\w{3}),?\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})', text)
+            if not date_match:
+                continue
+
+            month = date_match.group(2)
+            day = date_match.group(3)
+
+            # Look for time pattern: "Doors: 6:00 PM"
+            time_match = re.search(r'Doors:\s*(\d{1,2}):(\d{2})\s*([AP]M)', text, re.IGNORECASE)
+            time_str = f"{time_match.group(1)}:{time_match.group(2)}{time_match.group(3)}" if time_match else None
+
+            # Extract title - text after PM until age restriction or venue name
+            title_match = re.search(r'[AP]M\s+(.{5,200})(?:17 & Over|All Ages|The Salt Shed|Shed)', text, re.IGNORECASE)
+            title = title_match.group(1).strip() if title_match else None
+
+            # Fallback: take rest of text after PM
+            if not title or len(title) < 3:
+                title_match = re.search(r'[AP]M\s+(.+?)$', text, re.IGNORECASE)
+                title = title_match.group(1).strip() if title_match else None
+
+            if title and len(title) > 3:
+                events.append(VenueEvent(
+                    name=title,
+                    date=f"{month} {day}, 2026",
+                    time=time_str,
+                    location=f"{config.name}, {config.address}",
+                    url=config.website_url,
+                    venue_name=config.name,
+                    category=config.category
+                ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from ve-events__card")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
 def extract_cobra_lounge(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from Cobra Lounge (uses article containers with Dice FM)."""
     events = []
@@ -968,13 +1019,9 @@ CHICAGO_VENUES = {
             event_page_url="https://www.saltshedchicago.com/",
             category="music",
             address="1357 N Elston Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            selectors={},
             use_playwright=True,
-            extractor_fn=None,
+            extractor_fn=extract_salt_shed,
         ),
         VenueConfig(
             name="Outset",
@@ -1391,7 +1438,7 @@ CHICAGO_VENUES = {
         VenueConfig(
             name="United Center",
             website_url="https://www.unitedcenter.com",
-            event_page_url="https://www.unitedcenter.com/events",
+            event_page_url="https://www.unitedcenter.com/events/month/",
             category="music",
             address="1901 W Madison St",
             selectors={
