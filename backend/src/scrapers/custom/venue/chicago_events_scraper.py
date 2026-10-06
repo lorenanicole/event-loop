@@ -419,6 +419,58 @@ def extract_hideout(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
 
 
 
+def extract_auditorium_theatre(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from Auditorium Theatre (uses eventItem divs)."""
+    import re
+    events = []
+    try:
+        # Auditorium Theatre uses div.eventItem with nested structure
+        containers = soup.select('div.eventItem')
+
+        for container in containers:
+            # Get all text from container
+            text = container.get_text(strip=True)
+
+            # Skip if no content
+            if len(text) < 10:
+                continue
+
+            # Date pattern: "Thu,Oct8, 2026" or similar
+            date_match = re.search(r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(\d{1,2}),?\s*2026', text)
+            if not date_match:
+                continue
+
+            month = date_match.group(1)
+            day = date_match.group(2)
+
+            # Title is usually first substantial text before date
+            lines = text.split('Buy Tickets')[0].split('More Info')[0].split(',')[1:] if ',' in text else text.split()
+            title = None
+            for line in lines:
+                cleaned = line.strip()
+                if 4 <= len(cleaned) <= 200 and not any(c.isdigit() for c in cleaned[:3]):
+                    title = cleaned
+                    break
+
+            if title:
+                events.append(VenueEvent(
+                    name=title,
+                    date=f"{month} {day}, 2026",
+                    time=None,
+                    location=f"{config.name}, {config.address}",
+                    url=config.website_url,
+                    venue_name=config.name,
+                    category=config.category
+                ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from eventItem")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
 def extract_jamusa_events(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from Jam Presents/Jamusa.com venues (Park West, Riviera Theatre)."""
     import re
@@ -671,7 +723,7 @@ CHICAGO_VENUES = {
             address="50 E Congress Pkwy",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_generic_javascript_events,
+            extractor_fn=extract_auditorium_theatre,
         ),
         VenueConfig(
             name="CIBC Theatre",
