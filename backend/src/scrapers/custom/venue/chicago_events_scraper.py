@@ -455,6 +455,93 @@ def extract_rhapsody_theater(soup: BeautifulSoup, config: VenueConfig) -> list[V
         return []
 
 
+async def extract_salt_shed_playwright(page, config: VenueConfig) -> list[VenueEvent]:
+    """Extract Salt Shed events from dynamically loaded cards using Playwright."""
+    import re
+    events = []
+    try:
+        # Wait for All Events container
+        await page.wait_for_selector('div[data-venue-events]', timeout=30000)
+
+        # Scroll and load all cards
+        for _ in range(20):
+            try:
+                # Try to click "load more" button
+                more = page.locator('text=/load more|show more|see more/i')
+                if await more.count():
+                    await more.first.click()
+                    await page.wait_for_timeout(1200)
+                else:
+                    # Scroll if no button
+                    await page.mouse.wheel(0, 4000)
+                    await page.wait_for_timeout(1000)
+            except:
+                break
+
+        # Extract all cards using JavaScript
+        cards = await page.evaluate("""
+        () => {
+            const root = document.querySelector('div[data-venue-events]');
+            if (!root) return [];
+            const isTix = el => /get\\s*tickets/i.test(el.textContent || '');
+            const tixIn = el => [...el.querySelectorAll('a,button')].filter(isTix);
+
+            const cards = [];
+            for (const btn of tixIn(root)) {
+                let card = btn;
+                while (card.parentElement && card.parentElement !== root &&
+                       tixIn(card.parentElement).length === 1) {
+                    card = card.parentElement;
+                }
+                if (!cards.includes(card)) cards.push(card);
+            }
+
+            const leafText = (card, re) => {
+                const el = [...card.querySelectorAll('*')]
+                    .find(e => e.children.length === 0 && re.test((e.textContent || '').trim()));
+                return el ? el.textContent.trim() : null;
+            };
+
+            return cards.map(card => {
+                const heading = card.querySelector('h1,h2,h3,h4,h5,h6');
+                const date = leafText(card, /^(mon|tue|wed|thu|fri|sat|sun)[a-z]*,?\\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i);
+                const doors = leafText(card, /^doors/i);
+                return {
+                    date: date,
+                    doors: doors ? doors.replace(/^doors:\\s*/i, '') : null,
+                    title: heading ? heading.textContent.trim().replace(/\\s+/g, ' ') : null,
+                };
+            });
+        }
+        """)
+
+        # Parse extracted cards
+        for card in cards:
+            if card['date'] and card['title']:
+                # Parse date like "TUE, OCT 6"
+                date_match = re.search(r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})', card['date'], re.IGNORECASE)
+                if date_match:
+                    month = date_match.group(1)
+                    day = date_match.group(2)
+
+                    events.append(VenueEvent(
+                        name=card['title'],
+                        date=f"{month} {day}, 2026",
+                        time=card['doors'],
+                        location=f"{config.name}, {config.address}",
+                        url=config.website_url,
+                        venue_name=config.name,
+                        category=config.category
+                    ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from dynamic cards")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
 def extract_salt_shed(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from Salt Shed (ve-events__card articles)."""
     import re
@@ -478,14 +565,9 @@ def extract_salt_shed(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEve
             time_match = re.search(r'Doors:\s*(\d{1,2}):(\d{2})\s*([AP]M)', text, re.IGNORECASE)
             time_str = f"{time_match.group(1)}:{time_match.group(2)}{time_match.group(3)}" if time_match else None
 
-            # Extract title - text after PM until age restriction or venue name
-            title_match = re.search(r'[AP]M\s+(.{5,200})(?:17 & Over|All Ages|The Salt Shed|Shed)', text, re.IGNORECASE)
+            # Extract title - text after PM until age restriction or venue name (non-greedy)
+            title_match = re.search(r'[AP]M\s+(.+?)(?:17 & Over|All Ages|The Salt Shed|Shed)', text, re.IGNORECASE)
             title = title_match.group(1).strip() if title_match else None
-
-            # Fallback: take rest of text after PM
-            if not title or len(title) < 3:
-                title_match = re.search(r'[AP]M\s+(.+?)$', text, re.IGNORECASE)
-                title = title_match.group(1).strip() if title_match else None
 
             if title and len(title) > 3:
                 events.append(VenueEvent(
@@ -1016,7 +1098,7 @@ CHICAGO_VENUES = {
         VenueConfig(
             name="Salt Shed",
             website_url="https://www.saltshedchicago.com",
-            event_page_url="https://www.saltshedchicago.com/",
+            event_page_url="https://www.saltshedchicago.com/home#shows",
             category="music",
             address="1357 N Elston Ave",
             selectors={},
