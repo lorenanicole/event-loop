@@ -421,32 +421,36 @@ def extract_hideout(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
 
 def extract_generic_javascript_events(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Generic extractor for JavaScript-rendered event pages using Playwright."""
+    import re
     events = []
     try:
-        # Look for event-containing elements in rendered HTML
-        for selector in ['.event', '[class*="event"]', 'article', '[class*="show"]', '.item']:
+        # More permissive container selectors - cast wider net
+        for selector in ['div', '[class*="event"]', 'article', '.show', '.item', 'li']:
             containers = soup.select(selector)
+            if not containers:
+                continue
 
             for container in containers:
                 text = container.get_text(strip=True)
 
-                # Skip if too short or too long
-                if len(text) < 50 or len(text) > 500:
+                # Skip empty or very short text
+                if len(text) < 20 or len(text) > 2000:
                     continue
 
-                # Look for date pattern
-                import re
+                # Look for date pattern (month + day)
                 date_match = re.search(r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})', text)
+                if not date_match:
+                    continue
 
-                # Look for title (usually first line or first meaningful text)
-                lines = text.split('\n')
+                # Extract title - take first substantial line
+                lines = [l.strip() for l in text.split('\n') if l.strip()]
                 title = None
                 for line in lines:
-                    if len(line.strip()) > 10 and len(line.strip()) < 150:
-                        title = line.strip()
+                    if 8 <= len(line) <= 200 and not line.startswith('http'):
+                        title = line
                         break
 
-                if title and date_match:
+                if title:
                     events.append(VenueEvent(
                         name=title,
                         date=f"{date_match.group(1)} {date_match.group(2)}, 2026",
@@ -461,11 +465,12 @@ def extract_generic_javascript_events(soup: BeautifulSoup, config: VenueConfig) 
         seen = set()
         unique_events = []
         for e in events:
-            if e.name not in seen:
-                seen.add(e.name)
+            key = (e.name, e.date)
+            if key not in seen:
+                seen.add(key)
                 unique_events.append(e)
 
-        logger.info(f"{config.name}: extracted {len(unique_events)} events")
+        logger.info(f"{config.name}: extracted {len(unique_events)} events from rendered HTML")
         return unique_events
 
     except Exception as e:
