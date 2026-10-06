@@ -100,7 +100,28 @@ class VenueScraper:
                     await page.wait_for_timeout(2000)
 
                     html = await page.content()
+
+                    # Extract content from any iframes (for venues like Rhapsody Theater with ThunderTix)
+                    frames = page.frames
+                    iframe_content = []
+                    for frame in frames:
+                        try:
+                            frame_text = await frame.evaluate("document.body.innerText")
+                            if frame_text and len(frame_text) > 100:
+                                iframe_content.append(frame_text)
+                        except:
+                            pass
+
+                    # Create soup and inject iframe content if found
                     soup = BeautifulSoup(html, "html.parser")
+                    if iframe_content:
+                        # Append iframe content as hidden text node for extractor to find
+                        body = soup.find('body')
+                        if body:
+                            iframe_text = " ".join(iframe_content)
+                            import html as html_module
+                            body.append(soup.new_string(f"\n{html_module.escape(iframe_text)}\n"))
+
                     events = self._extract_events(soup)
 
                 finally:

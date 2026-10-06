@@ -432,12 +432,10 @@ def extract_rhapsody_theater(soup: BeautifulSoup, config: VenueConfig) -> list[V
         pattern = r'(\d{1,2}):(\d{2})\s*([ap])\s+([A-Za-z0-9\s\-:&]+?)(?=\d{1,2}:|Oct|Day|SUN|$)'
         matches = re.findall(pattern, text, re.IGNORECASE | re.MULTILINE)
 
-        # Deduplicate events
-        seen = set()
+        # Don't deduplicate - each time entry is a separate show
         for hour, minute, ampm, event_name in matches:
             title = event_name.strip()
-            if len(title) > 3 and title not in seen:
-                seen.add(title)
+            if len(title) > 3:
                 # Map time to approximate date (Oct 15-17 visible in calendar)
                 events.append(VenueEvent(
                     name=title,
