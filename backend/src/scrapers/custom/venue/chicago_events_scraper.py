@@ -419,6 +419,48 @@ def extract_hideout(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
 
 
 
+def extract_jamusa_events(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from Jam Presents/Jamusa.com venues (Park West, Riviera Theatre)."""
+    import re
+    events = []
+    try:
+        # Jam Presents uses div.eventItem containers
+        containers = soup.select('div.eventItem')
+
+        for container in containers:
+            text = container.get_text(strip=True)
+
+            # Date format: "Oct7Wed" or "Oct23Mon"
+            date_match = re.search(r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(\d{1,2})\w{3}', text)
+            if not date_match:
+                continue
+
+            month = date_match.group(1)
+            day = date_match.group(2)
+
+            # Extract title - look for artist name after "Jam Presents"
+            title_match = re.search(r'Jam Presents(.+?)(?:with |Doors:|$)', text)
+            if title_match:
+                title = title_match.group(1).strip()
+                if len(title) > 3 and len(title) < 200:
+                    events.append(VenueEvent(
+                        name=title,
+                        date=f"{month} {day}, 2026",
+                        time=None,
+                        location=f"{config.name}, {config.address}",
+                        url=config.website_url,
+                        venue_name=config.name,
+                        category=config.category
+                    ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from Jam Presents")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
 def extract_generic_javascript_events(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Generic extractor for JavaScript-rendered event pages using Playwright."""
     import re
@@ -893,7 +935,7 @@ CHICAGO_VENUES = {
             address="4746 N Racine Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_generic_javascript_events,
+            extractor_fn=extract_jamusa_events,
         ),
     ],
 
@@ -958,7 +1000,7 @@ CHICAGO_VENUES = {
             address="322 W Armitage Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_generic_javascript_events,
+            extractor_fn=extract_jamusa_events,
         ),
     ],
 
