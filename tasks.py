@@ -10,9 +10,9 @@ Examples:
   invoke pre-commit           # Pre-commit checks (tests + lint)
 """
 
-from invoke import task, Collection
 import sys
 
+from invoke import Collection, task
 
 # Color codes for output
 GREEN = "\033[92m"
@@ -24,9 +24,9 @@ BOLD = "\033[1m"
 
 def print_header(msg):
     """Print a formatted header."""
-    print(f"\n{BOLD}{GREEN}{'='*60}{RESET}")
+    print(f"\n{BOLD}{GREEN}{'=' * 60}{RESET}")
     print(f"{BOLD}{GREEN}{msg}{RESET}")
-    print(f"{BOLD}{GREEN}{'='*60}{RESET}\n")
+    print(f"{BOLD}{GREEN}{'=' * 60}{RESET}\n")
 
 
 def print_success(msg):
@@ -49,7 +49,7 @@ def test(c, file=None):
     """Run unit tests with pytest."""
     print_header("Running Tests")
 
-    cmd = "pytest tests/"
+    cmd = "cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/"
 
     if file:
         cmd += f"/test_{file}.py"
@@ -70,7 +70,7 @@ def test_quick(c, fast=False):
     """Run tests quickly (no coverage report)."""
     print_header("Quick Test Run")
 
-    cmd = "pytest tests/ -v --tb=short"
+    cmd = "cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/ -v --tb=short"
 
     if fast:
         cmd += " -x"  # Stop on first failure
@@ -86,7 +86,7 @@ def lint(c, fix=False):
     """Check code with ruff."""
     print_header("Code Quality Check (Ruff)")
 
-    cmd = "ruff check src/ tests/"
+    cmd = "ruff check backend/src backend/tests"
 
     if fix:
         cmd += " --fix"
@@ -110,10 +110,10 @@ def format(c):
     print_header("Code Formatting (Ruff)")
 
     # Ruff format
-    c.run("ruff format src/ tests/", warn=True)
+    c.run("ruff format backend/src backend/tests", warn=True)
 
     # Then check
-    c.run("ruff check src/ tests/ --fix", warn=True)
+    c.run("ruff check backend/src backend/tests --fix", warn=True)
 
     print_success("Code formatted!")
 
@@ -125,7 +125,7 @@ def pre_commit(c):
 
     # First lint
     print("\n1️⃣  Linting...")
-    lint_result = c.run("ruff check src/ tests/", warn=True)
+    lint_result = c.run("ruff check backend/src backend/tests", warn=True)
 
     if not lint_result.ok:
         print_error("Linting failed! Run 'invoke lint --fix'")
@@ -136,14 +136,14 @@ def pre_commit(c):
     # Then test
     print("\n2️⃣  Testing...")
     test_result = c.run(
-        "pytest tests/ -v --tb=short --co -q",  # Just collect, don't run
-        warn=True
+        "cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/ -v --tb=short --co -q",  # Just collect, don't run
+        warn=True,
     )
 
     # Run actual tests
     test_result = c.run(
-        "pytest tests/ -x --tb=short",  # Stop on first failure
-        warn=True
+        "cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/ -x --tb=short",  # Stop on first failure
+        warn=True,
     )
 
     if not test_result.ok:
@@ -203,7 +203,7 @@ def coverage(c):
     print_header("Coverage Report")
 
     c.run(
-        "pytest tests/ --cov=src --cov-report=html --cov-report=term-missing -v"
+        "cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/ --cov=src --cov-report=html --cov-report=term-missing -v"
     )
 
     print_success("Coverage report generated in htmlcov/index.html")
@@ -215,8 +215,8 @@ def test_category(c, category):
     print_header(f"Running {category.title()} Tests")
 
     result = c.run(
-        f"pytest tests/ -k {category} -v --tb=short",
-        warn=True
+        f"cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/ -k {category} -v --tb=short",
+        warn=True,
     )
 
     if not result.ok:
@@ -229,10 +229,16 @@ def security_audit(c):
     print_header("Security Audit")
 
     print("\n1️⃣  Security tests...")
-    c.run("pytest tests/test_security.py -v", warn=True)
+    c.run(
+        "cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/app/test_security.py -v",
+        warn=True,
+    )
 
     print("\n2️⃣  Resilience tests...")
-    c.run("pytest tests/test_resilience.py -v", warn=True)
+    c.run(
+        "cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/app/test_resilience.py -v",
+        warn=True,
+    )
 
     print_success("Security audit complete!")
 
@@ -243,15 +249,22 @@ def scrape(c):
     print_header("Scraping Events from All Sources")
     print(f"{YELLOW}Sources: DO312, BandsinTown, EventBrite, Ticketmaster,")
     print(f"          TimeoutChicago, YourChicagoGuide{RESET}\n")
-    c.run("uv run python scripts/scrape_events.py")
+    c.run(
+        "cd backend && PYTHONPATH=src .venv/bin/python additive_scrape.py",
+        pty=True,
+    )
 
 
 @task
 def dev(c):
     """Run backend server with uv."""
     print_header("Starting Backend (EventLoop API)")
-    print(f"{YELLOW}Running: uv run python main.py{RESET}\n")
-    c.run("uv run python main.py")
+    print(f"{YELLOW}Running: uvicorn app.main:app on :8000{RESET}\n")
+    c.run(
+        "cd backend && PYTHONPATH=src .venv/bin/python -m uvicorn app.main:app "
+        "--reload --reload-dir src --port 8000",
+        pty=True,
+    )
 
 
 @task

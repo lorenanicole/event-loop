@@ -1,67 +1,17 @@
-# Bandit security configuration
-# Scans for common security issues in Python code
+# Bandit security configuration.
+#
+# YAML, not INI. This was written as an INI file with a [bandit] section,
+# which is the setup.cfg format - `bandit -c` parses YAML, so every run died
+# with "expected '<document start>'" before scanning a line.
 
-[bandit]
-# Exclude test directories from security scan
-exclude_dirs = [
-    "/tests/",
-    "/test_",
-    ".venv",
-    "__pycache__",
-]
+exclude_dirs:
+  - "/tests/"
+  - "/test_"
+  - ".venv"
+  - "__pycache__"
+  - "/node_modules/"
 
-# Tests to run
-tests = [
-    B201,  # flask_debug_true
-    B301,  # pickle
-    B302,  # marshal
-    B303,  # md5
-    B304,  # des
-    B305,  # cipher
-    B306,  # mktemp_q
-    B307,  # eval
-    B308,  # mark_safe
-    B309,  # httpsconnection
-    B310,  # urllib_urlopen
-    B311,  # random
-    B312,  # telnetlib
-    B313,  # xml_bad_expat
-    B314,  # xml_bad_pulldom
-    B315,  # xml_bad_sax
-    B316,  # xml_bad_minidom
-    B317,  # xml_bad_etree
-    B318,  # xml_bad_etree
-    B319,  # xml_bad_etree
-    B320,  # xml_bad_etree
-    B321,  # request_with_no_cert_validation
-    B322,  # unverified_context
-    B323,  # unverified_context
-    B324,  # probable_insecure_hash_usage
-    B325,  # tempnam
-    B401,  # import_telnetlib
-    B402,  # import_paramiko
-    B403,  # import_pickle
-    B404,  # import_subprocess
-    B405,  # import_xml
-    B406,  # import_xml_sax
-    B407,  # import_xml_etree
-    B408,  # import_xmlrpc
-    B409,  # import_imaplib
-    B410,  # import_ftplib
-    B411,  # import_xmlrpc_server
-    B412,  # import_httpoxy
-    B413,  # import_tabnanny
-    B501,  # request_with_no_cert_validation
-    B502,  # ssl_with_bad_version
-    B503,  # ssl_with_bad_defaults
-    B504,  # ssl_with_no_version
-    B505,  # weak_cryptographic_key
-    B506,  # yaml_load
-    B507,  # ssh_no_host_key_verification
-]
-
-# Skip tests
-skips = []
-
-# Severity level
-severity = ["HIGH", "MEDIUM"]
+skips:
+  # assert_used: pytest is built on assert, and the test tree is excluded
+  # above anyway.
+  - B101

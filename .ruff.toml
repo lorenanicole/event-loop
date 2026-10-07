@@ -1,13 +1,22 @@
 # Ruff configuration for Python 3.15 project
 # Fast, modern linter and formatter
 
-[tool.ruff]
 # Python 3.15
 target-version = "py315"
 line-length = 100
 
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    ".pytest_cache",
+    "node_modules",
+]
+
 # Lint rules
-[tool.ruff.lint]
+[lint]
 select = [
     "E",      # pycodestyle errors
     "W",      # pycodestyle warnings
@@ -25,26 +34,15 @@ select = [
 
 ignore = [
     "E501",   # Line too long (we handle this with line-length)
-    "W503",   # Line break before binary operator
     "N806",   # Variable in function should be lowercase (for type hints)
 ]
 
 # McCabe complexity threshold
-[tool.ruff.lint.mccabe]
+[lint.mccabe]
 max-complexity = 10
 
 # isort configuration (import sorting)
-[tool.ruff.lint.isort]
-known-first-party = ["src"]
+[lint.isort]
+known-first-party = ["app", "shared", "scrapers"]
 known-third-party = ["pydantic", "fastapi", "sqlalchemy"]
 
-# Exclude patterns
-exclude = [
-    ".git",
-    ".venv",
-    "__pycache__",
-    "build",
-    "dist",
-    ".pytest_cache",
-    "node_modules",
-]

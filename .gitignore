@@ -41,3 +41,8 @@ build/
 
 # Local database snapshots (see backend/db_safety.py)
 backend/data/backups/
+
+# SQLite WAL artifacts. Created by journal_mode=WAL, rewritten constantly, and
+# meaningless without the database file they belong to.
+*.db-wal
+*.db-shm

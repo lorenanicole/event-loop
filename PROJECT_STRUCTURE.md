@@ -50,8 +50,6 @@ eventloop/
 │   └── vite.config.js
 │
 ├── scripts/                 # Utility scripts
-│   ├── migrate_scraper_to_main.py
-│   ├── migrate_db.py
 │   └── backfill_*.py
 │
 ├── benchmarks/              # Performance benchmarks
@@ -189,7 +187,6 @@ from parser.scrapers.chicago_events_scraper import scrape_chicago_events
 
 ### Migrate Database Schema
 ```bash
-python scripts/migrate_db.py
 ```
 
 ## Configuration

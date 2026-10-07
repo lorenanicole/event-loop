@@ -66,7 +66,6 @@ eventloop/
 │   └── results/
 │
 ├── scripts/                   # Utilities
-│   ├── migrate_scraper_to_main.py
 │   └── backfill_*.py
 │
 └── data/

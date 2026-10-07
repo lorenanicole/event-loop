@@ -5,7 +5,7 @@
 repos:
   # Ruff linting
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.0
+    rev: v0.16.10
     hooks:
       - id: ruff
         args: [--fix]
@@ -13,7 +13,7 @@ repos:
 
   # Ruff formatting
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.0
+    rev: v0.16.10
     hooks:
       - id: ruff-format
         name: "Ruff format"
@@ -44,26 +44,32 @@ repos:
     hooks:
       - id: bandit
         name: "Security check (Bandit)"
-        args: [-c, .bandit, -r, src/]
+        # -r backend/src, not src/: the latter has not existed since the
+        # project moved, so this was scanning nothing.
+        args: [-c, .bandit, -r, backend/src]
         types: [python]
+        # bandit 1.7.5 imports pbr at startup and does not declare it in a way
+        # pre-commit's isolated env picks up under Python 3.15, so every run
+        # died with ModuleNotFoundError before scanning a line.
+        additional_dependencies: [pbr]
 
   # Core tests (security + core functionality)
   - repo: local
     hooks:
       - id: pytest-security
         name: "Security tests"
-        entry: pytest tests/test_security.py -q
+        entry: bash -c 'cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/app/test_security.py -q'
         language: system
         types: [python]
-        stages: [commit]
+        stages: [pre-commit]
         pass_filenames: false
 
       - id: pytest-core
         name: "Core functionality tests"
-        entry: pytest tests/test_resilience.py tests/test_chatbot.py -q
+        entry: bash -c 'cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/app/test_resilience.py tests/app/test_chatbot.py -q'
         language: system
         types: [python]
-        stages: [commit]
+        stages: [pre-commit]
         pass_filenames: false
 
 # Configuration
@@ -71,10 +77,8 @@ default_language_version:
   python: python3.15
 
 # Only run on these files (speed up for large repos)
-files: ^(src/|tests/|tasks\.py)
+files: ^(backend/src/|backend/tests/|tasks\.py)
 
-# Skip slow hooks on rebase/merge
-stages: [commit]
-
-# Verbose output
-verbose: false
+# `stages` and `verbose` were here as top-level keys, which pre-commit does
+# not accept there - it warned "Unexpected key(s) present at root" on every
+# single commit. They are per-hook settings, and nothing here needs them.

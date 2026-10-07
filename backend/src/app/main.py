@@ -1,17 +1,16 @@
-import os
 import asyncio
+import os
 from contextlib import asynccontextmanager
+
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
-from shared.database import init_db, AsyncSessionLocal
-from app.api import router, analytics_router
-from scrapers.external.do312 import DO312Scraper
+from app.api import analytics_router, router
 from app.logging import configure_logging, get_logger
-from app import telemetry
+from shared.database import AsyncSessionLocal, init_db
 
 load_dotenv()
 
@@ -27,24 +26,16 @@ async def startup_event():
     await init_db()
     logger.info("Database initialized")
 
-    # Backfill cost and age_range for existing events
-    try:
-        from scripts.backfill_events import backfill_cost_and_age_range
-        stats = await backfill_cost_and_age_range()
-        logger.info(
-            f"Backfill complete: {stats['cost_updated']} cost, "
-            f"{stats['age_range_updated']} age_range, "
-            f"{stats['errors']} errors"
-        )
-    except Exception as e:
-        logger.warning(f"Backfill skipped or failed: {e}")
-
-    # Backfill location data (is_outdoor, address, venue_name) for existing events
-    try:
-        from scripts.backfill_locations import backfill_event_locations
-        await backfill_event_locations()
-    except Exception as e:
-        logger.warning(f"Location backfill skipped or failed: {e}")
+    # The two startup backfills that used to live here are gone. They
+    # imported `scripts.backfill_events` and `scripts.backfill_locations`,
+    # which import `from src.*` - a layout that stopped existing when the
+    # project moved into backend/ - so every boot logged "No module named
+    # 'scripts'" and skipped them. They had not run in a very long time.
+    #
+    # They are not reinstated here either way: a web server should not run
+    # data migrations while it starts. Cost now has its own tool,
+    # backfill_event_costs.py, which fetches each event's page rather than
+    # re-reading text we already have.
 
     # Close conversations nobody came back to. At startup rather than on a
     # timer: a restart is a natural moment to tidy, and a sweep that only ran
