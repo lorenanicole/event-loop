@@ -111,7 +111,7 @@ export async function getAllEvents(skip: number = 0, limit: number = 20): Promis
   }
 }
 
-/** Counts for the filter tiles, honouring whatever is already selected. */
+/** Counts for the filter tiles, honoring whatever is already selected. */
 export interface FilterCounts {
   categories: Neighborhood[]
   neighborhoods: Neighborhood[]

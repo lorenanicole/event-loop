@@ -70,7 +70,7 @@ class TestFilterCounts:
         assert len(tonight["neighborhoods"]) <= len(everything["neighborhoods"])
         assert len(tonight["categories"]) <= len(everything["categories"])
 
-    async def test_an_unrecognised_timeframe_applies_no_window(self, client):
+    async def test_an_unrecognized_timeframe_applies_no_window(self, client):
         """Better to show everything than to fail on a word we cannot parse."""
         everything = (await client.get(ENDPOINT)).json()
         odd = (await client.get(ENDPOINT, params={"timeframe": "whenever"})).json()

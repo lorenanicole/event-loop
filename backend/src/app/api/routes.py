@@ -8,7 +8,7 @@ from pydantic import ConfigDict, BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import String, and_, cast, func, or_, select
 
-from shared.database import get_db, start_of_day, upcoming_events_filter
+from shared.database import feed_order, get_db, start_of_day, upcoming_events_filter
 from shared.database.models import (
     AuditLogModel,
     ChatThreadModel,
@@ -145,7 +145,8 @@ async def list_events(
     result = await db.execute(
         select(EventModel)
         .filter(upcoming_events_filter())
-        .order_by(EventModel.date.asc())
+        # Shared with /search, so the two paginate identically.
+        .order_by(*feed_order())
         .offset(skip)
         .limit(limit)
     )
@@ -281,7 +282,7 @@ async def get_event_neighborhoods(
 
 @router.get(
     "/events/filter-counts",
-    summary="Counts for the filter tiles, honouring the current selection",
+    summary="Counts for the filter tiles, honoring the current selection",
     description=(
         "Event counts per category and per neighborhood, for drawing the filter "
         "tiles with numbers that match what clicking one actually returns.\n\n"
@@ -296,7 +297,7 @@ async def get_event_neighborhoods(
         "opening state.\n\n"
         "`timeframe` takes the same words the sentence offers - 'tonight', "
         "'this weekend', 'next week' - and is parsed exactly as the search "
-        "query is. An unrecognised value applies no date window rather than "
+        "query is. An unrecognized value applies no date window rather than "
         "failing."
     ),
     tags=["Events"],
@@ -545,20 +546,10 @@ async def search_events(
             )
         )
 
-    # Name ascending, then date descending, then id. The id is not decoration:
-    # name and date together are not unique - a residency plays the same room
-    # on the same night twice - and without a final tiebreak a row could appear
-    # on two consecutive pages or on neither, which is the whole point of
-    # ordering a paged list deterministically.
+    # Soonest first, then name - shared with GET /events so the two surfaces
+    # cannot drift. See `feed_order` for why name is not the primary key.
     db_query = (
-        db_query.order_by(
-            # Lowercased, because SQLite's default collation sorts every
-            # capital before every lowercase letter: "$10 Cover" would come
-            # before "$10 cover" and the two would not sit together.
-            func.lower(EventModel.name).asc(),
-            EventModel.date.desc(),
-            EventModel.id.asc(),
-        )
+        db_query.order_by(*feed_order())
         .offset(search.skip)
         .limit(limit)
     )

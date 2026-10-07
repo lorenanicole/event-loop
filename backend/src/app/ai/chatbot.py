@@ -562,7 +562,7 @@ async def _semantic_candidates(
         return []
 
     # The index is built over upcoming events, but the caller's date window
-    # still has to be honoured - "this weekend" means this weekend.
+    # still has to be honored - "this weekend" means this weekend.
     stmt = select(EventModel).where(EventModel.id.in_([eid for eid, _ in matches]))
     stmt = stmt.where(upcoming_events_filter())
     # The index searches the whole city, so named neighborhoods have to

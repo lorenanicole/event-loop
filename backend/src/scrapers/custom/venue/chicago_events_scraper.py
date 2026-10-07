@@ -3314,7 +3314,7 @@ CHICAGO_VENUES = {
             # Listed under the festival's own address because that is what the
             # listing gives us; the events themselves run at partner venues
             # across the city (the Athenaeum, the MCA), so the neighborhood
-            # here is the organiser's rather than each event's.
+            # here is the organizer's rather than each event's.
             name="Chicago Humanities",
             website_url="https://www.chicagohumanities.org",
             event_page_url="https://www.chicagohumanities.org/events/",
@@ -3932,7 +3932,7 @@ async def save_events_to_db(
             # An extractor that yields the same event twice used to produce two
             # rows, because the collision handling below invents a unique URL
             # for the second one and so preserves the duplicate rather than
-            # recognising it. Kingston Mines stored every show twice this way,
+            # recognizing it. Kingston Mines stored every show twice this way,
             # every night. Collapse identical events before saving instead:
             # identity is name + date + time, so two genuinely different sets
             # on one night still count separately.

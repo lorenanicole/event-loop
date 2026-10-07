@@ -24,7 +24,17 @@
       "Bash(.venv/bin/python scrape_events.py --init-db --sources all)",
       "Bash(.venv/bin/python)",
       "Bash(curl -s \"https://www.kingstonmines.com/\")",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(.venv/bin/python /private/tmp/claude-501/-Users-lorenamesa-Workspace-python315/1fd6ca97-24d7-4d17-a808-e49025111656/scratchpad/t8.py)",
+      "Bash(.venv/bin/python /private/tmp/claude-501/-Users-lorenamesa-Workspace-python315/1fd6ca97-24d7-4d17-a808-e49025111656/scratchpad/t9.py)",
+      "Bash(PYTHONPATH=src .venv/bin/python -c ' *)",
+      "Bash(.venv/bin/python -)",
+      "Bash(.venv/bin/python /private/tmp/claude-501/-Users-lorenamesa-Workspace-python315/1fd6ca97-24d7-4d17-a808-e49025111656/scratchpad/sk.py)",
+      "Bash(PYTHONPATH=src .venv/bin/python -m pytest tests -q)",
+      "Bash(PYTHONPATH=src .venv/bin/python additive_scrape.py \"Los Globos\" \"V-Live\" \"Apollo\" \"Cermak Hall\" \"Room 43\" \"Bronzeville Winery\" \"Promontory\" \"South Shore Cultural\" \"Lee's\" \"New Apartment\" \"Constellation\")",
+      "Bash(.venv/bin/python -m py_compile merge_duplicate_neighborhoods.py)",
+      "Bash(.venv/bin/python merge_duplicate_neighborhoods.py --dry-run)",
+      "Bash(PYTHONPATH=src .venv/bin/python additive_scrape.py \"Radius\")"
     ]
   }
 }

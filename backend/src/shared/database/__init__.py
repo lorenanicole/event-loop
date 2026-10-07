@@ -1,6 +1,6 @@
 from .models import Base, EventModel
 from .database import get_db, init_db, AsyncSessionLocal
-from .filters import start_of_day, upcoming_events_filter
+from .filters import feed_order, start_of_day, upcoming_events_filter
 
 __all__ = [
     "Base",
@@ -8,6 +8,7 @@ __all__ = [
     "get_db",
     "init_db",
     "AsyncSessionLocal",
+    "feed_order",
     "start_of_day",
     "upcoming_events_filter",
 ]
