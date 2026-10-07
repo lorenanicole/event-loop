@@ -53,6 +53,40 @@ class ThinkingEvent(StreamEvent):
     status: str
 
 
+def _tools_used(result) -> list[tuple[str, dict]]:
+    """The tools an agent run actually called, in order.
+
+    Read from the run's own message history rather than counted as the run
+    goes along: `agent.run` is one awaited call and emits nothing in between,
+    so anything watching for intermediate events sees none.
+
+    Tolerant of the message shapes changing, because a wrong tool count is
+    only a reporting detail and must never fail a reply that otherwise
+    worked.
+    """
+    calls: list[tuple[str, dict]] = []
+    try:
+        messages = result.all_messages()
+    except Exception:  # noqa: BLE001 - reporting must not break the turn
+        return calls
+
+    for message in messages:
+        for part in getattr(message, "parts", []) or []:
+            name = getattr(part, "tool_name", None)
+            # Only the request side has a tool_name AND args; the matching
+            # return part would otherwise double every count.
+            if not name or not hasattr(part, "args"):
+                continue
+            args = getattr(part, "args", None)
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except (json.JSONDecodeError, TypeError):
+                    args = {"raw": args}
+            calls.append((name, args if isinstance(args, dict) else {}))
+    return calls
+
+
 class ToolCallEvent(StreamEvent):
     """Emitted when agent calls a tool."""
     event: str = "tool_call"
@@ -377,6 +411,25 @@ class ChatExecutor:
                     operation_name="llm_agent_run",
                 )
                 response_text = result.output
+
+                # Report which tools actually ran.
+                #
+                # This used to be counted by watching for a "tool_call" event
+                # from this generator, which never emits one: `agent.run` is a
+                # single awaited call, not a stream, so the count was always
+                # zero no matter how much work the agent did. A turn that had
+                # just searched the web reported `tool_calls: 0`, which made
+                # answers look like they came from nowhere and made it
+                # impossible to tell a database answer from a web one.
+                #
+                # The run result carries the real history, so read it from
+                # there instead.
+                for name, args in _tools_used(result):
+                    yield ToolCallEvent(
+                        tool=name,
+                        args=args,
+                        data={"tool": name, "args": args},
+                    )
 
                 # If agent returned raw tool outputs (dict-like), extract and format nicely
                 if response_text.startswith('{"') and '"search_local_db"' in response_text:

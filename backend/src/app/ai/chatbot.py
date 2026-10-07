@@ -80,6 +80,11 @@ class EventResult(BaseModel):
     title: str
     date: Optional[str] = None
     location: Optional[str] = None
+    # Google returns the address as ["Lincoln Park Zoo", "Chicago, IL"] - the
+    # venue and then where it is. Keeping the venue apart from the joined
+    # string means a stored event names its venue like every other source,
+    # instead of having it buried in an address field.
+    venue: Optional[str] = None
     url: Optional[str] = None
     source: str
 
@@ -334,6 +339,50 @@ def _looks_like_an_event(title: Optional[str]) -> bool:
     return not any(pattern.search(cleaned) for pattern in _NOT_AN_EVENT)
 
 
+# Strong references to in-flight background tasks.
+#
+# The event loop keeps only a weak reference to a task, so a task nobody else
+# holds may be collected before it finishes - the hazard the asyncio docs warn
+# about, still current in 3.15. Holding it in a set and discarding it from a
+# done callback is the pattern those docs recommend.
+#
+# This is defensive rather than a fix for an observed loss: when the online
+# search persisted nothing, the cause turned out to be that SerpAPI returns no
+# `link` on an event, so every row was dropped by the URL check below. A task
+# suspended on `asyncio.sleep` is in fact kept alive by that sleep's future,
+# which is why the loss was deterministic rather than a race.
+#
+# It earns its place on the second count: a bare task keeps its exception to
+# itself, so "persisting failed" and "there was nothing to persist" looked
+# identical in the logs. Now they do not.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _spawn_background(coro) -> asyncio.Task:
+    """Run a coroutine detached from the request, and actually keep it alive.
+
+    The task is held until it completes, and its outcome is logged: a bare
+    background task swallows its own exception, so a failure to persist looked
+    identical to there being nothing to persist.
+    """
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+
+    def _done(finished: asyncio.Task) -> None:
+        _background_tasks.discard(finished)
+        if finished.cancelled():
+            logger.warning("Background task was cancelled before finishing")
+            return
+        error = finished.exception()
+        if error:
+            logger.error(
+                "Background task failed: %s: %s", type(error).__name__, error
+            )
+
+    task.add_done_callback(_done)
+    return task
+
+
 async def _persist_events_to_db(events: list[EventResult]) -> None:
     """Background task: persist external events to DB (non-blocking) with retry."""
     if not events:
@@ -348,17 +397,8 @@ async def _persist_events_to_db(events: list[EventResult]) -> None:
             async with AsyncSessionLocal() as db:
                 persisted_count = 0
                 for event in events:
-                    if not event.url:
-                        continue
                     if not _looks_like_an_event(event.title):
                         logger.info(f"Skipping non-event search result: {event.title!r}")
-                        continue
-
-                    result = await db.execute(
-                        select(EventModel).filter_by(origination_url=event.url)
-                    )
-                    existing = result.scalar_one_or_none()
-                    if existing:
                         continue
 
                     try:
@@ -366,16 +406,42 @@ async def _persist_events_to_db(events: list[EventResult]) -> None:
                     except (ValueError, AttributeError, TypeError):
                         event_date = datetime.now() + timedelta(days=30)
 
+                    # Google's event cards carry no link at all - title,
+                    # address, date, time and a thumbnail, and nothing else.
+                    # Requiring a URL here therefore dropped every single
+                    # online-search result before it reached the database,
+                    # silently, which is why no row from this source had been
+                    # written in a day while the searches kept succeeding.
+                    #
+                    # So identity falls back to the name and the day. Both
+                    # paths still dedupe; only the key differs.
+                    if event.url:
+                        existing = await db.execute(
+                            select(EventModel).filter_by(origination_url=event.url)
+                        )
+                    else:
+                        existing = await db.execute(
+                            select(EventModel).filter(
+                                func.lower(EventModel.name) == (event.title or "").lower(),
+                                func.date(EventModel.date) == event_date.date(),
+                            )
+                        )
+                    if existing.scalars().first():
+                        continue
+
                     new_event = EventModel(
                         name=event.title,
                         date=event_date,
                         address=event.location,
+                        venue_name=event.venue,
                         # Derived from the title. It used to be hardcoded to
                         # "Online Search", which says where the event came
                         # from rather than what it is - and provenance is
                         # already recorded in `source` on the next line.
                         category=classify_from_title(event.title),
-                        origination_url=event.url,
+                        # Left null rather than faked. A synthetic value here
+                        # would render as a dead "Learn more" link on the card.
+                        origination_url=event.url or None,
                         source="SerpAPI",
                     )
                     db.add(new_event)
@@ -435,16 +501,24 @@ async def search_google_events(context: RunContext[str], query: str) -> str:
             results = data.get("events_results") or []
             for event in results[:10]:
                 try:
-                    # Handle address as list or string
-                    address = event.get("address")
-                    if isinstance(address, list):
-                        address = ", ".join(address)
+                    # Handle address as list or string. As a list it reads
+                    # ["Lincoln Park Zoo", "Chicago, IL"] - venue first, then
+                    # where it is - so the first entry is the venue name.
+                    raw_address = event.get("address")
+                    if isinstance(raw_address, list):
+                        parts = [p for p in (s.strip() for s in raw_address) if p]
+                        address = ", ".join(parts)
+                        venue = parts[0] if parts else None
+                    else:
+                        address = raw_address
+                        venue = None
 
                     events.append(
                         EventResult(
                             title=event.get("title", "Untitled"),
                             date=event.get("date") or event.get("snippet"),
                             location=address or event.get("displayed_link"),
+                            venue=venue,
                             url=event.get("link", ""),
                             source="SerpAPI",
                         )
@@ -458,7 +532,7 @@ async def search_google_events(context: RunContext[str], query: str) -> str:
 
             # Fire async DB persistence task (non-blocking)
             try:
-                asyncio.create_task(_persist_events_to_db(events))
+                _spawn_background(_persist_events_to_db(events))
             except RuntimeError:
                 logger.warning("Could not create background task for event persistence")
 

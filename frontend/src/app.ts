@@ -548,15 +548,27 @@ export class SearchApp {
     // it, it would stop reading as an accent at all.
     const categoryColor = 'bg-chicago-blue/15 text-primary-700'
 
+    // Not every event has a page to link to: Google's event cards carry a
+    // venue and a date but no URL. Wrapping those in an anchor anyway rendered
+    // href="null" - a card that looks clickable and goes nowhere - so the
+    // whole card becomes a plain div instead, and the "Learn more" line below
+    // is dropped with it.
+    const link = event.origination_url
+    const tag = link ? 'a' : 'div'
+    const linkAttrs = link
+      ? `href="${this.escapeHtml(link)}" target="_blank" rel="noopener noreferrer"`
+      : ''
+    const hoverClasses = link
+      ? 'hover:shadow-lg hover:border-primary-600'
+      : ''
+
     return `
-      <a
-        href="${event.origination_url}"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="group bg-white rounded-lg border border-gray-200 p-6 hover:shadow-lg transition-all hover:border-primary-600"
+      <${tag}
+        ${linkAttrs}
+        class="group bg-white rounded-lg border border-gray-200 p-6 transition-all ${hoverClasses}"
       >
         <div class="flex justify-between items-start mb-3">
-          <h3 class="font-bold text-lg text-gray-900 group-hover:text-primary-600 flex-1">${this.escapeHtml(event.name)}</h3>
+          <h3 class="font-bold text-lg text-gray-900 ${link ? 'group-hover:text-primary-600' : ''} flex-1">${this.escapeHtml(event.name)}</h3>
         </div>
 
         <div class="space-y-2 mb-4">
@@ -595,10 +607,12 @@ export class SearchApp {
           </p>
         ` : ''}
 
-        <div class="text-primary-600 text-sm font-medium group-hover:underline">
-          Learn more →
-        </div>
-      </a>
+        ${link ? `
+          <div class="text-primary-600 text-sm font-medium group-hover:underline">
+            Learn more →
+          </div>
+        ` : ''}
+      </${tag}>
     `
   }
 
