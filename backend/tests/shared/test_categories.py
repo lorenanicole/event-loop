@@ -11,6 +11,7 @@ from sqlalchemy.orm import declarative_base
 
 from shared.categories import (
     category_filter,
+    classify_from_title,
     infer_category,
     category_labels,
     category_prefixes,
@@ -197,3 +198,38 @@ class TestInferCategory:
     def test_missing_title_returns_the_fallback(self):
         assert infer_category(None, "Music") == "Music"
         assert infer_category("", "Music") == "Music"
+
+
+class TestClassifyFromTitle:
+    """External sources hand over a title and no category."""
+
+    def test_online_search_is_not_a_category(self):
+        """The case that prompted this: it describes where, not what."""
+        assert classify_from_title("Chicago Jazz Festival") == "Music"
+
+    @pytest.mark.parametrize("title,expected", [
+        ("Chicago Jazz Festival", "Music"),
+        ("Comedy Open Mic Night", "Comedy"),
+        ("Art Gallery Opening Reception", "Arts"),
+        ("Yoga in Millennium Park", "Health & Wellness"),
+        ("Pride Parade 2026", "LGBTQ"),
+        ("Film Screening: Casablanca", "Film"),
+        ("Astronomy on Tap", "Tech / Educational"),
+        ("In Conversation with Neil deGrasse Tyson", "Tech / Educational"),
+    ])
+    def test_classified_from_the_title(self, title, expected):
+        assert classify_from_title(title) == expected
+
+    def test_narrow_rules_take_precedence(self):
+        """infer_category is higher precision, so it wins over the concepts."""
+        assert classify_from_title("Wine Wednesday at the Jazz Club") == "Food & Drink"
+
+    def test_falls_back_rather_than_inventing(self):
+        assert classify_from_title("Some Unclassifiable Happening") == "Events"
+
+    def test_missing_title_falls_back(self):
+        assert classify_from_title(None) == "Events"
+        assert classify_from_title("") == "Events"
+
+    def test_fallback_is_overridable(self):
+        assert classify_from_title("", fallback="Other") == "Other"

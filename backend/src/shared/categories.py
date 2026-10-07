@@ -25,14 +25,17 @@ _ACRONYMS = {"LGBTQ", "TV", "DJ", "DJS", "BYOB", "NYE", "EDM", "RSVP", "ASL"}
 # "%art%" also matches "Parties", while "art%" does not.
 CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
     "music": {
+        "canonical": "Music",
         "words": ["music", "concert", "band", "dj", "acoustic", "jazz", "gig", "live music"],
         "prefixes": ["music"],
     },
     "comedy": {
+        "canonical": "Comedy",
         "words": ["comedy", "stand-up", "standup", "laugh", "improv"],
         "prefixes": ["comedy"],
     },
     "theater": {
+        "canonical": "Theater",
         "words": ["theater", "theatre", "play", "drama", "broadway", "musical"],
         # Both spellings are stored, from different sources.
         "prefixes": ["theater", "theatre"],
@@ -45,6 +48,7 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
         "labels": ["Arts & Theatre"],
     },
     "art": {
+        "canonical": "Arts",
         "words": ["art", "arts", "gallery", "exhibition", "exhibit", "installation", "mural"],
         # Named outright rather than matched as "art%", which would sweep in
         # Ticketmaster's "Arts & Theatre" segment and answer "art galleries"
@@ -56,26 +60,39 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
         "labels": ["Arts", "Arts & Crafts", "Arts & Culture"],
     },
     "film": {
+        "canonical": "Film",
         "words": ["film", "movie", "cinema", "screening"],
         "prefixes": ["film", "tv"],
     },
     "food": {
+        "canonical": "Food & Drink",
         "words": ["food", "dining", "restaurant", "chef", "cooking", "tasting", "brunch"],
         "prefixes": ["food"],
     },
     "sports": {
+        "canonical": "Sports",
         "words": ["sports", "sport", "game", "match", "tournament", "athletic"],
         "prefixes": ["sport"],
     },
     "community": {
+        "canonical": "Community",
         "words": ["community", "volunteer", "meetup", "workshop", "class"],
         "prefixes": ["community", "activism"],
     },
     "wellness": {
+        "canonical": "Health & Wellness",
         "words": ["wellness", "yoga", "meditation", "fitness", "health"],
         "prefixes": ["health"],
     },
+    "education": {
+        "canonical": "Tech / Educational",
+        "words": ["lecture", "seminar", "talk", "talks", "panel", "symposium",
+                  "astronomy", "astronomer", "astrophysicist", "observation",
+                  "in conversation", "science", "stem", "coding", "hackathon"],
+        "prefixes": ["tech"],
+    },
     "lgbtq": {
+        "canonical": "LGBTQ",
         "words": ["lgbtq", "lgbt", "queer", "pride", "drag"],
         "prefixes": ["lgbtq"],
     },
@@ -119,6 +136,32 @@ def infer_category(title: Optional[str], fallback: str) -> str:
     for category, pattern in _TITLE_CATEGORY_RULES:
         if re.search(pattern, title, re.IGNORECASE):
             return category
+    return fallback
+
+
+def classify_from_title(title: Optional[str], fallback: str = "Events") -> str:
+    """Pick a category for an event that arrives without one.
+
+    The external sources hand over a title, a date and a link - no category -
+    and the chatbot was filing all of them under "Online Search", which
+    describes where the event came from rather than what it is. Provenance is
+    already recorded in `source`, so it does not belong here too.
+
+    Tries the narrow title rules first, then the broader concept vocabulary,
+    and falls back to the generic bucket rather than inventing something.
+    """
+    if not title:
+        return fallback
+
+    # The narrow rules are high precision, so they win.
+    specific = infer_category(title, "")
+    if specific:
+        return specific
+
+    for concept in extract_category_concepts(title):
+        canonical = CATEGORY_CONCEPTS.get(concept, {}).get("canonical")
+        if canonical:
+            return canonical
     return fallback
 
 

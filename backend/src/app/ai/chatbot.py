@@ -14,7 +14,11 @@ from datetime import datetime, timedelta
 from typing import Optional, Union, Literal
 from shared.database import AsyncSessionLocal, start_of_day, upcoming_events_filter
 from shared.database.models import EventModel, NeighborhoodModel
-from shared.categories import category_filter, extract_category_concepts
+from shared.categories import (
+    category_filter,
+    classify_from_title,
+    extract_category_concepts,
+)
 from shared.database.neighborhoods import NEIGHBORHOOD_ALIASES
 from app.ai.smart_search import get_smart_search_tool
 from app.ai.semantic_index import event_index
@@ -265,6 +269,39 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
         return "NO_RESULTS"
 
 
+# Search results are not all events. Roughly half of what had been persisted
+# this way were artifacts of the search rather than things to attend: page
+# titles ("Events | Chicago Public Library"), listing pages ("Astrophysicist
+# Events in Chicago"), a bare "chicago", and social posts ("Link in bio Learn
+# about landscaping..."). These are cheap, specific signals for that, kept
+# deliberately conservative - a missed event costs less than a junk row in a
+# discovery feed.
+_NOT_AN_EVENT = (
+    # A site-title separator: "<section> | <site>".
+    re.compile(r"\s[|\u2013\u2014]\s.*(department|library|university|college"
+               r"|museum|center|centre|institute)", re.I),
+    # Search-engine furniture. Deliberately not a bare "- search": "In
+    # Conversation with Neil deGrasse Tyson - Search for Life" is a real talk.
+    re.compile(r"\bsearch results\b|\bgoogle search\b", re.I),
+    # A listing page rather than one event.
+    re.compile(r"^(public\s+)?events?\b.*\|", re.I),
+    re.compile(r"\bevents? in chicago\b", re.I),
+    # Social copy.
+    re.compile(r"\blink in bio\b|\bswipe\b|\bdm (us|me)\b|\bfollow us\b", re.I),
+)
+
+
+def _looks_like_an_event(title: Optional[str]) -> bool:
+    """Whether a search result is plausibly a single event worth storing."""
+    if not title:
+        return False
+    cleaned = " ".join(title.split())
+    # A real event title carries more than one word.
+    if len(cleaned) < 10 or " " not in cleaned:
+        return False
+    return not any(pattern.search(cleaned) for pattern in _NOT_AN_EVENT)
+
+
 async def _persist_events_to_db(events: list[EventResult]) -> None:
     """Background task: persist external events to DB (non-blocking) with retry."""
     if not events:
@@ -280,6 +317,9 @@ async def _persist_events_to_db(events: list[EventResult]) -> None:
                 persisted_count = 0
                 for event in events:
                     if not event.url:
+                        continue
+                    if not _looks_like_an_event(event.title):
+                        logger.info(f"Skipping non-event search result: {event.title!r}")
                         continue
 
                     result = await db.execute(
@@ -298,7 +338,11 @@ async def _persist_events_to_db(events: list[EventResult]) -> None:
                         name=event.title,
                         date=event_date,
                         address=event.location,
-                        category="Online Search",
+                        # Derived from the title. It used to be hardcoded to
+                        # "Online Search", which says where the event came
+                        # from rather than what it is - and provenance is
+                        # already recorded in `source` on the next line.
+                        category=classify_from_title(event.title),
                         origination_url=event.url,
                         source="SerpAPI",
                     )

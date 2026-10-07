@@ -269,7 +269,7 @@ export class SearchApp {
 
   private renderOption(slotKey: string, value: string, label: string, count: number | null, selected: boolean) {
     return `
-      <li role="option" aria-selected="${selected}">
+      <li role="option" aria-selected="${selected}" data-combo-label="${this.escapeHtml(label)}">
         <button
           type="button"
           class="combo-option w-full flex items-center justify-between gap-3 px-4 py-2 text-left transition-colors ${
@@ -863,11 +863,30 @@ export class SearchApp {
       .forEach(t => t.setAttribute('aria-expanded', 'false'))
   }
 
+  /**
+   * Reduce a label or a typed query to a comparable form.
+   *
+   * Categories are written with ampersands ("Arts & Crafts") and people type
+   * the word, so "arts and crafts" matched nothing at all. Both sides are
+   * normalized to the same shape, and punctuation is dropped so
+   * "karaoke/trivia" and "karaoke trivia" both land.
+   */
+  private static normalizeForSearch(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/&/g, ' and ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+  }
+
   private filterOptions(key: string, query: string) {
-    const needle = query.trim().toLowerCase()
+    const needle = SearchApp.normalizeForSearch(query)
     this.container.querySelectorAll(`[data-combo-list="${key}"] li`).forEach(li => {
-      const text = (li.textContent || '').toLowerCase()
-      li.classList.toggle('hidden', needle.length > 0 && !text.includes(needle))
+      // The label, not the rendered text: that also carries the count, so
+      // typing a number used to match unrelated options.
+      const label = li.getAttribute('data-combo-label') || li.textContent || ''
+      const haystack = SearchApp.normalizeForSearch(label)
+      li.classList.toggle('hidden', needle.length > 0 && !haystack.includes(needle))
     })
   }
 
