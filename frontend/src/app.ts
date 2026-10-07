@@ -158,6 +158,33 @@ export class SearchApp {
 
   /** The three fill-in-the-blank slots, in sentence order. */
   /**
+   * Every category label to show on a card, primary first.
+   *
+   * Cards used to show `category` alone, which reads as a contradiction the
+   * moment a filter is on: "Beyond Belief Community Archival Training
+   * Workshop" is stored as Arts & Culture *and* Community, so filtering by
+   * Community produced a card whose only pill said Arts & Culture. 262 events
+   * carry more than one label.
+   *
+   * Falls back to the single field for rows written before the multi-label
+   * column existed, and de-duplicates because the primary is also the first
+   * entry of the array.
+   */
+  private static cardCategories(event: Event): string[] {
+    const all = (event.categories && event.categories.length)
+      ? event.categories
+      : [event.category]
+    const seen = new Set<string>()
+    return all.filter(label => {
+      if (!label) return false
+      const key = label.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }
+
+  /**
    * Capitalize a category for display, leaving acronyms and deliberate
    * internal capitals alone - LGBTQ and DJs must survive.
    */
@@ -585,9 +612,11 @@ export class SearchApp {
           ` : ''}
 
           <div class="flex flex-wrap items-center gap-2 pt-1">
-            <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${categoryColor}">
-              ${this.escapeHtml(SearchApp.displayCategory(event.category))}
-            </span>
+            ${SearchApp.cardCategories(event).map(label => `
+              <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${categoryColor}">
+                ${this.escapeHtml(SearchApp.displayCategory(label))}
+              </span>
+            `).join('')}
             ${cost ? `
               <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${
                 /free/i.test(cost) ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'

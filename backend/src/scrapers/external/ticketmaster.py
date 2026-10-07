@@ -16,6 +16,21 @@ from app.ai.event_enrichment import extract_from_event_text
 logger = logging.getLogger(__name__)
 
 
+def _meaningful(name) -> Optional[str]:
+    """A classification name, or None when it is a placeholder.
+
+    Discovery fills unknown levels with the literal string "Undefined", and
+    occasionally "Undefined Undefined". Those are not categories, and treating
+    them as one is how 128 events ended up filed under "Undefined".
+    """
+    if not isinstance(name, str):
+        return None
+    cleaned = name.strip()
+    if not cleaned or cleaned.lower().replace("undefined", "").strip() == "":
+        return None
+    return cleaned
+
+
 class TicketmasterScraper:
     """Scraper for Ticketmaster events using official Discovery API."""
 
@@ -125,12 +140,41 @@ class TicketmasterScraper:
             if event_date is None:
                 return None
 
+            # Discovery describes an event at three widths: segment ("Music"),
+            # genre ("Jazz") and subGenre ("Big Band"). Only the segment was
+            # read, which is why 572 events arrived as "Music" or
+            # "Arts & Theatre" and nothing finer.
+            #
+            # The segment still decides the stored category, because it is the
+            # one controlled value. Genre and subGenre become the
+            # classification hint, where they do real work: a title is often
+            # just a performer's name, and "Jazz" next to "Branford Marsalis"
+            # is what earns it the Music label on its own merits rather than
+            # by inheritance.
+            # Every level can come back named "Undefined", which is Discovery's
+            # placeholder for "we do not know" - not a category. Storing it
+            # verbatim put 128 events in the UI under a filter tile labelled
+            # "Undefined", so it is treated as absent at every level, here and
+            # in the hint.
             category = "Other"
+            category_hint = None
             classifications = data.get("classifications", [])
             if classifications:
-                segment = classifications[0].get("segment", {})
-                if segment:
-                    category = segment.get("name", "Other")
+                first = classifications[0] or {}
+                segment_name = _meaningful((first.get("segment") or {}).get("name"))
+                if segment_name:
+                    category = segment_name
+                hint_parts = [
+                    _meaningful((first.get(level) or {}).get("name"))
+                    for level in ("genre", "subGenre")
+                ]
+                category_hint = " ".join(p for p in hint_parts if p) or None
+
+            # Deliberately not falling back to the venue's name as a hint. It
+            # was tried: the concept matcher finds "Theatre" inside "Vic
+            # Theatre" and files a live podcast recording as Theater. A venue
+            # is mostly one kind of thing and not always, so it may inform the
+            # default category but must never speak for an individual event.
 
             description = None
             if data.get("info"):
@@ -194,6 +238,7 @@ class TicketmasterScraper:
                 name=title,
                 date=event_date,
                 category=category,
+                category_hint=category_hint,
                 details=details,
                 origination_url=url,
                 venue_name=venue_name,

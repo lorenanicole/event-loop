@@ -16,6 +16,7 @@ from shared.database import AsyncSessionLocal, start_of_day, upcoming_events_fil
 from shared.database.models import EventModel, NeighborhoodModel
 from shared.categories import (
     category_filter,
+    classify_all,
     classify_from_title,
     extract_category_concepts,
 )
@@ -86,7 +87,24 @@ class EventResult(BaseModel):
     # instead of having it buried in an address field.
     venue: Optional[str] = None
     url: Optional[str] = None
+    # Google's own one-line description of the event - "Live jazz concert",
+    # "Family movie screening", "Cultural heritage workshop". Not a controlled
+    # vocabulary, and sometimes just the venue's name again, so it is never
+    # shown as a category. It is good classification signal though: a title
+    # like "Jazz City" says nothing on its own, while "Live jazz concert"
+    # places it immediately.
+    type_hint: Optional[str] = None
     source: str
+
+    @property
+    def classifier_text(self) -> str:
+        """Title plus Google's description, for `classify_from_title`.
+
+        Both together, because each rescues the other: "Tortilla Tales" means
+        nothing without "Cultural heritage workshop", and a type_hint that
+        turned out to be a venue name means nothing without the title.
+        """
+        return " ".join(part for part in (self.title, self.type_hint) if part)
 
     class Config:
         extra = "ignore"  # Ignore extra fields from API responses
@@ -396,52 +414,66 @@ async def _persist_events_to_db(events: list[EventResult]) -> None:
             await asyncio.sleep(retry_delay)
             async with AsyncSessionLocal() as db:
                 persisted_count = 0
+                skipped_unverifiable = 0
+                skipped_undated = 0
                 for event in events:
                     if not _looks_like_an_event(event.title):
                         logger.info(f"Skipping non-event search result: {event.title!r}")
                         continue
 
+                    # Only events from a source somebody can go and check are
+                    # stored. Google's event cards carry no link - title,
+                    # address, date, time, a thumbnail and nothing else - so in
+                    # practice none of them is kept.
+                    #
+                    # Storing them was tried and reverted. An event with no
+                    # page cannot be verified by the reader, cannot be
+                    # re-checked by `prune_dead_links.py`, and cannot be
+                    # corrected when it is wrong, yet it sits in the feed
+                    # looking exactly as solid as a scraped venue listing.
+                    if not event.url:
+                        skipped_unverifiable += 1
+                        continue
+
+                    # A date that will not parse used to become
+                    # `now + 30 days`, which is not a fallback but an invented
+                    # date. It went unnoticed because it looks plausible:
+                    # 19 of the 21 stored rows sat exactly 29 days out, every
+                    # one of them wrong, because Google writes "Oct 9" and
+                    # `fromisoformat` wants "2026-10-09". Better to drop the
+                    # event than to publish a date nobody chose.
                     try:
                         event_date = datetime.fromisoformat(event.date.replace('Z', '+00:00'))
                     except (ValueError, AttributeError, TypeError):
-                        event_date = datetime.now() + timedelta(days=30)
+                        skipped_undated += 1
+                        continue
 
-                    # Google's event cards carry no link at all - title,
-                    # address, date, time and a thumbnail, and nothing else.
-                    # Requiring a URL here therefore dropped every single
-                    # online-search result before it reached the database,
-                    # silently, which is why no row from this source had been
-                    # written in a day while the searches kept succeeding.
-                    #
-                    # So identity falls back to the name and the day. Both
-                    # paths still dedupe; only the key differs.
-                    if event.url:
-                        existing = await db.execute(
-                            select(EventModel).filter_by(origination_url=event.url)
-                        )
-                    else:
-                        existing = await db.execute(
-                            select(EventModel).filter(
-                                func.lower(EventModel.name) == (event.title or "").lower(),
-                                func.date(EventModel.date) == event_date.date(),
-                            )
-                        )
+                    existing = await db.execute(
+                        select(EventModel).filter_by(origination_url=event.url)
+                    )
                     if existing.scalars().first():
                         continue
+
+                    # Derived from the title and Google's own one-line
+                    # description. The category used to be hardcoded to
+                    # "Online Search", which says where the event came from
+                    # rather than what it is - and provenance is already
+                    # recorded in `source` below.
+                    labels = classify_all(event.title, hint=event.type_hint)
 
                     new_event = EventModel(
                         name=event.title,
                         date=event_date,
                         address=event.location,
                         venue_name=event.venue,
-                        # Derived from the title. It used to be hardcoded to
-                        # "Online Search", which says where the event came
-                        # from rather than what it is - and provenance is
-                        # already recorded in `source` on the next line.
-                        category=classify_from_title(event.title),
-                        # Left null rather than faked. A synthetic value here
-                        # would render as a dead "Learn more" link on the card.
-                        origination_url=event.url or None,
+                        category=labels[0] if labels else "Events",
+                        # Every applicable label, not just the primary. An
+                        # event is findable under each of them, which is the
+                        # whole point of the multi-label column - a jazz
+                        # brunch is Music and Food & Drink, and storing one
+                        # made it invisible under the other.
+                        categories=labels or None,
+                        origination_url=event.url,
                         source="SerpAPI",
                     )
                     db.add(new_event)
@@ -452,6 +484,17 @@ async def _persist_events_to_db(events: list[EventResult]) -> None:
                     logger.info(f"✅ Persisted {persisted_count} external events to DB")
                 else:
                     logger.info(f"No new events to persist (all {len(events)} already existed)")
+
+                # Counted and reported, because this is the normal outcome for
+                # a Google search rather than an anomaly, and the last time it
+                # was silent it looked like the persistence had broken.
+                if skipped_unverifiable or skipped_undated:
+                    logger.info(
+                        "Not stored: %d with no event page to verify, %d with an "
+                        "unparseable date (of %d found). They are still shown to "
+                        "the user, marked unverified.",
+                        skipped_unverifiable, skipped_undated, len(events),
+                    )
                 return
         except Exception as e:
             if "database is locked" in str(e) and attempt < max_retries - 1:
@@ -520,6 +563,7 @@ async def search_google_events(context: RunContext[str], query: str) -> str:
                             location=address or event.get("displayed_link"),
                             venue=venue,
                             url=event.get("link", ""),
+                            type_hint=event.get("type"),
                             source="SerpAPI",
                         )
                     )
@@ -538,7 +582,13 @@ async def search_google_events(context: RunContext[str], query: str) -> str:
 
             results_text = f"🌐 **Online Search** - Found {len(events)} events:\n\n"
             for i, event in enumerate(events, 1):
-                results_text += f"{i}. **{event.title}**\n"
+                # Categorized with our own vocabulary, the same one the tiles
+                # and the database use, so a web result reads in the same
+                # terms as everything else rather than echoing whatever phrase
+                # Google happened to use.
+                labels = classify_all(event.title, hint=event.type_hint)
+                shown = ", ".join(labels) if labels else "Events"
+                results_text += f"{i}. **{event.title}** [{shown}]\n"
                 results_text += f"   📅 {event.date}\n"
                 if event.location:
                     results_text += f"   📍 {event.location}\n"
@@ -554,8 +604,12 @@ async def search_google_events(context: RunContext[str], query: str) -> str:
                     results_text += f"   🔗 [View Event]({event.url})\n"
                 else:
                     # Google's event cards have no link, so there is nothing
-                    # for the reader to check. Say so rather than leave a gap.
-                    results_text += "   ⚠️ No event page available to verify\n"
+                    # for the reader to check - and because of that these are
+                    # not stored either. Say both, rather than leave a gap.
+                    results_text += (
+                        "   ⚠️ No event page to verify - not saved to our database, "
+                        "so tell the user to search for it themselves\n"
+                    )
                 results_text += "\n"
 
             return results_text
@@ -978,9 +1032,11 @@ distinction in your answer - never merge the two kinds into one plain list.
   web, have not been checked by us, and usually have no page to link to.
   Group them separately under a heading that says so, such as "From a live
   web search (unverified)".
-If an event carries "⚠️ No event page available to verify", do not invent a
-link or a price for it, and tell the user there is nothing to confirm it
-against. Never present a web result as though it were in our database.""",
+If an event carries "⚠️ No event page to verify", say plainly that we have no
+page for it and suggest the user search for it by name and venue. Do not
+invent a link, a price or a time for it. Never present a web result as though
+it were in our database. Each event also carries a category in [square
+brackets] - use that wording rather than inventing your own.""",
 )
 
 # Register tools with the agent

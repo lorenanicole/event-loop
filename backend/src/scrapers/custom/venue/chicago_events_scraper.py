@@ -144,6 +144,22 @@ def parse_date_range(date_str: Optional[str]) -> tuple[Optional[datetime], Optio
         return None, None
 
 
+def venue_source_name(config: VenueConfig) -> str:
+    """The `source` an event from this venue is stamped with.
+
+    One unique value per venue - "chicago_venue_rosass_lounge" - so events can
+    be attributed, counted and re-examined per venue even where the venue
+    publishes no unique URL per event.
+
+    Shared rather than derived at the call site, because anything that goes
+    back over stored rows has to arrive at byte-identical values. The
+    apostrophe becoming "s" is not elegant, but it is what thousands of rows
+    already carry, so it stays.
+    """
+    slug = config.name.lower().replace(" ", "_").replace("'", "s")
+    return f"chicago_venue_{slug}"
+
+
 def jsonld_offer_cost(event_data: dict) -> Optional[str]:
     """Read a price out of a schema.org Event's `offers`.
 
@@ -2907,7 +2923,12 @@ CHICAGO_VENUES = {
             name="Chicago Council on Global Affairs",
             website_url="https://globalaffairs.org",
             event_page_url="https://globalaffairs.org/upcoming-events",
-            category="Community",
+            # A foreign-policy institute, and its calendar is lectures,
+            # panels and in-conversation events - "Africa and the New Global
+            # Order". "Community" put those next to ward meetings and
+            # neighborhood potlucks. This is the same bucket as ChiPy and Chi
+            # Hack Night, which is where somebody looking for a talk will go.
+            category="Tech / Educational",
             address="130 E Randolph St",
             selectors={
                 "event_container": "div.listing_teaser.future",
@@ -3964,9 +3985,7 @@ async def save_events_to_db(
                 # Use override if provided, otherwise use parsed end date
                 final_date_end = parsed_date_end_override or parsed_date_end
 
-                # Create unique source name per venue: chicago_venue_rosa_s_lounge
-                venue_slug = config.name.lower().replace(" ", "_").replace("'", "s")
-                source_name = f"chicago_venue_{venue_slug}"
+                source_name = venue_source_name(config)
 
                 # Check if event already exists by name + date + source
                 # This handles venues that don't have unique event URLs (all use fallback)

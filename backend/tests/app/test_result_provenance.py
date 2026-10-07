@@ -75,14 +75,15 @@ class TestWebResultProvenance:
         """Google's event cards carry no URL, so there is nothing to check."""
         serpapi(LINKLESS)
         text = await chatbot.search_google_events(None, "family events")
-        assert "No event page available to verify" in text
+        assert "No event page to verify" in text
+        assert "not saved to our database" in text
         assert "View Event" not in text
 
     async def test_an_event_with_a_link_gets_the_link_not_the_warning(self, serpapi):
         serpapi([{**LINKLESS[0], "link": "https://example.com/e"}])
         text = await chatbot.search_google_events(None, "family events")
         assert "https://example.com/e" in text
-        assert "No event page available" not in text
+        assert "No event page to verify" not in text
 
     async def test_the_venue_is_split_out_of_the_address(self, monkeypatch, serpapi):
         """["Lincoln Park Zoo", "Chicago, IL"] is the venue, then where it is,

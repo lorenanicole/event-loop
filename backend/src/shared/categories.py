@@ -71,6 +71,17 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
     },
     "sports": {
         "canonical": "Sports",
+        # Deliberately no sport names here. They were added - volleyball,
+        # basketball, marathon and the rest - to catch fixtures like "DePaul
+        # Blue Demons Womens Volleyball vs. Villanova", which none of the
+        # generic words match. Measured over the stored events, half the hits
+        # were wrong: "Torn Light Presents - Naturalblkinvention & Donkey
+        # Basketball" is a band, and "LCF 2024 Presents: The Marathon Show" is
+        # comedy. A sport's name in a title is usually a joke or a band.
+        #
+        # Fixtures are matched by `_TITLE_CATEGORY_RULES` instead, which
+        # requires the sport AND a "vs" - the thing that actually distinguishes
+        # a game from a gig.
         "words": ["sports", "sport", "game", "match", "tournament", "athletic"],
         "prefixes": ["sport"],
     },
@@ -117,6 +128,16 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
 #   workshop              - far too broad
 #   taco|pizza|cocktail   - matched band and party names
 _TITLE_CATEGORY_RULES: list[tuple[str, str]] = [
+    # A fixture: a named sport AND a "vs". Both halves are needed. The sport
+    # alone is usually a joke or a band - "Donkey Basketball" is a band, "The
+    # Marathon Show" is comedy - and "vs" alone catches DJ battles and
+    # double bills. Together they are reliable: "DePaul Blue Demons Womens
+    # Volleyball vs. Villanova", "Chicago Fire vs New York City".
+    ("Sports",
+     r"\b(?:volleyball|basketball|soccer|hockey|baseball|football|lacrosse"
+     r"|rugby|softball|tennis|wrestling)\b(?=.*\bvs?\.?\b)"
+     r"|\bvs?\.?\b(?=.*\b(?:volleyball|basketball|soccer|hockey|baseball"
+     r"|football|lacrosse|rugby|softball|tennis|wrestling)\b)"),
     ("Comedy", r"\bcomedy\b|\bstand[- ]?up\b|\bimprov\b"),
     ("Karaoke/Trivia/Open Mics", r"\b(karaoke|trivia|bingo|open[- ]mic)\b"),
     ("Arts & Crafts", r"\b(sewing|knit|crochet|quilt|pottery|ceramics?|life drawing)\b"),
@@ -141,7 +162,9 @@ def infer_category(title: Optional[str], fallback: str) -> str:
     return fallback
 
 
-def classify_from_title(title: Optional[str], fallback: str = "Events") -> str:
+def classify_from_title(
+    title: Optional[str], fallback: str = "Events", hint: Optional[str] = None
+) -> str:
     """Pick a category for an event that arrives without one.
 
     The external sources hand over a title, a date and a link - no category -
@@ -151,8 +174,19 @@ def classify_from_title(title: Optional[str], fallback: str = "Events") -> str:
 
     Tries the narrow title rules first, then the broader concept vocabulary,
     and falls back to the generic bucket rather than inventing something.
+
+    `hint` is any other wording the source gives for what the event is -
+    Google's "Live jazz concert", Ticketmaster's genre, a listing's blurb.
+    Many titles are names and nothing more: "Jazz City" and "Tortilla Tales"
+    are unclassifiable on their own and obvious next to "Live jazz concert"
+    and "Cultural heritage workshop".
+
+    The hint widens concept matching only. The narrow title rules stay on the
+    title, because they are precision instruments aimed at a performer's
+    billing - letting a venue's marketing blurb trigger them would undo the
+    care in `_TITLE_CATEGORY_RULES`.
     """
-    if not title:
+    if not title and not hint:
         return fallback
 
     # The narrow rules are high precision, so they win.
@@ -160,19 +194,32 @@ def classify_from_title(title: Optional[str], fallback: str = "Events") -> str:
     if specific:
         return specific
 
-    for concept in extract_category_concepts(title):
+    for concept in extract_category_concepts(_with_hint(title, hint)):
         canonical = CATEGORY_CONCEPTS.get(concept, {}).get("canonical")
         if canonical:
             return canonical
     return fallback
 
 
+def _with_hint(title: Optional[str], hint: Optional[str]) -> str:
+    """Title and hint as one string for concept matching."""
+    return " ".join(part for part in (title, hint) if part)
+
+
 # How many labels one event can carry. Three is enough for the real cases
 # ("Music", "LGBTQ", "Community") and keeps a result card readable.
 MAX_CATEGORIES = 3
 
+# The bucket that means "nothing is known about what this is", as opposed to a
+# genuine category. Named so the classifier can tell the difference: it is
+# worth keeping a venue's "Community" as a second label, and not worth keeping
+# "Events".
+GENERIC_CATEGORY = "Events"
 
-def classify_all(title: Optional[str], fallback: str = "Events") -> list[str]:
+
+def classify_all(
+    title: Optional[str], fallback: str = "Events", hint: Optional[str] = None
+) -> list[str]:
     """Every category an event plausibly belongs to, primary first.
 
     One event genuinely belongs to several: a trans pride festival is both
@@ -185,21 +232,52 @@ def classify_all(title: Optional[str], fallback: str = "Events") -> list[str]:
     nothing that displays `category` had to change. The rest are the other
     concepts the title names, plus the venue's own category where the title
     overrode it.
+
+    `hint` is the source's own wording for what the event is - see
+    `classify_from_title`. It is especially worth having here: "Live jazz
+    concert" against the title "Jazz City" supplies the Music label that the
+    name alone never would, and a second label is exactly what multi-category
+    filtering needs.
     """
+    # The venue's own category stays the primary where it has one, because it
+    # is a fact about the booking rather than a guess from wording: a drag
+    # show at a music hall is primarily Music and also LGBTQ, in that order.
+    # A narrow title rule still outranks it.
     primary = infer_category(title, fallback)
+
+    # Only when that leaves us with the generic bucket - which is every event
+    # from an external search, where no venue category exists - fall through
+    # to the concepts. Otherwise "Jazz City" came out primarily "Events"
+    # while `classify_from_title` called the same event Music, and the two
+    # entry points disagreed about the same row.
+    if primary == GENERIC_CATEGORY:
+        primary = classify_from_title(title, fallback, hint=hint)
+
     labels = [primary]
 
-    for concept in extract_category_concepts(title or ""):
+    for concept in extract_category_concepts(_with_hint(title, hint)):
         canonical = CATEGORY_CONCEPTS.get(concept, {}).get("canonical")
         if canonical and canonical not in labels:
             labels.append(canonical)
 
-    # Deliberately not re-adding the venue's own category when the title
-    # overrode it. A sewing class at a music hall is Arts & Crafts and nothing
-    # else; keeping Music as a secondary label would put it straight back into
-    # "music tonight in Avondale", which is the complaint that prompted
-    # infer_category in the first place.
-    if fallback and fallback == primary and fallback not in labels:
+    # The venue's own category is kept as a secondary label - a pride picnic
+    # listed by a community org is both LGBTQ and Community, and that second
+    # label is the entire point of the multi-label column.
+    #
+    # Two exceptions, both load-bearing:
+    #
+    # Not when a narrow title rule overrode it. A sewing class at a music hall
+    # is Arts & Crafts and nothing else; keeping Music would put it straight
+    # back into "music tonight in Avondale", which is what prompted
+    # `infer_category` in the first place.
+    #
+    # Not when it is the generic bucket and the event classified as something
+    # real. "Events" means "no category known", so tagging an event
+    # Music *and* Events adds a label that says nothing and spends one of the
+    # three slots.
+    overridden_by_title = infer_category(title, fallback) != fallback
+    worth_keeping = fallback != GENERIC_CATEGORY or primary == fallback
+    if fallback and not overridden_by_title and worth_keeping and fallback not in labels:
         labels.append(fallback)
 
     normalized = []

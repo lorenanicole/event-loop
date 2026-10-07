@@ -58,6 +58,15 @@ class EventCreate(BaseModel):
     date_retrieved: datetime = Field(
         default_factory=datetime.utcnow, description="When this row was last refreshed"
     )
+    category_hint: Optional[str] = Field(
+        default=None,
+        exclude=True,
+        description="The source's own words for what the event is - "
+        "Ticketmaster's genre ('Jazz'), Google's type ('Live jazz concert'), a "
+        "listing's blurb. Used only to pick the categories, never stored: a "
+        "title is frequently just a performer's name, and the hint is what "
+        "makes it classifiable at all.",
+    )
 
     @model_validator(mode="after")
     def _refine_category(self):
@@ -74,7 +83,11 @@ class EventCreate(BaseModel):
         # both Community and LGBTQ; storing one made it invisible under the
         # other.
         if not self.categories:
-            object.__setattr__(self, "categories", classify_all(self.name, self.category))
+            object.__setattr__(
+                self,
+                "categories",
+                classify_all(self.name, self.category, hint=self.category_hint),
+            )
         return self
 
     @field_validator("category")

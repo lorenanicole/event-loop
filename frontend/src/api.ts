@@ -8,6 +8,12 @@ export interface Event {
   time?: string | null
   time_end?: string | null
   category: string
+  // Every applicable label, primary first. One event genuinely belongs to
+  // several - an archival training workshop at a library is both Arts &
+  // Culture and Community - and a filter matches any of them, so a card has
+  // to show all of them or it turns up under a filter whose name is nowhere
+  // on it.
+  categories?: string[] | null
   details?: string
   origination_url: string
   date_retrieved: string
