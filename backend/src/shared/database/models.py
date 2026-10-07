@@ -74,7 +74,7 @@ class GeocodeCacheModel(Base):
     __tablename__ = "geocode_cache"
 
     id = Column(Integer, primary_key=True, index=True)
-    query = Column(String(400), unique=True, index=True)  # Normalised address
+    query = Column(String(400), unique=True, index=True)  # Normalized address
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
     provider = Column(String(40), nullable=True)  # "nominatim", "manual", ...

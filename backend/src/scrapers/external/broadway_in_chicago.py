@@ -1,4 +1,4 @@
-"""Scraper for Broadway In Chicago, which programmes five Loop-area theatres.
+"""Scraper for Broadway In Chicago, which programs five Loop-area theaters.
 
 An external source rather than a venue scraper: one site carries the calendar
 for CIBC Theatre, the James M. Nederlander, the Cadillac Palace, the Broadway

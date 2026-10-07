@@ -1056,7 +1056,7 @@ async def extract_eventscalendar_widget(page, config: VenueConfig) -> list[Venue
 def extract_tessitura_calendar(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from a Tessitura ticketing calendar (`tn-events-calendar`).
 
-    Theatres often publish nothing dated on their marketing site while their
+    Theaters often publish nothing dated on their marketing site while their
     ticketing subdomain carries the full performance calendar - Goodman's own
     site yields nothing, my.goodmantheatre.org yields the lot.
 

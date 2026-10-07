@@ -38,7 +38,7 @@ BOUNDARY_ALIASES = {
     "grant park": "Loop",
     "museum campus": "Loop",
     # The city joins two areas into one polygon for these. Use the name a
-    # person would actually recognise rather than the comma-joined pair:
+    # person would actually recognize rather than the comma-joined pair:
     # UIC is a university campus, and Forest Glen is the community area that
     # contains Sauganash.
     "little italy, uic": "Little Italy",

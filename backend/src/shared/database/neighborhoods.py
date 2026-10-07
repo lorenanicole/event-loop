@@ -22,7 +22,7 @@ NEIGHBORHOOD_ALIASES = {
 
 
 def canonical_neighborhood(name: Optional[str]) -> Optional[str]:
-    """Normalise a neighborhood name to the single spelling we store."""
+    """Normalize a neighborhood name to the single spelling we store."""
     if not name or not name.strip():
         return None
     cleaned = name.strip()

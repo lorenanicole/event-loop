@@ -98,7 +98,7 @@ eventloop/
 ### **Data at Scale**
 - 📊 **2,400+ upcoming events** - 6 external sources plus 51 venue scrapers across
   22 neighborhoods, North Side to South Side
-- 💵 **Prices where venues publish them** - one `parse_cost()` normalises "$25",
+- 💵 **Prices where venues publish them** - one `parse_cost()` normalizes "$25",
   "$20-$25", "Starting at $64", "No cover" and "Donation", and rejects the
   near-misses ("21+", "Show 9:30PM")
 - ♻️ **Reusable extractors over per-venue code** - `extract_tribe_events` covers
@@ -243,8 +243,8 @@ inv coverage          # Generate coverage report
 
 ### **Scrapers (scrapers/)**
 - **External APIs**: Ticketmaster, Eventbrite, Bandsintown, DO312, Your Chicago Guide (WordPress)
-- **Multi-venue sources**: Broadway In Chicago, which programmes five Loop-area
-  theatres that publish no calendar of their own
+- **Multi-venue sources**: Broadway In Chicago, which programs five Loop-area
+  theaters that publish no calendar of their own
 - **Custom Web Scrapers**: Chicago venue listings, Timeout Chicago, Events.com
 - **Framework**: VenueScraper base class with config-driven extraction, plus
   `extractor_fn` for custom parsing and `page_extractor_fn` for venues whose

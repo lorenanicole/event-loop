@@ -56,7 +56,7 @@ export class SearchApp {
    *
    * Towers run roughly south-west to north-east, the way the city reads from
    * the lake, and their heights are to scale against the Sears Tower. Each has
-   * the profile it is actually recognised by — the Sears Tower's bundled-tube setbacks
+   * the profile it is actually recognized by — the Sears Tower's bundled-tube setbacks
    * and twin antennas, the Board of Trade's Art Deco ziggurat, Aon's plain
    * slab, Two Prudential's chevron, 401 N Wabash's setbacks and spire, the
    * St. Regis's stacked tiers, and the Hancock's taper with its twin masts.
@@ -492,9 +492,9 @@ export class SearchApp {
     const location = this.formatLocation(event)
     const cost = (event.cost || '').trim()
 
-    // One colour for every category rather than a per-category rainbow. The
+    // One color for every category rather than a per-category rainbow. The
     // old map (purple, yellow, orange, indigo) fought the flag palette, and a
-    // category is a label, not a status, so it does not need to be colour
+    // category is a label, not a status, so it does not need to be color
     // coded. Red stays reserved for the few real accents - if every card wore
     // it, it would stop reading as an accent at all.
     const categoryColor = 'bg-chicago-blue/15 text-primary-700'

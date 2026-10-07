@@ -89,7 +89,7 @@ class SemanticEventIndex:
 
         model = self._load_model()
         vectors = np.asarray(model.encode([self._document(e) for e in events]))
-        # Pre-normalise so a query is a single dot product.
+        # Pre-normalize so a query is a single dot product.
         norms = np.linalg.norm(vectors, axis=1, keepdims=True)
         vectors = vectors / np.maximum(norms, 1e-12)
 

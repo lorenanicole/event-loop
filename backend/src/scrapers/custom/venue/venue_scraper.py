@@ -32,7 +32,7 @@ def parse_cost(text: Optional[str]) -> Optional[str]:
     """Pull a human-readable price out of event card text.
 
     Venues write prices a dozen ways ("$25", "$20-$25", "Starting at $64",
-    "No cover", "Free w/ RSVP", "Donation"), so normalise to the handful of
+    "No cover", "Free w/ RSVP", "Donation"), so normalize to the handful of
     forms the UI renders. Returns None rather than guessing when the text has
     no price in it - an absent price is honest, a wrong one is not.
     """

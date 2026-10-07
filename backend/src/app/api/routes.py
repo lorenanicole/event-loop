@@ -885,7 +885,7 @@ async def refresh_venue_events(db: AsyncSession = Depends(get_db)):
         logger.info(f"Venue refresh complete: {count} new events")
 
         # Re-embed so the new events are semantically searchable. A full
-        # rebuild takes well under a second, so there is nothing to optimise.
+        # rebuild takes well under a second, so there is nothing to optimize.
         if count:
             try:
                 from app.ai.semantic_index import event_index

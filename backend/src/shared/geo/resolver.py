@@ -55,7 +55,7 @@ def looks_like_address(text: str) -> bool:
     return True
 
 
-def normalise_address(address: Optional[str], venue_name: Optional[str] = None) -> Optional[str]:
+def normalize_address(address: Optional[str], venue_name: Optional[str] = None) -> Optional[str]:
     """Cache key for a location: lowercase, collapsed whitespace, Chicago implied.
 
     Returns None when the text is not plausibly a place.
@@ -86,7 +86,7 @@ async def _geocode_with_nominatim(key: str):
     import httpx
 
     async with _nominatim_lock:
-        # Serialise calls and space them out, so concurrent scrapers cannot
+        # Serialize calls and space them out, so concurrent scrapers cannot
         # burst past the published limit.
         wait = NOMINATIM_MIN_INTERVAL - (time.monotonic() - _last_nominatim_call)
         if wait > 0:
@@ -118,7 +118,7 @@ async def coordinates_for_address(
     session, address: Optional[str], venue_name: Optional[str] = None, allow_network: bool = True
 ):
     """Coordinates for a free-text address, from cache or the geocoder."""
-    key = normalise_address(address, venue_name)
+    key = normalize_address(address, venue_name)
     if not key:
         return None
 

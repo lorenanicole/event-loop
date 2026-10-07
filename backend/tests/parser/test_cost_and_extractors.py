@@ -26,7 +26,7 @@ def config(name="Test Venue", address="1 N Test St"):
 
 
 class TestParseCost:
-    """parse_cost normalises how venues print prices."""
+    """parse_cost normalizes how venues print prices."""
 
     def test_plain_amount(self):
         assert parse_cost("$25") == "$25"
@@ -234,7 +234,7 @@ class TestExtractDatedListItems:
 
 
 class TestBroadwayInChicago:
-    """One site programmes five theatres, so the venue drives the neighborhood."""
+    """One site programs five theaters, so the venue drives the neighborhood."""
 
     CARD_HTML = """
     <div class="elementor">
