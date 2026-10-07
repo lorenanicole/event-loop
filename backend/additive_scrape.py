@@ -49,6 +49,7 @@ from scrapers.custom.venue.chicago_events_scraper import (  # noqa: E402
     save_events_to_db,
 )
 from scrapers.custom.venue.venue_scraper import VenueScraper  # noqa: E402
+from shared.database import apply_sqlite_pragmas  # noqa: E402
 from shared.database.models import EventModel  # noqa: E402
 
 logging.basicConfig(level=logging.WARNING, format="%(message)s")
@@ -226,6 +227,10 @@ async def main(args) -> int:
         return 1
 
     engine = create_async_engine(DB_URL, echo=False)
+    # The same WAL and busy-timeout pragmas the API uses. Without them this
+    # process is the one that takes the chat down: SQLite allows a single
+    # writer, and a scrape saving 76 venues holds the lock in bursts.
+    apply_sqlite_pragmas(engine)
     session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     try:

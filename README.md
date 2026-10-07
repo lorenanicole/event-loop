@@ -73,6 +73,18 @@ eventloop/
     └── events.db             # SQLite database (4,959 events)
 ```
 
+## 📐 How retrieval works
+
+[**RAG_PIPELINE.md**](RAG_PIPELINE.md) maps the chatbot onto the four stages of a
+retrieval pipeline — pre-retrieval, retrieval, fine-tuning, evaluation — as an
+audit rather than a design doc, so it records what the code does today and where
+a stage is thin or deliberately absent.
+
+The short version: retrieval is hybrid and structured-first (dates and
+neighborhoods are SQL, not embeddings), nothing is fine-tuned and the file says
+why, and evaluation covers categorization with a scored harness but does not yet
+cover retrieval.
+
 ## ✨ Key Features
 
 ### **Smart Event Discovery**

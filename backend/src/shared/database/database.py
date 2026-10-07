@@ -1,17 +1,69 @@
 import os
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from .models import Base
 
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+
+from .models import Base
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/events.db")
 
-# Create async engine
+IS_SQLITE = "sqlite" in DATABASE_URL
+
+# How long a writer waits for the lock before giving up. The scrape holds the
+# write lock in bursts while it saves a venue's events, and the default is to
+# fail instantly - which surfaced as "database is locked" in the API and
+# "No response received from AI" in the chat window, while a scrape was
+# running. Ten seconds is far longer than any single save takes.
+BUSY_TIMEOUT_MS = 10_000
+
 engine = create_async_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
+    connect_args={"check_same_thread": False} if IS_SQLITE else {},
     echo=False,
 )
+
+
+def apply_sqlite_pragmas(target_engine) -> None:
+    """Attach the connection pragmas to any engine.
+
+    Exported because the scripts build their own engines - the scraper is the
+    other writer, so it is the one that most needs the busy timeout.
+    """
+
+    @event.listens_for(target_engine.sync_engine, "connect")
+    def _sqlite_pragmas(dbapi_connection, _record):
+        """Make SQLite survive a reader and a writer at the same time.
+
+        The app has two writers by design - the API persisting events found by
+        the chatbot, and the scraper folding in a run - plus every page load
+        reading. In SQLite's default rollback-journal mode a writer blocks
+        readers outright, so a scrape running in the background took the chat
+        down with "database is locked".
+
+        WAL fixes the common case: readers no longer block and are not blocked,
+        and only writer-against-writer contends. `busy_timeout` covers what is
+        left by making that writer wait rather than fail on the spot.
+
+        Both are per-connection pragmas, so they are set on every connect
+        rather than once at startup. WAL itself is persistent in the file, but
+        setting it is idempotent and costs nothing.
+        """
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+            # Durable enough for this, and markedly faster under WAL: a commit
+            # does not wait for a disk flush, so a crash can lose the last
+            # transaction but cannot corrupt the database.
+            cursor.execute("PRAGMA synchronous=NORMAL")
+        finally:
+            cursor.close()
+
+
+if IS_SQLITE:
+    apply_sqlite_pragmas(engine)
+
 
 # Async session factory
 AsyncSessionLocal = sessionmaker(

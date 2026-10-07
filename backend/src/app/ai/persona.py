@@ -318,3 +318,53 @@ def greeting(
 🗺️ ***Did you know?** {fact}*
 
 ⚙️ **Under the hood:** {UNDER_THE_HOOD}"""
+
+
+def farewell(reason: str = "turns", rng: Optional[random.Random] = None) -> str:
+    """What to say when the conversation's budget runs out.
+
+    There was nothing here, and it showed: the chat simply stopped accepting
+    input behind a grey status chip reading "token limit reached", which is
+    both jargon and - when the turn limit was what ran out - the wrong
+    jargon. Ending a conversation without saying why or what to do next reads
+    as a fault rather than a limit.
+
+    Said in the assistant's own voice as a message, not a system notice,
+    because the assistant is who the person was talking to.
+    """
+    why = {
+        "turns": "that's all the questions I can take in one go",
+        "tokens": "I've used up what I can say in one conversation",
+    }.get(reason, "that's my limit for one conversation")
+
+    return (
+        f"\U0001F44B **Well, that's all the time I've got** - {why}. "
+        "I keep conversations short so everyone gets a turn.\n\n"
+        "Still need the 311 on Chicago? Hit **New Chat** and we'll pick it up "
+        "fresh - though you'll have to catch me up, since I won't remember "
+        "this one.\n\n" + sign_off(rng)
+    )
+
+# The four six-pointed stars of the Chicago flag, which is also the app's own
+# logo. Drawn in text rather than shipped as an image so it survives anywhere
+# the message is rendered - the chat bubble, a log, a copy-paste.
+FLAG_STARS = "\u2736 \u2736 \u2736 \u2736"
+
+# Rotating sign-offs. All local, none requiring you to pick a baseball team -
+# the North/South rivalry is real and a farewell is the wrong place to take a
+# side.
+SIGN_OFFS = [
+    "Doors closing.",                       # the CTA announcement, verbatim
+    "See you on the L.",
+    "Keep it between the lake and the expressway.",
+    "Stay warm out there.",
+    "Mind the gap at Clark and Lake.",
+    "Go do something. It's a good city for it.",
+]
+
+
+def sign_off(rng: Optional[random.Random] = None) -> str:
+    """A small visual goodbye: the flag's four stars and a local line."""
+    picker = rng or random
+    return f"{FLAG_STARS}\n\n*{picker.choice(SIGN_OFFS)}*"
+

@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import json
 from datetime import datetime
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -261,14 +261,38 @@ class ChatExecutor:
                 remaining_turns = self.MAX_TURNS_PER_CONVERSATION - thread.turn_count
 
                 if remaining_turns <= 0 or remaining_tokens <= 0:
+                    from app.ai.persona import farewell
+
+                    goodbye = farewell(
+                        "turns" if remaining_turns <= 0 else "tokens"
+                    )
+                    # Sent as a message, not only a status chip: the person was
+                    # talking to the assistant, so the assistant should be the
+                    # one to say it is done and what to do next.
+                    yield ResponseEvent(
+                        message=goodbye,
+                        tokens=0,
+                        data={"message": goodbye, "conversation_ended": True},
+                    )
                     yield ConversationStatusEvent(
                         status="Conversation limit reached. Please start a new chat.",
                         remaining_tokens=0,
                         remaining_turns=0,
                         data={
                             "status": "limit_reached",
-                            "message": "This conversation has reached its limit. Start a new one!"
+                            "reason": "turns" if remaining_turns <= 0 else "tokens",
+                            "message": goodbye,
                         }
+                    )
+                    yield CompleteEvent(
+                        thread_id=thread_id,
+                        tokens_used=0,
+                        data={
+                            "thread_id": thread_id,
+                            "tokens_used": 0,
+                            "remaining_tokens": 0,
+                            "remaining_turns": 0,
+                        },
                     )
                     return
 
@@ -295,7 +319,8 @@ class ChatExecutor:
                 tool_calls_made = 0
                 total_tokens = 0
 
-                async for event in self._run_agent_with_events(message):
+                history = await self._load_history(db, thread_id, message)
+                async for event in self._run_agent_with_events(message, history):
                     if event.event == "tool_call":
                         tool_calls_made += 1
                         yield event
@@ -353,6 +378,20 @@ class ChatExecutor:
 
                 # Record completion metrics if session is done
                 if is_session_complete:
+                    from app.ai.persona import farewell
+
+                    goodbye = farewell(
+                        "turns" if new_remaining_turns <= 0 else "tokens"
+                    )
+                    # Told on the turn that spends the last of the budget,
+                    # rather than on the next one. Otherwise the person types a
+                    # follow-up, waits, and only then learns the conversation
+                    # was already over.
+                    yield ResponseEvent(
+                        message=goodbye,
+                        tokens=0,
+                        data={"message": goodbye, "conversation_ended": True},
+                    )
                     duration_ms = (time.time() - start_time) * 1000
                     telemetry.record_session_completed(
                         tokens=thread.total_tokens,
@@ -409,9 +448,59 @@ class ChatExecutor:
 
         return "❌ Something went wrong. Please try again."
 
+    # How many past messages to replay. Six is three exchanges, which covers
+    # "yes, that one" and "what about the Northwest side" without resending a
+    # long transcript to the model on every turn.
+    HISTORY_MESSAGES = 6
+
+    async def _load_history(self, db, thread_id: str, exclude_content: str):
+        """Prior turns of this thread, as pydantic-ai messages.
+
+        Without this the agent had no memory at all. Every turn was a fresh
+        `agent.run(message)`, so a follow-up like "yes, let's find something
+        on the Northwest side" arrived with nothing for "yes" to refer to -
+        and the reply introduced itself again, mid-conversation. The messages
+        were being written to chat_messages correctly the whole time; nothing
+        ever read them back.
+
+        The current user message is excluded: the caller passes it as the
+        prompt, and sending it twice makes the model answer it twice.
+        """
+        from pydantic_ai.messages import (
+            ModelRequest,
+            ModelResponse,
+            TextPart,
+            UserPromptPart,
+        )
+
+        rows = (await db.execute(
+            select(ChatMessageModel)
+            .where(ChatMessageModel.thread_id == thread_id)
+            .order_by(ChatMessageModel.created_at.desc())
+            .limit(self.HISTORY_MESSAGES + 1)
+        )).scalars().all()
+
+        history = []
+        for row in reversed(rows):
+            content = (row.content or "").strip()
+            if not content:
+                continue
+            if row.role == "user" and content == exclude_content.strip():
+                continue
+            if row.role == "user":
+                history.append(ModelRequest(parts=[UserPromptPart(content=content)]))
+            else:
+                history.append(ModelResponse(parts=[TextPart(content=content)]))
+
+        # A history must not start with a reply to nothing.
+        while history and isinstance(history[0], ModelResponse):
+            history.pop(0)
+        return history
+
     async def _run_agent_with_events(
         self,
         message: str,
+        history: Optional[list] = None,
     ) -> AsyncGenerator[StreamEvent, None]:
         """
         Run PydanticAI agent with circuit breaker and graceful degradation.
@@ -436,7 +525,7 @@ class ChatExecutor:
 
             try:
                 result = await default_retry_policy.execute(
-                    lambda: agent.run(message),
+                    lambda: agent.run(message, message_history=history or None),
                     operation_name="llm_agent_run",
                 )
                 response_text = result.output

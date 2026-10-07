@@ -317,7 +317,12 @@ class ChatWidget {
             `⏳ One more question available (${data.remaining_turns} turns left)`
           );
         } else if (data.status === "limit_reached") {
-          this.showStatus("✋ Chat ended - token limit reached. Start a new chat!");
+          // The goodbye itself arrives as a response event and is already on
+          // screen; this only needs to close the input. It used to be the
+          // only notice the user got, as a grey chip reading "token limit
+          // reached" - jargon, and the wrong jargon when turns ran out.
+          const why = data.reason === "tokens" ? "reply budget" : "questions";
+          this.showStatus(`\u2736 Out of ${why} - hit New Chat to keep going`);
           this.endConversation();
         }
         break;
@@ -397,6 +402,13 @@ class ChatWidget {
     // bold rather than real <h2>, because a heading's margins are wrong
     // inside a chat bubble.
     html = html.replace(/^\s{0,3}#{1,4}\s+(.+)$/gm, '<strong class="chat-heading">$1</strong>');
+
+    // The Chicago flag's four stars, in the flag's own red and centered.
+    // Matched before bold so the characters are not mistaken for markup.
+    html = html.replace(
+      /^\s*(\u2736(?:\s+\u2736){3})\s*$/gm,
+      '<div class="chat-flag-stars">$1</div>'
+    );
 
     // Convert markdown bold to HTML
     html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
