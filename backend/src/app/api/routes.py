@@ -789,7 +789,12 @@ async def close_chat_thread(thread_id: str, db: AsyncSession = Depends(get_db)):
     },
 )
 async def chat_greeting(db: AsyncSession = Depends(get_db)):
-    from app.ai.persona import ASSISTANT_NAME, greeting, whats_on_tonight
+    from app.ai.persona import (
+        ASSISTANT_NAME,
+        data_facts,
+        greeting,
+        whats_on_tonight,
+    )
 
     # Real events, so the opener names things that are actually on rather than
     # describing a generic city. A failure here loses the examples, not the
@@ -799,7 +804,17 @@ async def chat_greeting(db: AsyncSession = Depends(get_db)):
     except Exception:
         tonight = None
 
-    return {"name": ASSISTANT_NAME, "greeting": greeting(tonight=tonight)}
+    # Facts counted from the database, added to the written ones. They are the
+    # only facts that change on their own.
+    try:
+        counted = await data_facts(db)
+    except Exception:
+        counted = []
+
+    return {
+        "name": ASSISTANT_NAME,
+        "greeting": greeting(tonight=tonight, extra_facts=counted),
+    }
 
 
 @router.post(

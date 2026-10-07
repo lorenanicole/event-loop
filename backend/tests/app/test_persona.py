@@ -96,6 +96,23 @@ class TestFacts:
         picks = {fact_for(None, random.Random(seed)) for seed in range(12)}
         assert len(picks) > 1
 
+    def test_there_are_enough_facts_to_rotate_through(self):
+        """Four was the original list and felt repetitive within a session."""
+        assert len(GENERAL_FACTS) >= 20
+
+    def test_counted_facts_join_the_rotation(self):
+        """The database-derived ones are what make the pool refresh itself."""
+        counted = ["Right now I'm tracking 3,304 upcoming events."]
+        seen = {
+            greeting(random.Random(seed), extra_facts=counted)
+            for seed in range(40)
+        }
+        assert any(counted[0] in text for text in seen)
+
+    def test_the_greeting_works_with_no_counted_facts(self):
+        """The database lookup can fail; the written ones still carry it."""
+        assert "Did you know?" in greeting(extra_facts=[])
+
 
 class TestGreetingAndFarewell:
     def test_the_greeting_names_the_assistant(self):

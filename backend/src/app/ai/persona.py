@@ -98,6 +98,13 @@ CHICAGO_FACTS: dict[str, list[str]] = {
 }
 
 # For a greeting or an answer with no particular category.
+#
+# Hand-checked rather than fetched. There is no Chicago facts API worth using
+# - the city's open data portals serve parcels, permits and zoning, and the
+# generic trivia APIs are not about Chicago - and an LLM asked to invent one
+# is the exact failure the persona forbids, inches from real listings. For
+# facts that are fresh every day without being unverified, see `data_facts`:
+# those are computed from our own database and are true by construction.
 GENERAL_FACTS: list[str] = [
     "The Loop is named for the elevated tracks that circle it, completed in 1897.",
     "The four red stars on the flag are Fort Dearborn, the Great Fire of 1871, "
@@ -106,6 +113,56 @@ GENERAL_FACTS: list[str] = [
     "the weather, though the lake does its part.",
     "Chicago has 77 community areas and well over 200 named neighborhoods, "
     "which is why 'where in Chicago' is a real question.",
+    "The city motto is Urbs in Horto - City in a Garden - which is also why "
+    "there are over 600 parks to hold things in.",
+    "The Chicago River was reversed in 1900, so it flows away from Lake "
+    "Michigan instead of into the city's drinking water.",
+    "The world's first skyscraper went up here in 1885: ten storeys, steel "
+    "framed, and demolished in 1931.",
+    "The first Ferris wheel turned in Jackson Park at the 1893 World's Fair, "
+    "built to out-do the Eiffel Tower.",
+    "Jean Baptiste Point du Sable, a Haitian trader, settled at the mouth of "
+    "the river in the 1780s - the city's first permanent non-Indigenous "
+    "resident.",
+    "House music is named after the Warehouse, the club on South Jefferson "
+    "where Frankie Knuckles was resident DJ from 1977.",
+    "The Second City opened in 1959, and most of what the world calls improv "
+    "traces back through it.",
+    "Gwendolyn Brooks, writing from Bronzeville, was the first Black author "
+    "to win a Pulitzer, in 1950.",
+    "Chess Records at 2120 S. Michigan recorded Muddy Waters and Howlin' "
+    "Wolf, and the Rolling Stones named a song after the address.",
+    "The Picasso in Daley Plaza was unveiled in 1967 - the artist refused "
+    "payment and gave it to the city.",
+    "Wrigley Field opened in 1914 and still has a scoreboard turned by hand.",
+    "Before Hollywood, Chicago was the film capital: Essanay Studios in "
+    "Uptown made Charlie Chaplin pictures in 1915.",
+    "The lakefront is public for almost its entire 26 miles, which was "
+    "deliberate and is unusual for an American city.",
+    "Pullman, on the far South Side, was built as a company town in the 1880s "
+    "and is now a national monument.",
+    "The first sustained nuclear chain reaction happened on 2 December 1942, "
+    "under the stands of the old football field at the University of Chicago.",
+    "Sue, at the Field Museum, is the most complete Tyrannosaurus rex "
+    "skeleton ever found.",
+    "Route 66 begins at Adams Street and Michigan Avenue, outside the Art "
+    "Institute.",
+    "The brownie is credited to the Palmer House kitchen, made in 1893 as "
+    "something ladies could eat from a boxed lunch at the World's Fair.",
+    "The Twinkie was invented in 1930 by a bakery manager in River Forest, "
+    "just past the western city limits, and was originally banana-filled.",
+    "Chicago gave the world the modern vertical filing cabinet, the zipper's "
+    "first practical factory and the car radio - all within a few decades of "
+    "each other.",
+    "The Pedway is about five miles of tunnels under the Loop, which locals "
+    "use for most of February.",
+    "The Green Mill in Uptown has been open since 1907, and Al Capone's "
+    "people drank in the booth by the end of the bar.",
+    "Lower Wacker Drive exists because the city built a second street level "
+    "over the first - the reason parts of downtown have an address upstairs "
+    "and downstairs.",
+    "There are more than 500 murals in Pilsen, and the neighborhood has been "
+    "painting them since the 1970s.",
 ]
 
 
@@ -412,6 +469,7 @@ async def whats_on_tonight(
 def greeting(
     rng: Optional[random.Random] = None,
     tonight: Optional[list[tuple[str, str]]] = None,
+    extra_facts: Optional[list[str]] = None,
 ) -> str:
     """The first message in a new chat.
 
@@ -429,7 +487,11 @@ def greeting(
     sentence.
     """
     picker = rng or random
-    fact = picker.choice(GENERAL_FACTS)
+    # The curated history and whatever today's numbers say, drawn from one
+    # pool: 28 written down and five counted from the database, which keeps
+    # the rotation from feeling short and means some of it is different next
+    # week.
+    fact = picker.choice(GENERAL_FACTS + list(extra_facts or []))
 
     if tonight:
         offers = " ".join(f"{pitch} **{event}**." for pitch, event in tonight)
@@ -521,4 +583,96 @@ def goodbye_reply(rng: Optional[random.Random] = None) -> str:
         "Have fun out there.",
     ])
     return f"{opener}\n\n{sign_off(picker)}"
+
+async def data_facts(session) -> list[str]:
+    """Facts computed from our own listings, so they are fresh and true.
+
+    The answer to "where do we get more facts?". There is no Chicago trivia
+    API worth using - the city's open data portals serve parcels, permits and
+    zoning - and asking a model to invent facts is the exact thing the
+    persona forbids three inches from a real event listing.
+
+    So these are counted rather than recalled. They change as the database
+    does, which makes them the only facts here that are different next
+    Tuesday, and they cannot be wrong unless the data is.
+    """
+    from sqlalchemy import String, cast, func, select
+
+    from shared.database.filters import upcoming_events_filter
+    from shared.database.models import EventModel, NeighborhoodModel
+
+    facts: list[str] = []
+
+    async def scalar(query):
+        try:
+            return await session.scalar(query)
+        except Exception:  # noqa: BLE001 - a greeting must not fail over this
+            return None
+
+    upcoming = upcoming_events_filter()
+
+    total = await scalar(
+        select(func.count()).select_from(EventModel).where(upcoming)
+    )
+    venues = await scalar(
+        select(func.count(func.distinct(EventModel.source)))
+        .where(upcoming, EventModel.source.like("chicago_venue_%"))
+    )
+    if total and venues:
+        facts.append(
+            f"Right now I'm tracking {total:,} upcoming events, scraped from "
+            f"{venues} venue calendars plus the city's own listings."
+        )
+
+    free = await scalar(
+        select(func.count()).select_from(EventModel)
+        .where(upcoming, EventModel.cost.ilike("free"))
+    )
+    if free and total:
+        facts.append(
+            f"{free:,} of the {total:,} events I know about are free - about "
+            f"one in {max(2, round(total / free))}."
+        )
+
+    hood = (await session.execute(
+        select(NeighborhoodModel.name, func.count(EventModel.id))
+        .join(EventModel, EventModel.neighborhood_id == NeighborhoodModel.id)
+        .where(upcoming)
+        .group_by(NeighborhoodModel.name)
+        .order_by(func.count(EventModel.id).desc())
+        .limit(1)
+    )).first()
+    if hood:
+        facts.append(
+            f"{hood[0]} has more going on than anywhere else at the moment - "
+            f"{hood[1]:,} upcoming events."
+        )
+
+    hoods = await scalar(
+        select(func.count(func.distinct(EventModel.neighborhood_id)))
+        .where(upcoming, EventModel.neighborhood_id.isnot(None))
+    )
+    if hoods:
+        facts.append(
+            f"I've got events in {hoods} different Chicago neighborhoods, "
+            "which is more of the city than most listings sites bother with."
+        )
+
+    busiest = (await session.execute(
+        select(func.date(EventModel.date), func.count(EventModel.id))
+        .where(upcoming)
+        .group_by(func.date(EventModel.date))
+        .order_by(func.count(EventModel.id).desc())
+        .limit(1)
+    )).first()
+    if busiest and busiest[1] > 1:
+        from datetime import datetime
+        try:
+            day = datetime.fromisoformat(str(busiest[0])).strftime("%A %B %-d")
+            facts.append(f"The busiest day on my calendar is {day}, with "
+                         f"{busiest[1]} things on.")
+        except (ValueError, TypeError):
+            pass
+
+    return facts
 
