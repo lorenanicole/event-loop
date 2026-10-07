@@ -1122,6 +1122,9 @@ _MONTH = r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?"
 # "SEP 11-OCT 18, 2026" / "OCT 27-MAR 20, 2027" - a run, not a single night.
 _RUN_RE = re.compile(
     rf"(?P<m1>{_MONTH})\s*(?P<d1>\d{{1,2}})\s*[–—-]\s*"
+    # Convention calendars write the weekday on both ends of a run:
+    # "Monday, October 05 - Wednesday, October 07".
+    rf"(?:[A-Za-z]{{3,9}},\s*)?"
     rf"(?:(?P<m2>{_MONTH})\s*)?(?P<d2>\d{{1,2}})(?:,?\s*(?P<y>\d{{4}}))?",
     re.I,
 )
@@ -1134,6 +1137,23 @@ _BOILERPLATE = (
     "rsvp", "doors", "on sale", "free", "info", "read more", "get tickets",
 )
 
+
+_MONTH_WORDS = {m.lower() for m in _MONTHS} | {
+    "january", "february", "march", "april", "may", "june", "july", "august",
+    "september", "october", "november", "december",
+}
+# Page furniture that sits inside an event card's ancestor and would otherwise
+# be mistaken for a title.
+_SECTION_HEADINGS = {
+    "events", "all events", "upcoming events", "events & public programs",
+    "public programs", "whats on", "calendar", "event calendar", "more events",
+    # Datepicker controls, which sit in the same container as the cards.
+    "today", "tomorrow", "month", "week", "day", "list", "agenda", "view",
+    "next", "prev", "previous", "filter", "filters", "search",
+    "clear", "reset", "apply", "submit", "select date", "all", "close",
+    # Calendar legends.
+    "multiday event", "multi day event", "single day event", "recurring event",
+}
 
 _WEEKDAY_RE = re.compile(
     r"\b(?:Mon|Tue|Tues|Wed|Weds|Thu|Thur|Thurs|Fri|Sat|Sun)(?:day|sday|nesday|rsday|urday)?\b",
@@ -1217,7 +1237,14 @@ def _title_from(lines: list[str]) -> Optional[str]:
     the weekday alone passes for a title.
     """
     for line in lines:
+        bare = re.sub(r"[^a-z0-9& ]", "", line.lower()).strip()
         if line.lower().rstrip(":").startswith(_BOILERPLATE):
+            continue
+        # A month picker ("October") or a section heading is not an event.
+        if bare in _MONTH_WORDS or bare in _SECTION_HEADINGS:
+            continue
+        # A datepicker's current selection, e.g. "Today - Sun, Oct 18, 2026".
+        if bare.startswith(("today ", "tomorrow ", "this week", "this month")):
             continue
         remainder = _WEEKDAY_RE.sub("", _RUN_RE.sub("", _ONE_RE.sub("", line)))
         if len(re.sub(r"[^A-Za-z]", "", remainder)) <= 3:
@@ -1252,6 +1279,11 @@ def extract_dated_list_items(soup: BeautifulSoup, config: VenueConfig) -> list[V
         if not (10 <= len(text) <= 400):
             continue
         if not _ONE_RE.search(text):
+            continue
+        # A datepicker or filter widget carries dates but is not an event.
+        # Form controls are what separates it from a card: real event cards
+        # almost never contain an <input> or <select>.
+        if el.find(["input", "select", "textarea"]):
             continue
         lines = [l.strip() for l in text.split("\n") if l.strip()]
         if _title_from(lines):
@@ -2933,7 +2965,9 @@ CHICAGO_VENUES = {
     "Little Village": [
         VenueConfig(
             name="Los Globos",
-            website_url="https://www.songkick.com",
+            # No website at all; Instagram is the venue's home. Same reasoning
+            # as V-Live below: linked, not scraped.
+            website_url="https://www.instagram.com/losgloboschicago/",
             event_page_url="https://www.songkick.com/venues/4345062-los-globos",
             category="music",
             address="3059 S Central Park Ave",
@@ -2943,7 +2977,12 @@ CHICAGO_VENUES = {
         ),
         VenueConfig(
             name="V-Live",
-            website_url="https://www.songkick.com",
+            # vlivechicago.com refuses connections; the venue's actual home is
+            # Instagram. Not scraped - Instagram gates posts behind a login,
+            # blocks automation and forbids it in its terms - but recorded as
+            # the venue's real link, since Songkick is where the calendar
+            # comes from and not where the venue lives.
+            website_url="https://www.instagram.com/vlivechicagoofficial/",
             event_page_url="https://www.songkick.com/venues/498306-v-live",
             category="music",
             address="2501 S Kedzie Ave",
@@ -2953,7 +2992,9 @@ CHICAGO_VENUES = {
         ),
         VenueConfig(
             name="Apollo's 2000",
-            website_url="https://www.songkick.com",
+            # Real site, but its /events page lists nothing, so the calendar
+            # comes from Songkick.
+            website_url="https://www.apollos2000.com",
             event_page_url="https://www.songkick.com/venues/49204-apollos-2000",
             category="music",
             address="2875 W Cermak Rd",
@@ -2973,7 +3014,32 @@ CHICAGO_VENUES = {
         ),
     ],
 
+    "Bridgeport": [
+        VenueConfig(
+            name="Ramova Theatre",
+            website_url="https://ramovachicago.com",
+            event_page_url="https://ramovachicago.com/events/",
+            category="music",
+            address="3520 S Halsted St",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_dated_list_items,
+        ),
+    ],
+
     "Near South Side": [
+        VenueConfig(
+            # Mostly conventions and trade shows, but the public ones (the auto
+            # show, the marathon expo) are among the largest events in the city.
+            name="McCormick Place",
+            website_url="https://www.mccormickplace.com",
+            event_page_url="https://www.mccormickplace.com/events/",
+            category="community",
+            address="2301 S King Dr",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_dated_list_items,
+        ),
         VenueConfig(
             name="Reggies Chicago",
             website_url="https://www.reggieslive.com",
@@ -2987,6 +3053,16 @@ CHICAGO_VENUES = {
     ],
 
     "Streeterville": [
+        VenueConfig(
+            name="Navy Pier",
+            website_url="https://navypier.org",
+            event_page_url="https://navypier.org/events/",
+            category="community",
+            address="600 E Grand Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_dated_list_items,
+        ),
         VenueConfig(
             name="Chicago Shakespeare Theater",
             website_url="https://www.chicagoshakes.com",

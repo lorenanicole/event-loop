@@ -96,7 +96,7 @@ eventloop/
   once, rate limited, and cached permanently in `geocode_cache`
 
 ### **Data at Scale**
-- 📊 **2,900+ upcoming events** - 7 external sources plus 66 venue scrapers
+- 📊 **2,900+ upcoming events** - 7 external sources plus 69 venue scrapers
 - 💵 **Prices where venues publish them** - one `parse_cost()` normalizes "$25",
   "$20-$25", "Starting at $64", "No cover" and "Donation", and rejects the
   near-misses ("21+", "Show 9:30PM")
