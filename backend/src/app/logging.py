@@ -1,6 +1,7 @@
 """Structured logging configuration using structlog."""
 
 import logging
+import os
 import structlog
 from typing import Any
 
@@ -39,8 +40,22 @@ def configure_logging(level: str = "INFO") -> None:
     # credential leak rather than an untidy line. Requests we care about are
     # logged by the callers with the parameters they chose to record, so
     # nothing is lost by silencing the library's own copy.
-    for noisy in ("httpx", "httpcore"):
-        logging.getLogger(noisy).setLevel(logging.WARNING)
+    # Matched by prefix, not by exact name. Silencing "httpx" and "httpcore"
+    # was not enough: pydantic-ai vendors its own copies registered as
+    # "httpx2" and "httpcore2", which kept logging request URLs at INFO long
+    # after this was believed fixed. A prefix sweep covers the next vendored
+    # copy too, and these libraries have nothing to say at INFO that is worth
+    # the risk of a credential in a query string.
+    for name in list(logging.root.manager.loggerDict) + ["httpx", "httpcore"]:
+        if name.startswith(("httpx", "httpcore")):
+            logging.getLogger(name).setLevel(logging.WARNING)
+    # Registered after this runs, so set unconditionally as well.
+    for name in ("httpx", "httpx2", "httpcore", "httpcore2"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+    # pydantic-ai prints a five-line ASCII banner on first use, into the same
+    # log a scheduled run writes. It offers this exact opt-out.
+    os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
 
 def get_logger(name: str) -> structlog.typing.BoundLogger:

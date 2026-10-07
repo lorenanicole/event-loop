@@ -7,6 +7,8 @@ plaintext on every search.
 
 import logging
 
+import pytest
+
 from app.logging import configure_logging
 
 
@@ -19,6 +21,20 @@ class TestHttpxIsQuiet:
     def test_httpcore_is_quiet_too(self):
         configure_logging("INFO")
         assert not logging.getLogger("httpcore").isEnabledFor(logging.INFO)
+
+    @pytest.mark.parametrize("name", ["httpx2", "httpcore2"])
+    def test_the_vendored_copies_are_quiet(self, name):
+        """pydantic-ai vendors its own httpx as "httpx2", which kept logging
+        request URLs at INFO long after this was believed fixed."""
+        configure_logging("INFO")
+        assert not logging.getLogger(name).isEnabledFor(logging.INFO)
+
+    def test_the_banner_is_suppressed(self):
+        """pydantic-ai prints a five-line ASCII banner into the same log a
+        scheduled run writes to."""
+        import os
+        configure_logging("INFO")
+        assert os.environ.get("PYDANTIC_AI_NO_BANNER") == "1"
 
     def test_a_real_problem_in_httpx_still_gets_logged(self):
         """Silencing the request log must not hide genuine transport errors."""

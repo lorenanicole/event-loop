@@ -9,6 +9,15 @@ interface ChatEvent {
   timestamp: string;
 }
 
+// Shown instantly, and while the real greeting is fetched from the API.
+// Deliberately shorter than the served one: it is a placeholder for the
+// moment before the fetch returns, not a second copy to keep in sync.
+const FALLBACK_GREETING = `🏙️ **I'm Loopara**, your guide to what's on in Chicago.
+
+Sandburg called this the City of the Big Shoulders. Ask me what you're in the mood for and I'll find it.
+
+So - what are we doing tonight? ⚡`;
+
 class ChatWidget {
   private container: HTMLElement;
   private messageList: HTMLElement;
@@ -92,27 +101,29 @@ class ChatWidget {
     this.inputField.focus();
   }
 
-  private showWelcomeGreeting(): void {
-    const greeting = `🏙️ **Meet Loopara!**
-
-I'm your AI event discovery assistant, powered by Python 3.15, PydanticAI, and production-grade resilience patterns. Ready to find your next great event?
-
-💡 **Try asking me:**
-• "What's happening this weekend?"
-• "Show me comedy events this month"
-• "Any free events tonight?"
-• "Jazz concerts in October"
-• "Something like that concert but cheaper"
-
-🔄 **Behind the scenes:**
-- REACT agent reasoning with Claude
-- Semantic search with static embeddings
-- Circuit breaker resilience patterns
-- Real-time SSE streaming
-
-Let's find your next great event! ⚡`;
-
-    this.addMessageToUI("assistant", greeting);
+  private async showWelcomeGreeting(): Promise<void> {
+    // Fetched rather than hardcoded, so the persona and the Chicago facts
+    // live in one place on the server and the fact can rotate per chat.
+    // Rendered immediately from the fallback first: a greeting that appears
+    // a second late makes the panel look broken on open.
+    this.addMessageToUI("assistant", FALLBACK_GREETING);
+    try {
+      const base = (import.meta as any).env?.VITE_API_URL || "http://localhost:8000";
+      const response = await fetch(`${base}/api/chat/greeting`);
+      if (!response.ok) return;
+      const { greeting } = await response.json();
+      if (!greeting) return;
+      // Replace the placeholder in place rather than appending, or the user
+      // reads the same introduction twice.
+      const messages = this.messageList.querySelectorAll(".chat-message");
+      const first = messages[messages.length - 1];
+      if (first) first.remove();
+      this.addMessageToUI("assistant", greeting);
+    } catch {
+      // Offline or the API is down. The fallback is already on screen, and a
+      // chat that cannot reach the server has a bigger problem to report than
+      // a missing Chicago fact.
+    }
   }
 
   private setupEventListeners(): void {

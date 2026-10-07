@@ -163,7 +163,20 @@ def unmapped_labels(labels: Iterable[Optional[str]]) -> list[str]:
 CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
     "music": {
         "canonical": "Music",
-        "words": ["music", "concert", "band", "dj", "acoustic", "jazz", "gig", "live music"],
+        # Genres, because people ask by genre and not by the word "music".
+        # "blues tonight on the South Side" matched no category at all, which
+        # in a Chicago events app is close to absurd - the city is where
+        # electric blues was invented and four of the venues scraped here book
+        # it nightly.
+        #
+        # Only genre names that are not also ordinary words. "house" is left
+        # out deliberately: it matches open house, haunted house and house
+        # party. "soul" is out for "soul food" and song titles.
+        "words": ["music", "concert", "band", "dj", "acoustic", "gig",
+                  "live music", "blues", "jazz", "funk", "r&b", "hip hop",
+                  "rap", "techno", "punk", "metal", "indie", "folk",
+                  "bluegrass", "reggae", "salsa", "cumbia", "mariachi",
+                  "orchestra", "symphony", "opera", "choir", "dj set"],
         "prefixes": ["music"],
     },
     "comedy": {

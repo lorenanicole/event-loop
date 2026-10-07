@@ -1042,6 +1042,17 @@ brackets] - use that wording rather than inventing your own.""",
 )
 
 @agent.system_prompt
+def voice() -> str:
+    """How the assistant sounds, and what it knows about the city.
+
+    A dynamic system prompt like the date, so the persona can be edited in
+    `persona.py` without touching the agent - it is content, not logic.
+    """
+    from app.ai.persona import persona_prompt
+    return persona_prompt()
+
+
+@agent.system_prompt
 def todays_date() -> str:
     """Tell the model what day it is.
 

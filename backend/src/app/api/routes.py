@@ -737,6 +737,37 @@ class ChatStreamRequest(BaseModel):
     )
 
 
+@router.get(
+    "/chat/greeting",
+    summary="The assistant's opening message",
+    description=(
+        "The first message a new chat shows: who the assistant is, a Chicago "
+        "fact, some example questions and what it is built on.\n\n"
+        "Served from the API rather than hardcoded in the UI so the persona and "
+        "the facts live in one place - `app.ai.persona` - and can change "
+        "without a frontend rebuild. The fact rotates per request, so opening "
+        "two chats does not show the same one."
+    ),
+    responses={
+        200: {
+            "description": "Markdown, ready to render.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "name": "Loopara",
+                        "greeting": "🏙️ **Loopara** here - your Chicago events guide...",
+                    }
+                }
+            },
+        }
+    },
+)
+async def chat_greeting():
+    from app.ai.persona import ASSISTANT_NAME, greeting
+
+    return {"name": ASSISTANT_NAME, "greeting": greeting()}
+
+
 @router.post(
     "/chat",
     summary="Ask Loopara (streaming)",
