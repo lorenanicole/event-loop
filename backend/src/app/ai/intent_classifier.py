@@ -22,9 +22,27 @@ class Intent(Enum):
 
 
 class IntentClassifier:
-    """
-    Fast intent classifier using Claude.
-    One quick API call determines if question is about Chicago events.
+    """What a message is *doing*, decided in one quick Claude call.
+
+    This is intent classification - dialogue acts - and deliberately not
+    sentiment analysis, which is a tempting but wrong frame for it. Sentiment
+    measures polarity; this asks what the message is for. The two come apart
+    constantly at the farewell boundary:
+
+        "👍"                                positive  -> farewell
+        "no worries, I'll figure it out"    neutral   -> farewell
+        "cool cool cool"                    positive  -> farewell
+        "appreciate it - anything cheaper?" positive  -> NOT farewell
+        "ugh, nothing good on then?"        negative  -> NOT farewell
+
+    Two positives on opposite sides and a negative that is still a request:
+    polarity cannot separate them, and a sentiment model would end
+    conversations on a cheerful follow-up and keep going through a flat "k".
+
+    Nor is it keyword matching. That was tried for farewells and lasted one
+    round: a regex caught "bye" and "thanks" and missed "I'm done", and a
+    phrase list is never finished. The model now judges "aight imma head out",
+    "merci!" and a bare thumbs-up without any of them being written down.
     """
 
     def __init__(self):
@@ -58,23 +76,31 @@ Classify the user's message into ONE of these categories:
    - Examples: "How do I find events?", "Tell me about event planning"
    - Confidence: 0.80+
 
-4. **farewell**: User is signing off, not asking anything
-   - Examples: "Thanks, bye!", "That's it", "I'm done", "all set",
-     "nothing else", "cool, thanks"
-   - A closing remark with no question in it. Judge the whole message: "I'm
-     done with theater, what about music?" is NOT a farewell, and neither is
-     anything ending in a question.
+4. **farewell**: The user is finished and not asking for anything else.
+   - Decide this from the message as a whole, not from any set of words.
+     Ask yourself: are they closing the conversation, or still looking for
+     something? Thanks, a sign-off, a note that they have what they needed,
+     or a polite decline are all ways of being done, and people phrase it
+     however they like - terse, warm, slangy, abbreviated.
+   - The examples below are illustrations, not a list to match against.
+     "Thanks, bye!", "that's everything I needed", "k thx", "nah I'm good".
+     Something phrased unlike any of these is still a farewell if the person
+     is done.
+   - Still asking means NOT farewell, however polite the wrapping: "I'm done
+     with theater, what about music?" and "thanks, any more in Pilsen?" are
+     both chicago_events. A question mark is a strong signal they want more,
+     but judge the intent rather than the punctuation.
    - Confidence: 0.90+ when the message is only a sign-off
 5. **out_of_scope**: Unrelated to Chicago or events
    - Examples: "Tell me a joke", "What's the weather?", "Help with Python"
    - Confidence: 0.99 (should be very certain)
 
 DECISION RULES, in order. Stop at the first that applies:
-- If the message is a sign-off and asks nothing → farewell. Check this FIRST.
-  "Cool, thanks! Bye!", "I'm done", "k thx", "that's everything I needed" are
-  all farewell, NOT out_of_scope. Someone ending a conversation is not asking
-  an off-topic question, and telling them what this bot is for is a strange
-  reply to "bye".
+- If the user is done rather than asking → farewell. Check this FIRST, and
+  judge it from the message, not from a vocabulary. Someone ending a
+  conversation is not asking an off-topic question: answering "bye" with a
+  description of what this bot is for is a strange thing to do, and that is
+  what used to happen.
 - If question is about events AND location is Chicago (explicit or implicit) → chicago_events
 - If question is about Chicago but NOT events → chicago_info
 - If question is about events but NOT Chicago → events_general

@@ -22,13 +22,25 @@ stuff near me this weekend") while the data is structured.
 
 | Step | Where | What it does |
 |---|---|---|
-| Intent gate | `app/ai/intent_classifier.py` | Is this even a Chicago events question? An LLM call returning an intent and a confidence. Off-topic questions are answered without touching retrieval at all, and cost nothing. |
+| Intent gate | `app/ai/intent_classifier.py` | What is this message *doing* - asking about Chicago events, asking about the city, signing off, or off-topic? One LLM call returning an intent and a confidence. Off-topic and farewell never reach retrieval at all. |
 | Query expansion | `smart_search_expand` in `app/ai/chatbot.py` | An agent tool that restates the question and names what the user seems to want, so the agent reasons about the request before searching for it. |
 | Keyword extraction | `_extract_keywords` | Strips filler to content words. "I'd like to go to a family friendly outdoor event" → the words that can actually match. |
 | Neighborhood resolution | `_extract_neighborhoods` | Matched against the neighborhoods **in the database**, not a hardcoded list, so it stays in step with coverage. 77 community areas plus local names. |
 | Category mapping | `shared/categories.py` | Maps the words a person uses to the stored vocabulary: "blues", "salsa" and "symphony" all become `Music`. See `CATEGORY_TAXONOMY` for the parent/subtag scheme. |
 | Date resolution | `_extract_date_range` | "tonight", "this weekend", "in October" become a real date window, in `America/Chicago`. |
 | Temporal grounding | `todays_date` system prompt | Injects today's date, the timezone and the coming weekend's two dates per run. Without it the model had no idea what day it was and said so mid-answer. |
+
+**Intent, not sentiment.** The gate classifies dialogue acts, which is a
+different question from polarity and gets a different answer. "👍" and "cool
+cool cool" are positive and mean the conversation is over; "appreciate it -
+anything cheaper?" is positive and means it is not; "ugh, nothing good on
+then?" is negative and is still a request. A sentiment model would end
+conversations on a cheerful follow-up and talk through a flat "k".
+
+It is also not keyword matching. Farewells were a regex for exactly one round
+- it caught "bye" and "thanks" and missed "I'm done" - before becoming an
+intent the model judges. It now handles "aight imma head out" and "merci!"
+without either being written down anywhere.
 
 **What's missing:** no query rewriting or HyDE, and no synonym expansion beyond
 the category vocabulary. One concrete gap: Chicago's informal regions — "South
