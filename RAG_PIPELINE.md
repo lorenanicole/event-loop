@@ -14,6 +14,58 @@ categorization well and retrieval not at all.
 
 ---
 
+## Explain it like I'm five
+
+Imagine a friend who knows Chicago, sitting next to a very large notebook that
+lists everything happening in the city. You ask them something. Four things
+have to go right.
+
+**1. Understanding what you asked** — *pre-retrieval*
+
+You say *"anything fun this weekend?"*. Your friend has to work out that
+"this weekend" means Saturday the 10th and Sunday the 11th, that "fun" is not
+a category anyone writes on a flyer, and — if you'd said "Pilsen" — that
+Pilsen is a neighborhood rather than a band. They also notice when you are
+not asking at all, and are just saying goodbye.
+
+This is the part most likely to go wrong quietly. We once turned
+*"What's happening this weekend?"* into a search for the literal word
+*"what's"*, and 221 events came back as one.
+
+**2. Looking it up** — *retrieval*
+
+Your friend checks the notebook first, because it is the thing they actually
+know. They flip to the right dates, then the right neighborhood, then the
+right kind of event. Only if the notebook is thin do they phone around to ask
+what else is on — and anything they hear that way, they tell you they haven't
+checked.
+
+The notebook lookup is ordinary database filtering, not magic: a date is a
+date, and a neighborhood is a shape on a map. Only when that comes back thin
+do we fall back to comparing *meanings* of words, which is the part people
+usually mean by "AI search".
+
+**3. Teaching the friend** — *fine-tuning*
+
+We didn't. We never sent them away to learn a new language. We gave them
+better notes, a clearer sense of how to talk, and a better-organised notebook.
+Section 3 explains why that was the right call here, and when it would not be.
+
+**4. Marking their homework** — *evaluation*
+
+Every so often you check: of the things they told you, how many were right?
+We do this properly for one job — sorting events into categories, scored
+against 73 answers written by hand — and not yet for the main one, finding
+the right events. That gap is stated plainly in section 4 rather than papered
+over.
+
+**And one distinction that matters:** working out whether you're done is not
+the same as working out whether you're *happy*. "👍" and "appreciate it —
+anything cheaper?" are both cheerful; one ends the conversation and one does
+not. We ask what a message is *doing*, not how it feels.
+
+---
+
 ## 1. Pre-retrieval
 
 Everything that happens to the question before anything is searched. This is
