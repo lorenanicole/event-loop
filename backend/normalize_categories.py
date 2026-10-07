@@ -1,11 +1,18 @@
-"""Normalize stored category casing, leaving the wording alone.
+"""Bring stored categories in line with what the ingest path now produces.
 
-A dozen sources each label their own events, so the same category arrives in
-different cases: "music" from the venue scrapers, "Music" from Ticketmaster.
-Those are one category and should be one tile. "Arts & Crafts" and "Arts &
-Culture" are not, and are left as they are - collapsing them would throw away a
-real distinction, and `shared.categories.category_filter` already matches a
-search for "art" across every Arts* label by prefix.
+Two steps, the same ones EventCreate and save_events_to_db apply:
+
+1. Settle casing, leaving wording alone.
+
+   A dozen sources each label their own events, so the same category arrives
+   in different cases: "music" from the venue scrapers, "Music" from
+   Ticketmaster. Those are one category and should be one tile. "Arts &
+   Crafts" and "Arts & Culture" are not, and are left as they are.
+
+2. Override a venue's blanket category where the title is unambiguous.
+
+   A venue scraper labels everything with the venue's own category, so a wine
+   special at a music pub arrives as "Music". See infer_category.
 
     python normalize_categories.py --dry-run
     python normalize_categories.py
@@ -17,7 +24,7 @@ from collections import Counter
 
 sys.path.insert(0, "src")
 
-from shared.categories import normalize_category  # noqa: E402
+from shared.categories import infer_category, normalize_category  # noqa: E402
 
 DB_PATH = "data/events.db"
 
@@ -27,12 +34,14 @@ def main() -> None:
     db = sqlite3.connect(DB_PATH)
 
     rows = db.execute(
-        "SELECT id, category FROM events WHERE category IS NOT NULL"
+        "SELECT id, name, category FROM events WHERE category IS NOT NULL"
     ).fetchall()
 
     changes = []
-    for event_id, current in rows:
-        wanted = normalize_category(current)
+    for event_id, name, current in rows:
+        # Same two steps the ingest path applies: settle the casing, then let
+        # an unambiguous title override the venue's blanket category.
+        wanted = normalize_category(infer_category(name, current))
         if wanted and wanted != current:
             changes.append((event_id, current, wanted))
 

@@ -82,6 +82,46 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
 }
 
 
+# A venue scraper labels every event with the venue's own category, so a wine
+# special at a music pub and a sewing class at a music hall both arrive as
+# "Music" - and "music tonight in Avondale" answers with neither music.
+#
+# These rules override that from the title, and are deliberately narrow:
+# precision matters far more than recall here, because a wrong category is
+# worse than a vague one. Ordered, first match wins, so "Comedy Open Mic" is
+# comedy rather than an open mic.
+#
+# Patterns that were tried and dropped for being wrong too often:
+#   film|movie|screening  - matched concerts billed "live to film"
+#                           ("Disney's Encanto In Concert Live to Film")
+#   craft                 - matched craft beer
+#   workshop              - far too broad
+#   taco|pizza|cocktail   - matched band and party names
+_TITLE_CATEGORY_RULES: list[tuple[str, str]] = [
+    ("Comedy", r"\bcomedy\b|\bstand[- ]?up\b|\bimprov\b"),
+    ("Karaoke/Trivia/Open Mics", r"\b(karaoke|trivia|bingo|open[- ]mic)\b"),
+    ("Arts & Crafts", r"\b(sewing|knit|crochet|quilt|pottery|ceramics?|life drawing)\b"),
+    ("Food & Drink",
+     r"\b(wine wednesday|happy hour|bottomless|drag brunch|supper club)\b"
+     r"|\bhalf[- ]price[d]?\s+(wine|beer|drink)"
+     r"|\b(beer|whiskey|wine) tasting\b"),
+]
+
+
+def infer_category(title: Optional[str], fallback: str) -> str:
+    """Override a venue's blanket category where the title is unambiguous.
+
+    Returns `fallback` unchanged when nothing matches, which is the common
+    case - about 3% of venue-scraped events are reclassified.
+    """
+    if not title:
+        return fallback
+    for category, pattern in _TITLE_CATEGORY_RULES:
+        if re.search(pattern, title, re.IGNORECASE):
+            return category
+    return fallback
+
+
 def normalize_category(value: Optional[str]) -> Optional[str]:
     """Normalize a category's casing and whitespace, leaving its wording alone.
 

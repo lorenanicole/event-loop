@@ -1,8 +1,8 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from shared.categories import normalize_category
+from shared.categories import infer_category, normalize_category
 
 
 class EventCreate(BaseModel):
@@ -48,6 +48,19 @@ class EventCreate(BaseModel):
     date_retrieved: datetime = Field(
         default_factory=datetime.utcnow, description="When this row was last refreshed"
     )
+
+    @model_validator(mode="after")
+    def _refine_category(self):
+        """Override a blanket category where the title is unambiguous.
+
+        Ticketmaster files a comedy jam under "Arts & Theatre"; a venue
+        scraper labels a wine special at a music pub as "Music". The title
+        settles those cases, and leaves everything else alone.
+        """
+        refined = infer_category(self.name, self.category)
+        if refined != self.category:
+            object.__setattr__(self, "category", refined)
+        return self
 
     @field_validator("category")
     @classmethod

@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select
 from shared.database.models import EventModel, VenueModel, NeighborhoodModel, Base
 from shared.database.neighborhoods import canonical_neighborhood, resolve_neighborhood_id
-from shared.categories import normalize_category
+from shared.categories import infer_category, normalize_category
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -1152,6 +1152,7 @@ _SECTION_HEADINGS = {
     "today", "tomorrow", "month", "week", "day", "list", "agenda", "view",
     "next", "prev", "previous", "filter", "filters", "search",
     "clear", "reset", "apply", "submit", "select date", "all", "close",
+    "confirm", "cancel", "ok", "done", "more info", "sold out", "tickets",
     "time", "event details", "details", "venue", "location", "price", "tickets",
     # Calendar legends.
     "multiday event", "multi day event", "single day event", "recurring event",
@@ -1400,16 +1401,23 @@ def _card_lines(el) -> list[str]:
     return lines
 
 
-def _title_from(lines: list[str]) -> Optional[str]:
+def _title_from(lines: list[str], skip: Optional[str] = None) -> Optional[str]:
     """Pick the event title out of a card's text lines.
+
+    `skip` is the venue's own name, which many sites print inside each card -
+    Sleeping Village labels every listing with its stage - and which would
+    otherwise be read as the title of every event there.
 
     The title is the first line that is neither the date nor a call to action.
     A line like "OCT 7 - WEDNESDAY" is all date, so the weekday is stripped
     alongside the date before checking whether real words are left - otherwise
     the weekday alone passes for a title.
     """
+    skip_bare = re.sub(r"[^a-z0-9& ]", "", skip.lower()).strip() if skip else None
     for line in lines:
         bare = re.sub(r"[^a-z0-9& ]", "", line.lower()).strip()
+        if skip_bare and bare == skip_bare:
+            continue
         if line.lower().rstrip(":").startswith(_BOILERPLATE):
             continue
         # A month picker ("October") or a section heading is not an event.
@@ -1466,7 +1474,7 @@ def extract_dated_list_items(soup: BeautifulSoup, config: VenueConfig) -> list[V
         # almost never contain an <input> or <select>.
         if el.find(["input", "select", "textarea"]):
             continue
-        if _title_from(_card_lines(el)):
+        if _title_from(_card_lines(el), config.name):
             candidates.append(el)
 
     # Of the nested candidates keep the innermost, so the list container isn't
@@ -1507,7 +1515,7 @@ def extract_dated_list_items(soup: BeautifulSoup, config: VenueConfig) -> list[V
             year = one.group("y") or infer_event_year(one.group("m"))
             date_str = f"{one.group('m')[:3].title()} {int(one.group('d'))}, {year}"
 
-        title = _title_from(lines)
+        title = _title_from(lines, config.name)
         if not title:
             continue
 
@@ -3307,6 +3315,18 @@ CHICAGO_VENUES = {
 
     "Avondale": [
         VenueConfig(
+            # Each listing repeats the stage name ("Sleeping Village") above
+            # the title, which _title_from is told to skip via config.name.
+            name="Sleeping Village",
+            website_url="https://sleeping-village.com",
+            event_page_url="https://sleeping-village.com/events/",
+            category="music",
+            address="3734 W Belmont Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_dated_list_items,
+        ),
+        VenueConfig(
             name="Chief O'Neill's Pub",
             website_url="https://chiefoneillspub.com",
             event_page_url="https://chiefoneillspub.com/events/",
@@ -3495,7 +3515,9 @@ async def save_events_to_db(
                         date_end=final_date_end,
                         time=event.time,
                         time_end=event.time_end,
-                        category=normalize_category(event.category),
+                        category=normalize_category(
+                            infer_category(event.name, event.category)
+                        ),
                         address=event.location,
                         venue_name=event.venue_name or config.name,
                         origination_url=origination_url,

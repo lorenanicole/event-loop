@@ -11,6 +11,7 @@ from sqlalchemy.orm import declarative_base
 
 from shared.categories import (
     category_filter,
+    infer_category,
     category_labels,
     category_prefixes,
     extract_category_concepts,
@@ -152,3 +153,47 @@ class TestCategoryFilter:
             compile_kwargs={"literal_binds": True}))
         assert "%music%" not in clause.lower()
         assert "music%" in clause.lower()
+
+
+class TestInferCategory:
+    """Venue scrapers label every event with the venue's own category."""
+
+    def test_wine_special_at_a_music_pub(self):
+        """The case that prompted this: "music tonight" returning a wine deal."""
+        assert infer_category(
+            "Wine Wednesday Half-Priced Wine by the Bottle", "Music"
+        ) == "Food & Drink"
+
+    def test_sewing_class_at_a_music_hall(self):
+        assert infer_category("SEWING FREAK", "Music") == "Arts & Crafts"
+
+    def test_comedy_wins_over_open_mic(self):
+        """Ordered rules: a comedy open mic is comedy, not an open mic night."""
+        assert infer_category("Comedy Open Mic", "Music") == "Comedy"
+
+    def test_a_music_open_mic_is_an_open_mic(self):
+        assert infer_category("Schubas Open Mic", "Music") == "Karaoke/Trivia/Open Mics"
+
+    def test_comedy_jam_under_ticketmasters_segment(self):
+        assert infer_category("Sweetest Day Comedy Jam", "Arts & Theatre") == "Comedy"
+
+    def test_an_ordinary_gig_is_left_alone(self):
+        assert infer_category("Kiefer w/ Shibo", "Music") == "Music"
+
+    def test_a_concert_billed_live_to_film_stays_a_concert(self):
+        """Why "film" is not a rule: it matched concerts, not screenings."""
+        assert infer_category(
+            "Disney's Encanto In Concert Live to Film", "Theater"
+        ) == "Theater"
+
+    def test_craft_beer_is_not_arts_and_crafts(self):
+        """Why "craft" is not a rule."""
+        assert infer_category("Craft Beer Fest", "Music") == "Music"
+
+    def test_a_workshop_is_not_assumed_to_be_crafts(self):
+        """Why "workshop" is not a rule - it is far too broad."""
+        assert infer_category("Songwriting Workshop", "Music") == "Music"
+
+    def test_missing_title_returns_the_fallback(self):
+        assert infer_category(None, "Music") == "Music"
+        assert infer_category("", "Music") == "Music"
