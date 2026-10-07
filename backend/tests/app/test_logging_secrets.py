@@ -33,6 +33,7 @@ class TestHttpxIsQuiet:
         """pydantic-ai prints a five-line ASCII banner into the same log a
         scheduled run writes to."""
         import os
+
         configure_logging("INFO")
         assert os.environ.get("PYDANTIC_AI_NO_BANNER") == "1"
 

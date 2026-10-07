@@ -3,9 +3,8 @@ Event enrichment utilities for extracting cost and age_range information from ev
 Uses regex patterns for fast, simple extraction without AI.
 """
 
-import re
 import logging
-from typing import Optional
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -43,17 +42,25 @@ AGE_PATTERNS = [
 
 # Outdoor/Indoor patterns
 OUTDOOR_PATTERNS = [
-    (r"\b(?:outdoor|outside|park|lakefront|plaza|rooftop|beach|pier|trail|garden|botanical)\b", "outdoor", re.IGNORECASE),
+    (
+        r"\b(?:outdoor|outside|park|lakefront|plaza|rooftop|beach|pier|trail|garden|botanical)\b",
+        "outdoor",
+        re.IGNORECASE,
+    ),
     (r"\b(?:in the park|at the lake|along the river)\b", "outdoor", re.IGNORECASE),
 ]
 
 INDOOR_PATTERNS = [
-    (r"\b(?:indoor|inside|theater|theatre|lounge|venue|nightclub|museum|gallery|hall|arena|stadium|auditorium)\b", "indoor", re.IGNORECASE),
+    (
+        r"\b(?:indoor|inside|theater|theatre|lounge|venue|nightclub|museum|gallery|hall|arena|stadium|auditorium)\b",
+        "indoor",
+        re.IGNORECASE,
+    ),
     (r"\b(?:at the|chicago loop|downtown)\b", "indoor", re.IGNORECASE),
 ]
 
 
-def extract_cost(text: str) -> Optional[str]:
+def extract_cost(text: str) -> str | None:
     """
     Extract cost information from event text.
     Returns: "Free", "Donation", a price range like "$25", "$15-30", or None if not found.
@@ -75,7 +82,7 @@ def extract_cost(text: str) -> Optional[str]:
     return None
 
 
-def extract_age_range(text: str) -> Optional[str]:
+def extract_age_range(text: str) -> str | None:
     """
     Extract age range information from event text.
     Returns: "All ages", "Kids friendly", "18+", "21+", etc., or None if not found.
@@ -100,8 +107,8 @@ def extract_age_range(text: str) -> Optional[str]:
 
 def extract_from_event_text(
     event_name: str,
-    details: Optional[str] = None,
-) -> tuple[Optional[str], Optional[str]]:
+    details: str | None = None,
+) -> tuple[str | None, str | None]:
     """
     Combined extraction of cost and age_range from event name and details.
     Searches both name and details, prioritizing details (more detailed info).
@@ -124,7 +131,7 @@ def extract_from_event_text(
     return cost, age_range
 
 
-def extract_is_outdoor(text: str) -> Optional[str]:
+def extract_is_outdoor(text: str) -> str | None:
     """
     Detect if event is outdoor, indoor, or hybrid.
     Returns: "outdoor", "indoor", or None if unclear.
@@ -147,7 +154,7 @@ def extract_is_outdoor(text: str) -> Optional[str]:
     return None
 
 
-def extract_address(text: str) -> Optional[str]:
+def extract_address(text: str) -> str | None:
     """
     Extract street address from event text.
     Looks for patterns like "123 Main St", "at 456 State St", "located at 789 Oak Ave".
@@ -166,7 +173,7 @@ def extract_address(text: str) -> Optional[str]:
     return None
 
 
-def extract_venue_name(event_name: str, url: Optional[str] = None) -> Optional[str]:
+def extract_venue_name(event_name: str, url: str | None = None) -> str | None:
     """
     Extract venue/location name from event name or URL.
     Heuristic: if event name contains "at" or "at the", extract the part after it.

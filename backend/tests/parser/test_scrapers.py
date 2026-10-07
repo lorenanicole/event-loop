@@ -3,9 +3,9 @@ Scraper tests: Event extraction, data normalization, error handling.
 Tests use mocking to avoid hitting live APIs.
 """
 
+from datetime import datetime
+
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
-from datetime import datetime, timedelta
 
 
 class TestScraperBase:
@@ -14,6 +14,7 @@ class TestScraperBase:
     @pytest.mark.asyncio
     async def test_scraper_handles_network_error(self):
         """Scraper gracefully handles network errors."""
+
         # This would test actual scraper implementation
         # For now, demonstrate structure
         async def mock_scraper():
@@ -83,12 +84,12 @@ class TestDO312Scraper:
         # Test would parse and extract
         from bs4 import BeautifulSoup
 
-        soup = BeautifulSoup(mock_html, 'html.parser')
-        articles = soup.find_all('article')
+        soup = BeautifulSoup(mock_html, "html.parser")
+        articles = soup.find_all("article")
 
         assert len(articles) > 0
         article = articles[0]
-        title = article.find('h3')
+        title = article.find("h3")
         assert title is not None
 
     @pytest.mark.asyncio
@@ -118,13 +119,8 @@ class TestTicketmasterScraper:
                 "events": [
                     {
                         "name": "Concert",
-                        "dates": {
-                            "start": {
-                                "localDate": "2026-10-05",
-                                "localTime": "19:00:00"
-                            }
-                        },
-                        "url": "http://ticketmaster.com/event/1"
+                        "dates": {"start": {"localDate": "2026-10-05", "localTime": "19:00:00"}},
+                        "url": "http://ticketmaster.com/event/1",
                     }
                 ]
             }
@@ -138,6 +134,7 @@ class TestTicketmasterScraper:
     @pytest.mark.asyncio
     async def test_ticketmaster_rate_limiting(self):
         """Handle Ticketmaster rate limiting."""
+
         # Simulate 429 response
         class MockResponse:
             status_code = 429
@@ -151,14 +148,8 @@ class TestTicketmasterScraper:
     async def test_ticketmaster_pagination(self):
         """Handle paginated Ticketmaster results."""
         mock_response = {
-            "page": {
-                "number": 0,
-                "totalPages": 5,
-                "size": 20
-            },
-            "_embedded": {
-                "events": [{"name": f"Event {i}"} for i in range(20)]
-            }
+            "page": {"number": 0, "totalPages": 5, "size": 20},
+            "_embedded": {"events": [{"name": f"Event {i}"} for i in range(20)]},
         }
 
         # Should know there are more pages
@@ -181,11 +172,12 @@ class TestYourChicagoGuideScraper:
         """
 
         from bs4 import BeautifulSoup
-        soup = BeautifulSoup(mock_html, 'html.parser')
 
-        event_div = soup.find('div', class_='event')
+        soup = BeautifulSoup(mock_html, "html.parser")
+
+        event_div = soup.find("div", class_="event")
         assert event_div is not None
-        title = event_div.find('h4')
+        title = event_div.find("h4")
         assert title is not None
 
 
@@ -205,11 +197,12 @@ class TestTimeoutChicagoScraper:
         """
 
         from bs4 import BeautifulSoup
-        soup = BeautifulSoup(mock_html, 'html.parser')
 
-        article = soup.find('article')
+        soup = BeautifulSoup(mock_html, "html.parser")
+
+        article = soup.find("article")
         assert article is not None
-        time_tag = article.find('time')
+        time_tag = article.find("time")
         assert time_tag is not None
 
 
@@ -245,8 +238,8 @@ class TestScraperErrorRecovery:
         from bs4 import BeautifulSoup
 
         # BeautifulSoup should handle this
-        soup = BeautifulSoup(malformed_html, 'html.parser')
-        events = soup.find_all('event')
+        soup = BeautifulSoup(malformed_html, "html.parser")
+        events = soup.find_all("event")
 
         # Should parse something, even if malformed
         assert soup is not None
@@ -324,10 +317,7 @@ class TestScraperPerformance:
         events = [{"name": f"Event {i}"} for i in range(100)]
 
         batch_size = 20
-        batches = [
-            events[i:i+batch_size]
-            for i in range(0, len(events), batch_size)
-        ]
+        batches = [events[i : i + batch_size] for i in range(0, len(events), batch_size)]
 
         assert len(batches) == 5
         assert len(batches[0]) == 20

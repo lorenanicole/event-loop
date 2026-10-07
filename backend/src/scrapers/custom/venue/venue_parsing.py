@@ -13,10 +13,7 @@ with no year, which is what `infer_event_year` is for.
 
 import logging
 import re
-from datetime import datetime, timedelta
-from typing import Optional
-
-from bs4 import BeautifulSoup
+from datetime import datetime
 
 from .venue_scraper import VenueConfig
 
@@ -26,12 +23,22 @@ VENUE_SCRAPE_TIMEOUT = 120
 
 
 _MONTHS = {
-    "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
-    "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
+    "Jan": 1,
+    "Feb": 2,
+    "Mar": 3,
+    "Apr": 4,
+    "May": 5,
+    "Jun": 6,
+    "Jul": 7,
+    "Aug": 8,
+    "Sep": 9,
+    "Oct": 10,
+    "Nov": 11,
+    "Dec": 12,
 }
 
 
-def infer_event_year(month_str: str, today: Optional[datetime] = None) -> int:
+def infer_event_year(month_str: str, today: datetime | None = None) -> int:
     """Pick the year for a yearless venue date like "Oct 6".
 
     Venue calendars list upcoming shows only, so a month earlier than the
@@ -47,7 +54,7 @@ def infer_event_year(month_str: str, today: Optional[datetime] = None) -> int:
     return today.year
 
 
-def parse_date_range(date_str: Optional[str]) -> tuple[Optional[datetime], Optional[datetime]]:
+def parse_date_range(date_str: str | None) -> tuple[datetime | None, datetime | None]:
     """Parse date string to start and end dates. Returns (start_date, end_date)."""
     if not date_str or not date_str.strip():
         return None, None
@@ -58,14 +65,14 @@ def parse_date_range(date_str: Optional[str]) -> tuple[Optional[datetime], Optio
         # Try ISO format first: "2026-10-06T04:59:00+00:00" or "2026-10-06T04:59:00Z"
         try:
             # Handle Z timezone
-            iso_str = date_str.replace('Z', '+00:00')
+            iso_str = date_str.replace("Z", "+00:00")
             start = datetime.fromisoformat(iso_str)
             return start, None
-        except (ValueError, AttributeError):
+        except ValueError, AttributeError:
             pass
 
         # Try date range: "Oct 23 - 27, 2026"
-        range_match = re.search(r'(\w+)\s+(\d{1,2})\s*[-–]\s*(\d{1,2}),?\s+(\d{4})', date_str)
+        range_match = re.search(r"(\w+)\s+(\d{1,2})\s*[-–]\s*(\d{1,2}),?\s+(\d{4})", date_str)
         if range_match:
             month_str = range_match.group(1)
             start_day = range_match.group(2)
@@ -80,8 +87,7 @@ def parse_date_range(date_str: Optional[str]) -> tuple[Optional[datetime], Optio
 
         # Try two-month range: "Oct 1 – Nov 4, 2026"
         multi_month = re.search(
-            r'(\w+)\s+(\d{1,2})\s*[-–]\s*(\w+)\s+(\d{1,2}),?\s+(\d{4})',
-            date_str
+            r"(\w+)\s+(\d{1,2})\s*[-–]\s*(\w+)\s+(\d{1,2}),?\s+(\d{4})", date_str
         )
         if multi_month:
             start_month = multi_month.group(1)
@@ -107,7 +113,7 @@ def parse_date_range(date_str: Optional[str]) -> tuple[Optional[datetime], Optio
 
         # Try date without year: "Oct 4" or "Mon October 5" (assume current/next year)
         # Handle weekday: "Mon October 5"
-        weekday_date = re.search(r'(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(\w+)\s+(\d{1,2})', date_str)
+        weekday_date = re.search(r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(\w+)\s+(\d{1,2})", date_str)
         if weekday_date:
             month_str = weekday_date.group(1)
             day_str = weekday_date.group(2)
@@ -120,7 +126,7 @@ def parse_date_range(date_str: Optional[str]) -> tuple[Optional[datetime], Optio
                         continue
 
         # Try date without year: "Oct 4" (assume current/next year)
-        short_date = re.search(r'(\w+)\s+(\d{1,2})', date_str)
+        short_date = re.search(r"(\w+)\s+(\d{1,2})", date_str)
         if short_date:
             month_str = short_date.group(1)
             day_str = short_date.group(2)
@@ -156,7 +162,7 @@ def venue_source_name(config: VenueConfig) -> str:
     return f"chicago_venue_{slug}"
 
 
-def jsonld_offer_cost(event_data: dict) -> Optional[str]:
+def jsonld_offer_cost(event_data: dict) -> str | None:
     """Read a price out of a schema.org Event's `offers`.
 
     This is the one structured price in the whole pipeline, so prefer its
@@ -196,7 +202,6 @@ def jsonld_offer_cost(event_data: dict) -> Optional[str]:
     return money(low) if low == high else f"{money(low)}-{money(high)}"
 
 
-
 _MONTH = r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?"
 # "SEP 11-OCT 18, 2026" / "OCT 27-MAR 20, 2027" - a run, not a single night.
 _RUN_RE = re.compile(
@@ -205,46 +210,110 @@ _RUN_RE = re.compile(
     # "Monday, October 05 - Wednesday, October 07".
     rf"(?:[A-Za-z]{{3,9}},\s*)?"
     rf"(?:(?P<m2>{_MONTH})\s*)?(?P<d2>\d{{1,2}})(?:,?\s*(?P<y>\d{{4}}))?",
-    re.I,
+    re.IGNORECASE,
 )
 # "Oct 7 - Wednesday", "Thu, Oct 08", "October 17, 2026"
-_ONE_RE = re.compile(
-    rf"(?P<m>{_MONTH})\s*(?P<d>\d{{1,2}})(?:,?\s*(?P<y>\d{{4}}))?", re.I
-)
+_ONE_RE = re.compile(rf"(?P<m>{_MONTH})\s*(?P<d>\d{{1,2}})(?:,?\s*(?P<y>\d{{4}}))?", re.IGNORECASE)
 _BOILERPLATE = (
-    "tickets", "buy tickets", "more info", "learn more", "details", "sold out",
-    "rsvp", "doors", "on sale", "free", "info", "read more", "get tickets",
+    "tickets",
+    "buy tickets",
+    "more info",
+    "learn more",
+    "details",
+    "sold out",
+    "rsvp",
+    "doors",
+    "on sale",
+    "free",
+    "info",
+    "read more",
+    "get tickets",
 )
 
 
 _MONTH_WORDS = {m.lower() for m in _MONTHS} | {
-    "january", "february", "march", "april", "may", "june", "july", "august",
-    "september", "october", "november", "december",
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
 }
 # Page furniture that sits inside an event card's ancestor and would otherwise
 # be mistaken for a title.
 _SECTION_HEADINGS = {
-    "events", "all events", "upcoming events", "events & public programs",
-    "public programs", "whats on", "calendar", "event calendar", "more events",
+    "events",
+    "all events",
+    "upcoming events",
+    "events & public programs",
+    "public programs",
+    "whats on",
+    "calendar",
+    "event calendar",
+    "more events",
     # Datepicker controls, which sit in the same container as the cards.
-    "today", "tomorrow", "month", "week", "day", "list", "agenda", "view",
-    "next", "prev", "previous", "filter", "filters", "search",
-    "clear", "reset", "apply", "submit", "select date", "all", "close",
-    "confirm", "cancel", "ok", "done", "more info", "sold out", "tickets",
-    "time", "event details", "details", "venue", "location", "price", "tickets",
+    "today",
+    "tomorrow",
+    "month",
+    "week",
+    "day",
+    "list",
+    "agenda",
+    "view",
+    "next",
+    "prev",
+    "previous",
+    "filter",
+    "filters",
+    "search",
+    "clear",
+    "reset",
+    "apply",
+    "submit",
+    "select date",
+    "all",
+    "close",
+    "confirm",
+    "cancel",
+    "ok",
+    "done",
+    "more info",
+    "sold out",
+    "tickets",
+    "time",
+    "event details",
+    "details",
+    "venue",
+    "location",
+    "price",
+    "tickets",
     # Calendar legends.
-    "multiday event", "multi day event", "single day event", "recurring event",
+    "multiday event",
+    "multi day event",
+    "single day event",
+    "recurring event",
 }
 
 _WEEKDAY_RE = re.compile(
     r"\b(?:Mon|Tue|Tues|Wed|Weds|Thu|Thur|Thurs|Fri|Sat|Sun)(?:day|sday|nesday|rsday|urday)?\b",
-    re.I,
+    re.IGNORECASE,
 )
 
 
-
 _WEEKDAY_PREFIXES = (
-    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
 )
 
 
@@ -260,14 +329,14 @@ def _card_lines(el) -> list[str]:
         match = _ONE_RE.search(lines[0])
         if match:
             lines = [
-                part.strip() for part in
-                (lines[0][:match.start()], match.group(0), lines[0][match.end():])
+                part.strip()
+                for part in (lines[0][: match.start()], match.group(0), lines[0][match.end() :])
                 if part.strip()
             ]
     return lines
 
 
-def _title_from(lines: list[str], skip: Optional[str] = None) -> Optional[str]:
+def _title_from(lines: list[str], skip: str | None = None) -> str | None:
     """Pick the event title out of a card's text lines.
 
     `skip` is the venue's own name, which many sites print inside each card -
@@ -302,8 +371,8 @@ def _title_from(lines: list[str], skip: Optional[str] = None) -> Optional[str]:
         title = re.split(r"\s*[►▶‣]\s*|\s+DATE:\s*|\s+TIME:\s*", line)[0].strip()
         # A run-together card leaves the weekday stuck to the title ("...TOURWed").
         title = re.sub(
-            r"(?:Mon|Tues?|Wed(?:nes)?|Thu(?:rs)?|Fri|Sat(?:ur)?|Sun)(?:day)?\.?$",
-            "", title).strip(" ,-–—")
+            r"(?:Mon|Tues?|Wed(?:nes)?|Thu(?:rs)?|Fri|Sat(?:ur)?|Sun)(?:day)?\.?$", "", title
+        ).strip(" ,-–—")
         # ...and leaves punctuation and the start time on the front of it
         # (")7:00 pmSalsa on a School Night").
         title = re.sub(r"^[^A-Za-z0-9]+", "", title)
@@ -313,7 +382,7 @@ def _title_from(lines: list[str], skip: Optional[str] = None) -> Optional[str]:
     return None
 
 
-def _dates_from_text(text: str) -> tuple[Optional[str], Optional[str]]:
+def _dates_from_text(text: str) -> tuple[str | None, str | None]:
     """Read a single date or a run out of a card's text.
 
     Returns ("Oct 7, 2026", None) or ("Sep 10, 2026", "Dec 30, 2026").
@@ -329,13 +398,13 @@ def _dates_from_text(text: str) -> tuple[Optional[str], Optional[str]]:
         else:
             start_year = infer_event_year(start_month)
             end_year = start_year + 1 if crosses else start_year
-        return (f"{start_month} {int(run.group('d1'))}, {start_year}",
-                f"{end_month} {int(run.group('d2'))}, {end_year}")
+        return (
+            f"{start_month} {int(run.group('d1'))}, {start_year}",
+            f"{end_month} {int(run.group('d2'))}, {end_year}",
+        )
 
     one = _ONE_RE.search(text or "")
     if not one:
         return None, None
     year = one.group("y") or infer_event_year(one.group("m"))
     return f"{one.group('m')[:3].title()} {int(one.group('d'))}, {year}", None
-
-

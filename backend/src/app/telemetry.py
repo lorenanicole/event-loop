@@ -4,18 +4,18 @@ Tracks: session counts, question counts, operation latencies, token usage.
 Persists metrics to database for historical analysis.
 """
 
-from opentelemetry import metrics
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 import json
 import logging
 from datetime import datetime
-from typing import Optional
+
+from opentelemetry import metrics
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 
 logger = logging.getLogger(__name__)
 
 # Database session will be injected at runtime
-_db_session: Optional[object] = None
+_db_session: object | None = None
 
 # Initialize metrics with in-memory reader for local development
 reader = InMemoryMetricReader()

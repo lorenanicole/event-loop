@@ -1,11 +1,12 @@
 import logging
 from datetime import datetime
-from typing import Optional
+
 from bs4 import BeautifulSoup
-from sqlalchemy.orm import Session
 from pyppeteer import launch
-from shared.models import EventCreate
+from sqlalchemy.orm import Session
+
 from shared.database.models import EventModel
+from shared.models import EventCreate
 
 logger = logging.getLogger(__name__)
 
@@ -27,34 +28,36 @@ class EventsComScraper:
             events = []
 
             # Launch browser
-            browser = await launch(headless=True, args=['--no-sandbox', '--disable-gpu'])
+            browser = await launch(headless=True, args=["--no-sandbox", "--disable-gpu"])
             page = await browser.newPage()
 
             # Set viewport and user agent
-            await page.setViewport({'width': 1280, 'height': 1024})
+            await page.setViewport({"width": 1280, "height": 1024})
             await page.setUserAgent(
-                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
 
             # Navigate to Chicago events page
             logger.info(f"Loading {self.CHICAGO_URL}")
-            await page.goto(self.CHICAGO_URL, {'waitUntil': 'networkidle2', 'timeout': self.REQUEST_TIMEOUT})
+            await page.goto(
+                self.CHICAGO_URL, {"waitUntil": "networkidle2", "timeout": self.REQUEST_TIMEOUT}
+            )
 
             # Wait and scroll to trigger lazy loading
             logger.info("Waiting for events to load...")
-            await page.evaluate('() => new Promise(resolve => setTimeout(resolve, 3000))')
+            await page.evaluate("() => new Promise(resolve => setTimeout(resolve, 3000))")
 
             # Scroll down to trigger lazy loading
             for i in range(3):
-                await page.evaluate('window.scrollBy(0, window.innerHeight)')
-                await page.evaluate('() => new Promise(resolve => setTimeout(resolve, 1000))')
+                await page.evaluate("window.scrollBy(0, window.innerHeight)")
+                await page.evaluate("() => new Promise(resolve => setTimeout(resolve, 1000))")
 
             # Scroll back to top
-            await page.evaluate('window.scrollTo(0, 0)')
-            await page.evaluate('() => new Promise(resolve => setTimeout(resolve, 1000))')
+            await page.evaluate("window.scrollTo(0, 0)")
+            await page.evaluate("() => new Promise(resolve => setTimeout(resolve, 1000))")
 
             # Extract events via JavaScript
-            event_data = await page.evaluate('''
+            event_data = await page.evaluate("""
                 () => {
                     const events = [];
                     const eventElements = Array.from(document.querySelectorAll('div, article, li')).filter(el => {
@@ -89,7 +92,7 @@ class EventsComScraper:
 
                     return events.slice(0, 200);
                 }
-            ''')
+            """)
 
             logger.info(f"Extracted {len(event_data)} event records via JavaScript")
 
@@ -121,10 +124,10 @@ class EventsComScraper:
 
         # Try multiple selectors for event containers
         selectors = [
-            '[data-event]',
-            '.event-item',
-            '.event-card',
-            '.event',
+            "[data-event]",
+            ".event-item",
+            ".event-card",
+            ".event",
             '[class*="event"]',
         ]
 
@@ -146,27 +149,27 @@ class EventsComScraper:
 
         return events
 
-    def _convert_to_event(self, data: dict) -> Optional[EventCreate]:
+    def _convert_to_event(self, data: dict) -> EventCreate | None:
         """Convert extracted event data to EventCreate"""
         try:
-            title = data.get('title', '').strip()
+            title = data.get("title", "").strip()
             if not title or len(title) < 3:
                 return None
 
-            date_text = data.get('dateText', '').strip()
+            date_text = data.get("dateText", "").strip()
             if not date_text:
                 return None
 
             try:
                 event_date = self._parse_date(date_text)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 logger.debug(f"Could not parse date: {date_text}")
                 return None
 
-            url = data.get('url', '').strip()
+            url = data.get("url", "").strip()
             if not url:
                 url = self.CHICAGO_URL
-            elif not url.startswith('http'):
+            elif not url.startswith("http"):
                 url = f"{self.BASE_URL}{url}"
 
             return EventCreate(
@@ -180,7 +183,7 @@ class EventsComScraper:
             logger.debug(f"Conversion error: {e}")
             return None
 
-    def _parse_event_element(self, element) -> Optional[EventCreate]:
+    def _parse_event_element(self, element) -> EventCreate | None:
         """Parse a single event from HTML element"""
         try:
             # Extract title/name
@@ -195,7 +198,7 @@ class EventsComScraper:
             date_text = None
 
             if date_elem:
-                date_text = date_elem.get('datetime')
+                date_text = date_elem.get("datetime")
                 if not date_text:
                     date_text = date_elem.get_text(strip=True)
 
@@ -204,13 +207,15 @@ class EventsComScraper:
 
             try:
                 event_date = self._parse_date(date_text)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 logger.debug(f"Could not parse date: {date_text}")
                 return None
 
             # Extract category
             category = "Events"
-            category_elem = element.select_one('[class*="category"], .category, .tag, [class*="type"]')
+            category_elem = element.select_one(
+                '[class*="category"], .category, .tag, [class*="type"]'
+            )
             if category_elem:
                 category = category_elem.get_text(strip=True)
 
@@ -221,12 +226,12 @@ class EventsComScraper:
                 details = details_elem.get_text(strip=True)[:300]
 
             # Extract URL
-            url_elem = element.select_one('a[href]')
+            url_elem = element.select_one("a[href]")
             origination_url = None
 
-            if url_elem and url_elem.get('href'):
-                href = url_elem['href']
-                if href.startswith('http'):
+            if url_elem and url_elem.get("href"):
+                href = url_elem["href"]
+                if href.startswith("http"):
                     origination_url = href
                 else:
                     origination_url = f"{self.BASE_URL}{href}"

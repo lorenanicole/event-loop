@@ -14,7 +14,6 @@ CHICAGO_VENUES = [
     {"name": "Cadillac Palace Theatre", "category": "theater"},
     {"name": "Ambassador Theatre Chicago", "category": "theater"},
     {"name": "Ford Center for the Performing Arts Oriental Theatre", "category": "theater"},
-
     # ===== THEATERS - OFF-BROADWAY & INDEPENDENT =====
     {"name": "Court Theatre", "category": "theater"},
     {"name": "Lookingglass Theatre Company", "category": "theater"},
@@ -32,7 +31,6 @@ CHICAGO_VENUES = [
     {"name": "Rivendell Theatre Ensemble", "category": "theater"},
     {"name": "Hypocrites Theatre", "category": "theater"},
     {"name": "Bailiwick Chicago", "category": "theater"},
-
     # ===== COMEDY CLUBS & IMPROV =====
     {"name": "Second City", "category": "comedy"},
     {"name": "iO Theater", "category": "comedy"},
@@ -44,7 +42,6 @@ CHICAGO_VENUES = [
     {"name": "Barrel of Laughs", "category": "comedy"},
     {"name": "The Upright Citizens Brigade Theatre", "category": "comedy"},
     {"name": "Annoyance Theatre", "category": "comedy"},
-
     # ===== MUSIC VENUES - CONCERT HALLS & SYMPHONIES =====
     {"name": "Chicago Symphony Orchestra Hall", "category": "music"},
     {"name": "Lyric Opera of Chicago", "category": "music"},
@@ -53,7 +50,6 @@ CHICAGO_VENUES = [
     {"name": "Harris Theater for Music and Dance", "category": "music"},
     {"name": "Jay Pritzker Pavilion", "category": "music"},
     {"name": "Civic Opera House", "category": "music"},
-
     # ===== MUSIC VENUES - MAJOR ROCK/POP VENUES =====
     {"name": "Congress Theater", "category": "music"},
     {"name": "Byline Bank Aragon Ballroom", "category": "music"},
@@ -64,7 +60,6 @@ CHICAGO_VENUES = [
     {"name": "Allstate Arena", "category": "music"},
     {"name": "United Center", "category": "music"},
     {"name": "Radius Chicago", "category": "music"},
-
     # ===== MUSIC VENUES - MID-SIZE & ROCK CLUBS (THE KEY ONES YOU MENTIONED) =====
     {"name": "Thalia Hall", "category": "music"},
     {"name": "Chop Shop", "category": "music"},
@@ -80,7 +75,6 @@ CHICAGO_VENUES = [
     {"name": "Brighton Bar", "category": "music"},
     {"name": "Pony Datz Nightclub", "category": "music"},
     {"name": "Coliseum Events", "category": "music"},
-
     # ===== MUSIC VENUES - ADDITIONAL HIGHLY-RATED SPOTS =====
     {"name": "The Hideout", "category": "music"},
     {"name": "The Salt Shed", "category": "music"},
@@ -92,7 +86,6 @@ CHICAGO_VENUES = [
     {"name": "Martyrs'", "category": "music"},
     {"name": "The Hive On Hubbard", "category": "music"},
     {"name": "Candlelight Concerts", "category": "music"},
-
     # ===== MUSIC VENUES - JAZZ, BLUES & SMALL CLUBS =====
     {"name": "Green Mill Jazz Club", "category": "music"},
     {"name": "Blue Chicago", "category": "music"},
@@ -105,11 +98,9 @@ CHICAGO_VENUES = [
     {"name": "Jazz Showcase", "category": "music"},
     {"name": "HotHouse Chicago", "category": "music"},
     {"name": "Constellation", "category": "music"},
-
     # ===== MUSIC VENUES - ELECTRONIC & EXPERIMENTAL =====
     {"name": "Spybar", "category": "music"},
     {"name": "Smart Bar", "category": "music"},
-
     # ===== MUSIC VENUES - SMALLER VENUES & CAFES =====
     {"name": "Logan Theatre", "category": "music"},
     {"name": "Mayne Stage", "category": "music"},
@@ -117,7 +108,6 @@ CHICAGO_VENUES = [
     {"name": "Fitzgerald's", "category": "music"},
     {"name": "City Winery Chicago", "category": "music"},
     {"name": "Lacuna Lofts", "category": "music"},
-
     # ===== CINEMAS & MOVIE THEATERS =====
     {"name": "Music Box Theatre", "category": "cinema"},
     {"name": "Landmark Theatres Century Center", "category": "cinema"},
@@ -125,7 +115,6 @@ CHICAGO_VENUES = [
     {"name": "ArcLight Cinemas Chicago", "category": "cinema"},
     {"name": "Portage Theater", "category": "cinema"},
     {"name": "The Regal", "category": "cinema"},
-
     # ===== MUSEUMS WITH PERFORMANCE SPACES =====
     {"name": "Art Institute of Chicago", "category": "museum"},
     {"name": "Museum of Contemporary Art Chicago", "category": "museum"},
@@ -134,14 +123,12 @@ CHICAGO_VENUES = [
     {"name": "Shedd Aquarium", "category": "museum"},
     {"name": "Chicago History Museum", "category": "museum"},
     {"name": "DuSable Museum of African American History", "category": "museum"},
-
     # ===== DANCE & PERFORMANCE VENUES =====
     {"name": "Hubbard Street Dance Chicago", "category": "theater"},
     {"name": "Joffre Ballet Chicago", "category": "theater"},
     {"name": "Remy Dance Center", "category": "theater"},
     {"name": "Links Hall", "category": "theater"},
     {"name": "Mana Contemporary Chicago", "category": "theater"},
-
     # ===== EVENT SPACES & MULTI-USE VENUES =====
     {"name": "Navy Pier", "category": "other"},
     {"name": "McCormick Place", "category": "other"},

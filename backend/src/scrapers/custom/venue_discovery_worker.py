@@ -8,16 +8,19 @@ Venue Discovery Worker: Systematically test venues and add to scraper
 
 import asyncio
 import sys
-sys.path.insert(0, '/Users/lorenamesa/Workspace/python315')
 
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker, selectinload
-from sqlalchemy import select
-from shared.database.models import NeighborhoodModel, VenueModel
-from playwright.async_api import async_playwright
+sys.path.insert(0, "/Users/lorenamesa/Workspace/python315")
+
 from bs4 import BeautifulSoup
+from playwright.async_api import async_playwright
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import selectinload, sessionmaker
+
+from shared.database.models import VenueModel
 
 DATABASE_URL = "sqlite+aiosqlite:////Users/lorenamesa/Workspace/python315/events.db"
+
 
 async def test_venue(venue: VenueModel) -> dict:
     """Test a venue's event page with Playwright and find selectors."""
@@ -34,10 +37,10 @@ async def test_venue(venue: VenueModel) -> dict:
         async with async_playwright() as p:
             browser = await p.chromium.launch(
                 headless=True,
-                args=['--disable-blink-features=AutomationControlled', '--disable-dev-shm-usage']
+                args=["--disable-blink-features=AutomationControlled", "--disable-dev-shm-usage"],
             )
             page = await browser.new_page(
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             )
             await page.add_init_script("""
                 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
@@ -51,14 +54,18 @@ async def test_venue(venue: VenueModel) -> dict:
 
             # Find potential event selectors
             selectors_found = {}
-            for selector in ["[class*='event']", "[class*='show']", "[class*='item']", "li", "article", "a"]:
+            for selector in [
+                "[class*='event']",
+                "[class*='show']",
+                "[class*='item']",
+                "li",
+                "article",
+                "a",
+            ]:
                 elements = soup.select(selector)
                 if elements and len(elements) > 0:
                     sample = elements[0].get_text(strip=True)[:60]
-                    selectors_found[selector] = {
-                        "count": len(elements),
-                        "sample": sample
-                    }
+                    selectors_found[selector] = {"count": len(elements), "sample": sample}
 
             await browser.close()
 
@@ -70,7 +77,7 @@ async def test_venue(venue: VenueModel) -> dict:
                 "html_size": len(html),
             }
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return {
             "venue_id": venue.id,
             "name": venue.name,
@@ -84,6 +91,7 @@ async def test_venue(venue: VenueModel) -> dict:
             "status": "error",
             "message": str(e),
         }
+
 
 async def discover_venues():
     """Test venues and report findings."""
@@ -130,6 +138,7 @@ async def discover_venues():
         print("\n✓ Venue discovery complete. Status updated in database.")
 
     await engine.dispose()
+
 
 if __name__ == "__main__":
     asyncio.run(discover_venues())

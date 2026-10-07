@@ -1,4 +1,4 @@
-from .chicago_neighborhoods import neighborhood_for, chicago_neighborhoods
+from .chicago_neighborhoods import chicago_neighborhoods, neighborhood_for
 from .resolver import (
     coordinates_for_address,
     normalize_address,
@@ -6,9 +6,9 @@ from .resolver import (
 )
 
 __all__ = [
-    "neighborhood_for",
     "chicago_neighborhoods",
-    "resolve_neighborhood",
     "coordinates_for_address",
+    "neighborhood_for",
     "normalize_address",
+    "resolve_neighborhood",
 ]

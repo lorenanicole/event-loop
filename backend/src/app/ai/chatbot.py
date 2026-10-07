@@ -1,31 +1,29 @@
-import os
-import logging
-import re
-import httpx
 import asyncio
+import os
+import re
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Literal
+
+import httpx
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.anthropic import AnthropicModel
-from sqlalchemy import and_, or_, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timedelta
+from sqlalchemy import and_, or_, select
 
-from shared.localtime import CHICAGO
-from typing import Optional, Union, Literal
-from shared.database import AsyncSessionLocal, start_of_day, upcoming_events_filter
-from shared.database.models import EventModel, NeighborhoodModel
+from app.ai.semantic_index import event_index
+from app.logging import get_logger
 from shared.categories import (
     category_filter,
     classify_all,
-    classify_from_title,
     extract_category_concepts,
 )
+from shared.database import AsyncSessionLocal, start_of_day, upcoming_events_filter
+from shared.database.models import EventModel, NeighborhoodModel
 from shared.database.neighborhoods import NEIGHBORHOOD_ALIASES
-from app.ai.smart_search import get_smart_search_tool
-from app.ai.semantic_index import event_index
-from app.logging import get_logger
+from shared.localtime import CHICAGO
 
 # Load .env before reading the keys below. This module is imported during app
 # startup, before main.py gets to its own load_dotenv(), so it has to find the
@@ -79,23 +77,46 @@ DB_RESULT_THRESHOLD = 5  # Minimum results before using SerpAPI
 # web search. Applied to the top result, not the average of the list.
 LOCAL_CONFIDENCE_FLOOR = 0.3
 
+
+@dataclass
+class SearchPolicy:
+    """Per-run state used to enforce the paid-search fallback policy."""
+
+    user_message: str = ""
+    local_search_completed: bool = False
+    local_result_count: int = 0
+    local_best_confidence: float = 0.0
+    external_search_used: bool = False
+
+    @property
+    def may_search_web(self) -> bool:
+        return (
+            self.local_search_completed
+            and not self.external_search_used
+            and (
+                self.local_result_count < DB_RESULT_THRESHOLD
+                or self.local_best_confidence < LOCAL_CONFIDENCE_FLOOR
+            )
+        )
+
+
 class EventResult(BaseModel):
     title: str
-    date: Optional[str] = None
-    location: Optional[str] = None
+    date: str | None = None
+    location: str | None = None
     # Google returns the address as ["Lincoln Park Zoo", "Chicago, IL"] - the
     # venue and then where it is. Keeping the venue apart from the joined
     # string means a stored event names its venue like every other source,
     # instead of having it buried in an address field.
-    venue: Optional[str] = None
-    url: Optional[str] = None
+    venue: str | None = None
+    url: str | None = None
     # Google's own one-line description of the event - "Live jazz concert",
     # "Family movie screening", "Cultural heritage workshop". Not a controlled
     # vocabulary, and sometimes just the venue's name again, so it is never
     # shown as a category. It is good classification signal though: a title
     # like "Jazz City" says nothing on its own, while "Live jazz concert"
     # places it immediately.
-    type_hint: Optional[str] = None
+    type_hint: str | None = None
     source: str
 
     @property
@@ -114,6 +135,7 @@ class EventResult(BaseModel):
 
 class ToolCallAction(BaseModel):
     """Agent action: call a tool with arguments."""
+
     action_type: Literal["tool_call"] = Field(default="tool_call", description="Always 'tool_call'")
     tool: str = Field(description="Tool name: 'search_local_db' or 'search_google_events'")
     args: dict = Field(description="Tool arguments")
@@ -121,7 +143,10 @@ class ToolCallAction(BaseModel):
 
 class ToolResultAction(BaseModel):
     """Agent observation: received tool results."""
-    action_type: Literal["tool_result"] = Field(default="tool_result", description="Always 'tool_result'")
+
+    action_type: Literal["tool_result"] = Field(
+        default="tool_result", description="Always 'tool_result'"
+    )
     tool: str = Field(description="Which tool was executed")
     found: int = Field(description="Number of results found")
     events: list[EventResult] = Field(description="The events/results")
@@ -129,6 +154,7 @@ class ToolResultAction(BaseModel):
 
 class FinalResponse(BaseModel):
     """Agent response: final message to user."""
+
     action_type: Literal["response"] = Field(default="response", description="Always 'response'")
     message: str = Field(description="The response text to show user")
     context: str = Field(description="Context about what was searched/found")
@@ -137,25 +163,26 @@ class FinalResponse(BaseModel):
 
 class ScoredEvent(BaseModel):
     """Event with relevance confidence score."""
+
     title: str
     date: str
-    location: Optional[str] = None
-    url: Optional[str] = None
+    location: str | None = None
+    url: str | None = None
     source: str
-    category: Optional[str] = None
-    details: Optional[str] = None
-    cost: Optional[str] = None
-    age_range: Optional[str] = None
-    is_outdoor: Optional[str] = None
-    address: Optional[str] = None
+    category: str | None = None
+    details: str | None = None
+    cost: str | None = None
+    age_range: str | None = None
+    is_outdoor: str | None = None
+    address: str | None = None
     confidence: float = Field(description="Relevance score 0.0-1.0")
 
 
 class AgentAction(BaseModel):
     """Union type for all agent actions in the REACT loop."""
-    action: Union[ToolCallAction, ToolResultAction, FinalResponse] = Field(
-        discriminator="action_type",
-        description="One of: tool_call, tool_result, response"
+
+    action: ToolCallAction | ToolResultAction | FinalResponse = Field(
+        discriminator="action_type", description="One of: tool_call, tool_result, response"
     )
 
 
@@ -193,9 +220,7 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
             if categories:
                 # Prefix-matched via the shared vocabulary, so "art" reaches
                 # every Arts* label rather than needing an exact value.
-                condition = category_filter(
-                    EventModel.category, categories, EventModel.categories
-                )
+                condition = category_filter(EventModel.category, categories, EventModel.categories)
                 if condition is not None:
                     filters.append(condition)
 
@@ -242,8 +267,7 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
             results = list(by_id.values())
 
             logger.info(
-                f"Candidates: {len(by_id)} total "
-                f"({len(semantic_matches)} from semantic search)"
+                f"Candidates: {len(by_id)} total ({len(semantic_matches)} from semantic search)"
             )
 
             if not results:
@@ -274,7 +298,9 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
                 logger.info(f"  - {evt.title}: {evt.confidence:.2f}")
 
             if best_confidence < LOCAL_CONFIDENCE_FLOOR:
-                logger.info(f"Confidence {best_confidence:.2f} below threshold, falling back to SerpAPI")
+                logger.info(
+                    f"Confidence {best_confidence:.2f} below threshold, falling back to SerpAPI"
+                )
                 return "LOW_CONFIDENCE_LOCAL_RESULTS"
 
             # Build response with event details
@@ -335,20 +361,23 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
 # discovery feed.
 _NOT_AN_EVENT = (
     # A site-title separator: "<section> | <site>".
-    re.compile(r"\s[|\u2013\u2014]\s.*(department|library|university|college"
-               r"|museum|center|centre|institute)", re.I),
+    re.compile(
+        r"\s[|\u2013\u2014]\s.*(department|library|university|college"
+        r"|museum|center|centre|institute)",
+        re.IGNORECASE,
+    ),
     # Search-engine furniture. Deliberately not a bare "- search": "In
     # Conversation with Neil deGrasse Tyson - Search for Life" is a real talk.
-    re.compile(r"\bsearch results\b|\bgoogle search\b", re.I),
+    re.compile(r"\bsearch results\b|\bgoogle search\b", re.IGNORECASE),
     # A listing page rather than one event.
-    re.compile(r"^(public\s+)?events?\b.*\|", re.I),
-    re.compile(r"\bevents? in chicago\b", re.I),
+    re.compile(r"^(public\s+)?events?\b.*\|", re.IGNORECASE),
+    re.compile(r"\bevents? in chicago\b", re.IGNORECASE),
     # Social copy.
-    re.compile(r"\blink in bio\b|\bswipe\b|\bdm (us|me)\b|\bfollow us\b", re.I),
+    re.compile(r"\blink in bio\b|\bswipe\b|\bdm (us|me)\b|\bfollow us\b", re.IGNORECASE),
 )
 
 
-def _looks_like_an_event(title: Optional[str]) -> bool:
+def _looks_like_an_event(title: str | None) -> bool:
     """Whether a search result is plausibly a single event worth storing."""
     if not title:
         return False
@@ -395,9 +424,7 @@ def _spawn_background(coro) -> asyncio.Task:
             return
         error = finished.exception()
         if error:
-            logger.error(
-                "Background task failed: %s: %s", type(error).__name__, error
-            )
+            logger.error("Background task failed: %s: %s", type(error).__name__, error)
 
     task.add_done_callback(_done)
     return task
@@ -445,8 +472,8 @@ async def _persist_events_to_db(events: list[EventResult]) -> None:
                     # `fromisoformat` wants "2026-10-09". Better to drop the
                     # event than to publish a date nobody chose.
                     try:
-                        event_date = datetime.fromisoformat(event.date.replace('Z', '+00:00'))
-                    except (ValueError, AttributeError, TypeError):
+                        event_date = datetime.fromisoformat(event.date.replace("Z", "+00:00"))
+                    except ValueError, AttributeError, TypeError:
                         skipped_undated += 1
                         continue
 
@@ -495,7 +522,9 @@ async def _persist_events_to_db(events: list[EventResult]) -> None:
                         "Not stored: %d with no event page to verify, %d with an "
                         "unparseable date (of %d found). They are still shown to "
                         "the user, marked unverified.",
-                        skipped_unverifiable, skipped_undated, len(events),
+                        skipped_unverifiable,
+                        skipped_undated,
+                        len(events),
                     )
                 return
         except Exception as e:
@@ -635,9 +664,7 @@ async def search_google_events(context: RunContext[str], query: str) -> str:
         # The exception type is logged, not just the message: a ReadTimeout's
         # message is the empty string, so `f"{e}"` alone logged "SerpAPI
         # error: " and left no way to tell a timeout from anything else.
-        logger.error(
-            "SerpAPI %s after %ss for %r", type(e).__name__, SERPAPI_TIMEOUT, query
-        )
+        logger.error("SerpAPI %s after %ss for %r", type(e).__name__, SERPAPI_TIMEOUT, query)
         return (
             f"The online search timed out after {SERPAPI_TIMEOUT}s. "
             "Say so plainly and offer to try again - do not call this tool "
@@ -650,7 +677,7 @@ async def search_google_events(context: RunContext[str], query: str) -> str:
         return "Could not search online (API error)"
     except Exception as e:
         logger.error("Search error: %s: %s", type(e).__name__, e, exc_info=True)
-        return f"Error: {str(e)}"
+        return f"Error: {e!s}"
 
 
 def _count_word_matches(keywords: list[str], text: str) -> int:
@@ -668,7 +695,7 @@ def _score_event_relevance(
     event: EventModel,
     keywords: list[str],
     query_categories: list[str],
-    semantic_score: Optional[float] = None,
+    semantic_score: float | None = None,
 ) -> float:
     """
     Score event relevance to query (0.0-1.0).
@@ -747,8 +774,11 @@ async def _semantic_scores(db, query: str, event_ids: list[int]) -> dict[int, fl
 
 
 async def _semantic_candidates(
-    db, query: str, date_range, limit: int = 20,
-    neighborhoods: Optional[list[str]] = None,
+    db,
+    query: str,
+    date_range,
+    limit: int = 20,
+    neighborhoods: list[str] | None = None,
 ) -> list[EventModel]:
     """Find events by meaning, to stand alongside the keyword candidates."""
     if not await _ensure_semantic_index(db):
@@ -809,7 +839,7 @@ def _filter_top_results(
     keywords: list[str],
     categories: list[str],
     limit: int = 5,
-    semantic_scores: Optional[dict[int, float]] = None,
+    semantic_scores: dict[int, float] | None = None,
 ) -> list[ScoredEvent]:
     """
     Score and filter events to top N results by relevance.
@@ -827,10 +857,10 @@ def _filter_top_results(
             source=event.source or "Local DB",
             category=event.category,
             details=_truncate_summary(event.details) if event.details else None,
-            cost=event.cost if hasattr(event, 'cost') else None,
-            age_range=event.age_range if hasattr(event, 'age_range') else None,
-            is_outdoor=event.is_outdoor if hasattr(event, 'is_outdoor') else None,
-            address=event.address if hasattr(event, 'address') else None,
+            cost=event.cost if hasattr(event, "cost") else None,
+            age_range=event.age_range if hasattr(event, "age_range") else None,
+            is_outdoor=event.is_outdoor if hasattr(event, "is_outdoor") else None,
+            address=event.address if hasattr(event, "address") else None,
             # getattr, not event.id: this is called with plain objects in tests
             # and with rows that have not been flushed, and an absent id just
             # means there is no semantic score to apply.
@@ -849,24 +879,111 @@ STOP_WORDS = {
     # Typed without an apostrophe as often as with one, and the stem is only
     # recovered from the apostrophe form. Without these, "whats good tonight"
     # searched event names for the string "whats".
-    "whats", "wheres", "whos", "hows", "thats", "dont", "doesnt", "didnt",
-    "cant", "wont", "isnt", "arent", "im", "ive", "ill", "id", "youre",
-    "its", "lets", "theres", "heres", "who", "how",
-    "the", "a", "an", "and", "or", "is", "are", "in", "on", "at",
-    "this", "that", "these", "those", "what", "when", "where", "why",
-    "find", "get", "search", "show", "tell", "give", "all", "want",
-    "looking", "events", "event", "i", "want", "to", "for", "any",
+    "whats",
+    "wheres",
+    "whos",
+    "hows",
+    "thats",
+    "dont",
+    "doesnt",
+    "didnt",
+    "cant",
+    "wont",
+    "isnt",
+    "arent",
+    "im",
+    "ive",
+    "ill",
+    "id",
+    "youre",
+    "its",
+    "lets",
+    "theres",
+    "heres",
+    "who",
+    "how",
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "is",
+    "are",
+    "in",
+    "on",
+    "at",
+    "this",
+    "that",
+    "these",
+    "those",
+    "what",
+    "when",
+    "where",
+    "why",
+    "find",
+    "get",
+    "search",
+    "show",
+    "tell",
+    "give",
+    "all",
+    "want",
+    "looking",
+    "events",
+    "event",
+    "i",
+    "to",
+    "for",
+    "any",
     # Location/context - filter out to avoid matching irrelevant events
-    "chicago", "city", "illinois", "windy", "area", "town", "region",
+    "chicago",
+    "city",
+    "illinois",
+    "windy",
+    "area",
+    "town",
+    "region",
     # Conversational filler. Left in, these became search terms in their own
     # right: "like" and "see" match a huge slice of the events table.
-    "like", "would", "see", "me", "my", "please", "can", "could", "need",
-    "there", "some", "something", "anything", "know", "about", "happening",
-    "going", "see", "got", "have", "has", "near", "around", "list",
+    "like",
+    "would",
+    "see",
+    "me",
+    "my",
+    "please",
+    "can",
+    "could",
+    "need",
+    "there",
+    "some",
+    "something",
+    "anything",
+    "know",
+    "about",
+    "happening",
+    "going",
+    "got",
+    "have",
+    "has",
+    "near",
+    "around",
+    "list",
     # Temporal words - _extract_date_range already turns these into a date
     # filter, so matching them against event *names* only adds noise.
-    "today", "tonight", "tomorrow", "weekend", "week", "month", "year",
-    "next", "upcoming", "soon", "now", "weekends", "nights", "night",
+    "today",
+    "tonight",
+    "tomorrow",
+    "weekend",
+    "week",
+    "month",
+    "year",
+    "next",
+    "upcoming",
+    "soon",
+    "now",
+    "weekends",
+    "nights",
+    "night",
 }
 
 # OR-ing more terms than this against event names drags in junk faster than it
@@ -945,7 +1062,7 @@ _CONTRACTIONS = ("'s", "'ll", "'re", "'ve", "'d", "'m", "n't", "'t")
 
 
 def _stem_contraction(word: str) -> str:
-    """"what's" -> "what", so the stopword list can do its job."""
+    """ "what's" -> "what", so the stopword list can do its job."""
     for ending in _CONTRACTIONS:
         if word.endswith(ending) and len(word) > len(ending):
             return word[: -len(ending)]
@@ -984,26 +1101,28 @@ async def smart_search_expand(context: RunContext[str], query: str) -> str:
         tool = get_smart_search_tool()
         result = await tool.query_expansion_and_search(query)
 
-        output = f"🧠 **Smart Query Analysis**\n\n"
+        output = "🧠 **Smart Query Analysis**\n\n"
         output += f"**Original:** {result['user_query']}\n"
         output += f"**Expanded:** {result['query_expansion']['expanded']}\n\n"
 
-        if result['intent']['categories']:
+        if result["intent"]["categories"]:
             output += f"📂 **Categories:** {', '.join(result['intent']['categories'])}\n"
-        if result['intent']['time_frame']:
+        if result["intent"]["time_frame"]:
             output += f"📅 **Timeframe:** {result['intent']['time_frame']}\n"
-        if result['intent']['vibe']:
+        if result["intent"]["vibe"]:
             output += f"✨ **Vibe:** {result['intent']['vibe']}\n"
 
-        output += f"\n💡 **Recommendation:** Search for: '{result['recommendation']['search_with']}'\n"
+        output += (
+            f"\n💡 **Recommendation:** Search for: '{result['recommendation']['search_with']}'\n"
+        )
         return output
 
     except Exception as e:
         logger.error(f"Smart search error: {e}")
-        return f"Error analyzing query: {str(e)}"
+        return f"Error analyzing query: {e!s}"
 
 
-def _extract_date_range(query: str) -> Optional[tuple[datetime, datetime]]:
+def _extract_date_range(query: str) -> tuple[datetime, datetime] | None:
     """Extract date range from query"""
     now = datetime.now()
     query_lower = query.lower()
@@ -1037,7 +1156,9 @@ def _extract_date_range(query: str) -> Optional[tuple[datetime, datetime]]:
     return None
 
 
-_model = AnthropicModel("claude-sonnet-5-5") if CLAUDE_API_KEY else None  # AnthropicModel wraps the model name
+_model = (
+    AnthropicModel("claude-sonnet-5-5") if CLAUDE_API_KEY else None
+)  # AnthropicModel wraps the model name
 
 SYSTEM_PROMPT = """You are EventLoop, a Chicago events discovery chatbot. Help users find great events efficiently.
 
@@ -1080,6 +1201,7 @@ agent = Agent(
     system_prompt=SYSTEM_PROMPT,
 )
 
+
 @agent.system_prompt
 def voice() -> str:
     """How the assistant sounds, and what it knows about the city.
@@ -1088,6 +1210,7 @@ def voice() -> str:
     `persona.py` without touching the agent - it is content, not logic.
     """
     from app.ai.persona import persona_prompt
+
     return persona_prompt()
 
 
@@ -1107,10 +1230,14 @@ def todays_date() -> str:
     believe it was Friday a week later.
     """
     now = datetime.now(CHICAGO)
-    weekend = "today is the weekend" if now.weekday() >= 5 else (
-        f"the coming weekend is "
-        f"{(now + timedelta(days=(5 - now.weekday()) % 7)):%A %B %-d} and "
-        f"{(now + timedelta(days=(6 - now.weekday()) % 7)):%A %B %-d}"
+    weekend = (
+        "today is the weekend"
+        if now.weekday() >= 5
+        else (
+            f"the coming weekend is "
+            f"{(now + timedelta(days=(5 - now.weekday()) % 7)):%A %B %-d} and "
+            f"{(now + timedelta(days=(6 - now.weekday()) % 7)):%A %B %-d}"
+        )
     )
     return (
         f"Today is {now:%A, %B %-d, %Y} in Chicago ({now:%Z}), and {weekend}. "
@@ -1145,7 +1272,7 @@ async def chat(user_message: str) -> str:
             return result.data
 
         # Agent returned structured AgentAction - extract response
-        if hasattr(result.data, 'action'):
+        if hasattr(result.data, "action"):
             action = result.data.action
             if isinstance(action, FinalResponse):
                 return f"{action.message}\n\n_Context: {action.context} ({action.tokens} tokens)_"
@@ -1154,4 +1281,4 @@ async def chat(user_message: str) -> str:
 
     except Exception as e:
         logger.error(f"Chatbot error: {e}")
-        return f"Sorry, I encountered an error: {str(e)}"
+        return f"Sorry, I encountered an error: {e!s}"

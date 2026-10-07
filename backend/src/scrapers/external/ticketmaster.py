@@ -1,17 +1,18 @@
 import logging
 import os
-import httpx
 from datetime import datetime, timedelta
-from typing import Optional, Union
-from sqlalchemy.orm import Session
-from sqlalchemy.ext.asyncio import AsyncSession
+
+import httpx
 from sqlalchemy import select
-from shared.localtime import to_chicago_naive
-from shared.models import EventCreate
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
+
+from app.ai.event_enrichment import extract_from_event_text
 from shared.database.models import EventModel
 from shared.database.neighborhoods import load_boundaries, resolve_neighborhood_id
 from shared.geo import chicago_neighborhoods
-from app.ai.event_enrichment import extract_from_event_text
+from shared.localtime import to_chicago_naive
+from shared.models import EventCreate
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +25,7 @@ logger = logging.getLogger(__name__)
 WRITE_BATCH = 50
 
 
-
-def _meaningful(name) -> Optional[str]:
+def _meaningful(name) -> str | None:
     """A classification name, or None when it is a placeholder.
 
     Discovery fills unknown levels with the literal string "Undefined", and
@@ -80,7 +80,9 @@ class TicketmasterScraper:
                     params["page"] = page
 
                     try:
-                        response = await client.get(url, params=params, headers={"User-Agent": self.USER_AGENT})
+                        response = await client.get(
+                            url, params=params, headers={"User-Agent": self.USER_AGENT}
+                        )
                         response.raise_for_status()
                     except httpx.HTTPStatusError as e:
                         if e.response.status_code == 401:
@@ -116,7 +118,7 @@ class TicketmasterScraper:
             logger.error(f"Ticketmaster fetch error: {e}")
             return []
 
-    def _parse_event(self, data: dict) -> Optional[EventCreate]:
+    def _parse_event(self, data: dict) -> EventCreate | None:
         """Parse a single event"""
         try:
             event_id = data.get("id")
@@ -137,14 +139,14 @@ class TicketmasterScraper:
                 stamp = f"{start['localDate']}T{start.get('localTime') or '00:00:00'}"
                 try:
                     event_date = datetime.fromisoformat(stamp)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     event_date = None
             if event_date is None and start.get("dateTime"):
                 try:
                     event_date = to_chicago_naive(
                         datetime.fromisoformat(start["dateTime"].replace("Z", "+00:00"))
                     )
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     event_date = None
             if event_date is None:
                 return None
@@ -227,7 +229,7 @@ class TicketmasterScraper:
                 try:
                     latitude = float(coordinates["latitude"])
                     longitude = float(coordinates["longitude"])
-                except (KeyError, TypeError, ValueError):
+                except KeyError, TypeError, ValueError:
                     latitude = longitude = None
 
             details = " | ".join(details_parts) if details_parts else None
@@ -269,7 +271,7 @@ class TicketmasterScraper:
             return None
 
     @staticmethod
-    def _price_from_ranges(price_ranges) -> Optional[str]:
+    def _price_from_ranges(price_ranges) -> str | None:
         """Render Ticketmaster's priceRanges array as a displayable price.
 
         An event can carry several ranges (standard, VIP, resale), so the
@@ -289,7 +291,7 @@ class TicketmasterScraper:
             for key in ("min", "max"):
                 try:
                     values.append(float(entry[key]))
-                except (KeyError, TypeError, ValueError):
+                except KeyError, TypeError, ValueError:
                     continue
 
         if not values:
@@ -305,7 +307,7 @@ class TicketmasterScraper:
 
         return money(low) if low == high else f"{money(low)}-{money(high)}"
 
-    async def scrape_and_save(self, db: Union[Session, AsyncSession], days_ahead: int = 30) -> int:
+    async def scrape_and_save(self, db: Session | AsyncSession, days_ahead: int = 30) -> int:
         """Fetch and save events (sync or async)"""
         try:
             events = await self.fetch_events(days_ahead=days_ahead)
@@ -317,7 +319,7 @@ class TicketmasterScraper:
             # Neighborhood boundaries come from our own tables and are read once
             # for the whole run, so placing each venue costs nothing further.
             boundaries = await load_boundaries(db) if is_async else {}
-            neighborhood_ids: dict[str, Optional[int]] = {}
+            neighborhood_ids: dict[str, int | None] = {}
 
             processed = 0
             for event_data in events:
@@ -336,9 +338,7 @@ class TicketmasterScraper:
 
                 if is_async:
                     # Async query
-                    result = await db.execute(
-                        select(EventModel).filter_by(origination_url=url)
-                    )
+                    result = await db.execute(select(EventModel).filter_by(origination_url=url))
                     existing = result.scalar_one_or_none()
                 else:
                     # Sync query

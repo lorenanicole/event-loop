@@ -53,7 +53,6 @@ the model knows that "Drunk Shakespeare Chicago" is theater.
 """
 
 import logging
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -83,26 +82,42 @@ SIMILARITY_FLOOR = 0.45
 # "Arts" alone is a poor anchor - a two-word label has little to embed - while
 # a handful of phrases describes the region of the space actually meant.
 CATEGORY_EXEMPLARS: dict[str, list[str]] = {
-    "Music": ["live music concert", "band playing", "dj set", "jazz show",
-              "album release show"],
-    "Theater": ["stage play", "theater performance", "musical theatre",
-                "ballet", "shakespeare production"],
-    "Arts": ["art exhibition", "gallery show", "museum exhibit",
-             "painting sculpture", "photography retrospective"],
+    "Music": ["live music concert", "band playing", "dj set", "jazz show", "album release show"],
+    "Theater": [
+        "stage play",
+        "theater performance",
+        "musical theatre",
+        "ballet",
+        "shakespeare production",
+    ],
+    "Arts": [
+        "art exhibition",
+        "gallery show",
+        "museum exhibit",
+        "painting sculpture",
+        "photography retrospective",
+    ],
     "Comedy": ["stand up comedy", "comedy show", "improv night"],
     "Film": ["film screening", "movie night", "cinema"],
-    "Community": ["neighborhood meeting", "community gathering",
-                  "volunteer day", "town hall"],
-    "Tech / Educational": ["lecture", "panel discussion", "workshop class",
-                           "science talk", "author reading"],
+    "Community": ["neighborhood meeting", "community gathering", "volunteer day", "town hall"],
+    "Tech / Educational": [
+        "lecture",
+        "panel discussion",
+        "workshop class",
+        "science talk",
+        "author reading",
+    ],
     "Health & Wellness": ["yoga class", "meditation", "wellness fitness"],
-    "Food & Drink": ["food festival", "beer tasting", "restaurant dinner",
-                     "oktoberfest"],
+    "Food & Drink": ["food festival", "beer tasting", "restaurant dinner", "oktoberfest"],
     "Sports": ["marathon race", "basketball game", "running 5k"],
     "LGBTQ": ["pride event", "drag show", "queer party"],
     "Karaoke/Trivia/Open Mics": ["karaoke night", "trivia quiz", "open mic"],
-    "Holiday & Seasonal": ["halloween haunted house", "christmas holiday lights",
-                           "costume party", "day of the dead"],
+    "Holiday & Seasonal": [
+        "halloween haunted house",
+        "christmas holiday lights",
+        "costume party",
+        "day of the dead",
+    ],
     "Festival": ["street festival", "multi day festival", "block party"],
     "Shopping": ["vintage market", "craft fair", "makers market"],
 }
@@ -144,7 +159,7 @@ def _load():
         return False
 
 
-def semantic_category(title: Optional[str]) -> Optional[tuple[str, float]]:
+def semantic_category(title: str | None) -> tuple[str, float] | None:
     """The closest parent category to this title, and how close, or None.
 
     Returns None when nothing clears `SIMILARITY_FLOOR`. That is the point:

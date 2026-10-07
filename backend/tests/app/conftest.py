@@ -2,17 +2,18 @@
 Pytest configuration and fixtures for the test suite.
 """
 
-import pytest
-import os
 import asyncio
 from datetime import datetime, timedelta
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from shared.database.models import Base
 
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+
+from shared.database.models import Base
 
 # Create async test engine
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
 
 @pytest.fixture(scope="session")
 def event_loop():
@@ -36,9 +37,7 @@ async def async_db_session():
         await conn.run_sync(Base.metadata.create_all)
 
     # Create session
-    async_session_local = sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
+    async_session_local = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session_local() as session:
         yield session
@@ -179,12 +178,6 @@ def reset_security_state():
 def pytest_configure(config):
     """Configure pytest."""
     # Register custom markers
-    config.addinivalue_line(
-        "markers", "unit: mark test as a unit test"
-    )
-    config.addinivalue_line(
-        "markers", "integration: mark test as an integration test"
-    )
-    config.addinivalue_line(
-        "markers", "security: mark test as a security test"
-    )
+    config.addinivalue_line("markers", "unit: mark test as a unit test")
+    config.addinivalue_line("markers", "integration: mark test as an integration test")
+    config.addinivalue_line("markers", "security: mark test as a security test")

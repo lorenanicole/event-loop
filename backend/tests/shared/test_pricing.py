@@ -7,6 +7,7 @@ reintroduced as an obvious improvement.
 """
 
 import pytest
+from bs4 import BeautifulSoup
 
 from shared.pricing import (
     SOURCE_PRICE_RULES,
@@ -17,7 +18,6 @@ from shared.pricing import (
     price_from_source_rules,
     render,
 )
-from bs4 import BeautifulSoup
 
 
 def ld(payload: str) -> BeautifulSoup:
@@ -47,7 +47,7 @@ class TestRender:
         assert render([0.0]) == "Free"
 
     def test_free_entry_with_paid_tiers_leads_with_free(self):
-        """"$0-$40" reads like a bug."""
+        """ "$0-$40" reads like a bug."""
         assert render([0.0, 40.0]) == "Free-$40"
 
     def test_nothing_found_is_none(self):
@@ -107,7 +107,7 @@ class TestSourceRules:
         assert price_from_source_rules("chicago_venue_jazz_showcase", text) == "$30"
 
     def test_old_town_reports_the_advertised_total_not_the_base(self):
-        """"$23 General Public ($20 + $3 fee)" - $23 is what somebody pays.
+        """ "$23 General Public ($20 + $3 fee)" - $23 is what somebody pays.
         A nearest-number scan reported $20 and undercut every show."""
         text = "Maurer Concert Hall 773.728.6000 $23 General Public ($20 + $3 fee)"
         got = price_from_source_rules("chicago_venue_old_town_school_of_folk_music", text)
@@ -148,20 +148,29 @@ class TestRejections:
     """Patterns that look like prices and are not. Each was observed on a real
     page and produced a confident wrong answer before being excluded."""
 
-    @pytest.mark.parametrize("source,text", [
-        # McCormick Place: exhibitor billing, not admission.
-        ("chicago_venue_mccormick_place",
-         "for centrally billed companies, a usage deposit of $300 per line is required"),
-        # Broadway In Chicago: a limited day-of-show offer, not the ticket.
-        ("broadway_in_chicago",
-         "rush offer details A Limited number of $49* day-of-show rush tickets will be"),
-        # Zanies: the per-show URL renders the whole month, so any price found
-        # belongs to some other show on the page.
-        ("chicago_venue_zanies_comedy_club",
-         "Wed, Oct 07 2026 Vidura Bandara Rajapaksa Ages 21 and up $37 FULL PERFORMANCE LISTING"),
-        # Reggies serves bytes that decode to garbage with stray dollar signs.
-        ("chicago_venue_reggies_chicago", "\x03\x05\x07 $7AH ... \x15$7 garbage"),
-    ])
+    @pytest.mark.parametrize(
+        "source,text",
+        [
+            # McCormick Place: exhibitor billing, not admission.
+            (
+                "chicago_venue_mccormick_place",
+                "for centrally billed companies, a usage deposit of $300 per line is required",
+            ),
+            # Broadway In Chicago: a limited day-of-show offer, not the ticket.
+            (
+                "broadway_in_chicago",
+                "rush offer details A Limited number of $49* day-of-show rush tickets will be",
+            ),
+            # Zanies: the per-show URL renders the whole month, so any price found
+            # belongs to some other show on the page.
+            (
+                "chicago_venue_zanies_comedy_club",
+                "Wed, Oct 07 2026 Vidura Bandara Rajapaksa Ages 21 and up $37 FULL PERFORMANCE LISTING",
+            ),
+            # Reggies serves bytes that decode to garbage with stray dollar signs.
+            ("chicago_venue_reggies_chicago", "\x03\x05\x07 $7AH ... \x15$7 garbage"),
+        ],
+    )
     def test_these_sources_have_no_rule_so_nothing_is_read(self, source, text):
         assert source not in SOURCE_PRICE_RULES
         assert price_from_source_rules(source, text) is None

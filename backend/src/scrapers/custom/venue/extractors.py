@@ -12,50 +12,44 @@ hand-built pages whose only structure is that each card happens to start with
 a date, which is what the generic `extract_dated_list_items` reads.
 """
 
-import asyncio
 import json
 import logging
 import re
 from datetime import datetime, timedelta
-from typing import Optional
 
 from bs4 import BeautifulSoup
 
+from shared.localtime import to_chicago_naive
+
 from .venue_parsing import (
-    _BOILERPLATE,
     _MONTH,
-    _MONTH_WORDS,
     _MONTHS,
     _ONE_RE,
     _RUN_RE,
-    _SECTION_HEADINGS,
     _WEEKDAY_PREFIXES,
-    _WEEKDAY_RE,
     _card_lines,
     _dates_from_text,
     _title_from,
     infer_event_year,
     jsonld_offer_cost,
-    parse_date_range,
 )
-from shared.localtime import to_chicago_naive
-
 from .venue_scraper import VenueConfig, VenueEvent, parse_cost
 
 logger = logging.getLogger(__name__)
+
 
 def extract_events_from_json_ld(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from JSON-LD schema.org data embedded in HTML."""
     events = []
     try:
         # Find all JSON-LD script tags
-        for script in soup.find_all('script', {'type': 'application/ld+json'}):
+        for script in soup.find_all("script", {"type": "application/ld+json"}):
             try:
                 data = json.loads(script.string)
 
                 # Handle @graph wrapper
-                if '@graph' in data:
-                    items = data['@graph']
+                if "@graph" in data:
+                    items = data["@graph"]
                 elif isinstance(data, list):
                     items = data
                 else:
@@ -64,15 +58,15 @@ def extract_events_from_json_ld(soup: BeautifulSoup, config: VenueConfig) -> lis
                 # Extract events from the structure
                 for item in items:
                     # Check if it's an Event or contains Events
-                    if item.get('@type') == 'Event':
+                    if item.get("@type") == "Event":
                         event_data = item
-                    elif item.get('@type') == 'Place' and 'Events' in item:
+                    elif item.get("@type") == "Place" and "Events" in item:
                         # Handle Place with Events array
-                        for event_data in item.get('Events', []):
-                            if event_data.get('@type') != 'Event':
+                        for event_data in item.get("Events", []):
+                            if event_data.get("@type") != "Event":
                                 continue
 
-                            name = event_data.get('name', '').strip()
+                            name = event_data.get("name", "").strip()
                             if not name or len(name) < 2:
                                 continue
 
@@ -80,87 +74,89 @@ def extract_events_from_json_ld(soup: BeautifulSoup, config: VenueConfig) -> lis
                             start_date = None
                             end_date = None
 
-                            if 'startDate' in event_data:
+                            if "startDate" in event_data:
                                 try:
                                     start_date = to_chicago_naive(
                                         datetime.fromisoformat(
-                                            event_data['startDate'].replace('Z', '+00:00')
+                                            event_data["startDate"].replace("Z", "+00:00")
                                         )
                                     )
-                                except (ValueError, AttributeError):
+                                except ValueError, AttributeError:
                                     pass
 
-                            if 'endDate' in event_data:
+                            if "endDate" in event_data:
                                 try:
                                     end_date = to_chicago_naive(
                                         datetime.fromisoformat(
-                                            event_data['endDate'].replace('Z', '+00:00')
+                                            event_data["endDate"].replace("Z", "+00:00")
                                         )
                                     )
-                                except (ValueError, AttributeError):
+                                except ValueError, AttributeError:
                                     pass
 
-                            url = event_data.get('url', config.website_url)
+                            url = event_data.get("url", config.website_url)
 
-                            events.append(VenueEvent(
-                                name=name,
-                                date=start_date.isoformat() if start_date else None,
-                                date_end=end_date.isoformat() if end_date else None,
-                                time=None,
-                                location=f"{config.name}, {config.address}",
-                                url=url,
-                                venue_name=config.name,
-                                category=config.category,
-                                cost=jsonld_offer_cost(event_data),
-                            ))
+                            events.append(
+                                VenueEvent(
+                                    name=name,
+                                    date=start_date.isoformat() if start_date else None,
+                                    date_end=end_date.isoformat() if end_date else None,
+                                    time=None,
+                                    location=f"{config.name}, {config.address}",
+                                    url=url,
+                                    venue_name=config.name,
+                                    category=config.category,
+                                    cost=jsonld_offer_cost(event_data),
+                                )
+                            )
                         continue
                     else:
                         continue
 
                     # Handle single Event item
-                    name = event_data.get('name', '').strip()
+                    name = event_data.get("name", "").strip()
                     if not name or len(name) < 2:
                         continue
 
                     start_date = None
                     end_date = None
 
-                    if 'startDate' in event_data:
+                    if "startDate" in event_data:
                         try:
                             start_date = to_chicago_naive(
                                 datetime.fromisoformat(
-                                    event_data['startDate'].replace('Z', '+00:00')
+                                    event_data["startDate"].replace("Z", "+00:00")
                                 )
                             )
-                        except (ValueError, AttributeError):
+                        except ValueError, AttributeError:
                             pass
 
-                    if 'endDate' in event_data:
+                    if "endDate" in event_data:
                         try:
                             end_date = to_chicago_naive(
-                                datetime.fromisoformat(
-                                    event_data['endDate'].replace('Z', '+00:00')
-                                )
+                                datetime.fromisoformat(event_data["endDate"].replace("Z", "+00:00"))
                             )
-                        except (ValueError, AttributeError):
+                        except ValueError, AttributeError:
                             pass
 
-                    url = event_data.get('url')
+                    url = event_data.get("url")
                     if not url:
-                        slug = re.sub(r'[^\w\s-]', '', name).replace(' ', '-').lower()
+                        slug = re.sub(r"[^\w\s-]", "", name).replace(" ", "-").lower()
                         url = f"{config.website_url.rstrip('/')}#{slug}"
 
-                    events.append(VenueEvent(
-                        name=name,
-                        date=start_date.isoformat() if start_date else None,
-                        date_end=end_date.isoformat() if end_date else None,
-                        time=None,
-                        location=f"{config.name}, {config.address}",
-                        url=url,
-                        venue_name=config.name,
-                        category=config.category,
-                        cost=jsonld_offer_cost(event_data),
-                    ))
+                    events.append(
+                        VenueEvent(
+                            name=name,
+                            date=start_date.isoformat() if start_date else None,
+                            date_end=end_date.isoformat() if end_date else None,
+                            time=None,
+                            location=f"{config.name}, {config.address}",
+                            url=url,
+                            venue_name=config.name,
+                            category=config.category,
+                            cost=jsonld_offer_cost(event_data),
+                        )
+                    )
 
             except (json.JSONDecodeError, AttributeError, KeyError) as e:
                 logger.debug(f"{config.name}: Error parsing JSON-LD: {e}")
@@ -175,6 +171,7 @@ def extract_events_from_json_ld(soup: BeautifulSoup, config: VenueConfig) -> lis
 
 
 # ===== CUSTOM EXTRACTORS =====
+
 
 def extract_chop_shop(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Dice FM widget extraction."""
@@ -194,14 +191,22 @@ def extract_chop_shop(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEve
                 continue
 
             ticket_link = article.find("a", href=lambda x: x and "link.dice.fm" in x)
-            ticket_url = ticket_link.get("href", config.website_url) if ticket_link else config.website_url
+            ticket_url = (
+                ticket_link.get("href", config.website_url) if ticket_link else config.website_url
+            )
 
-            events.append(VenueEvent(
-                name=event_name, date=None, time=None,
-                location=f"{config.name}, {config.address}",
-                url=ticket_url, venue_name=config.name, category=config.category,
-                cost=parse_cost(article.get_text(" ", strip=True)),
-            ))
+            events.append(
+                VenueEvent(
+                    name=event_name,
+                    date=None,
+                    time=None,
+                    location=f"{config.name}, {config.address}",
+                    url=ticket_url,
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=parse_cost(article.get_text(" ", strip=True)),
+                )
+            )
         logger.info(f"{config.name}: extracted {len(events)} events")
     except Exception as e:
         logger.error(f"{config.name} extraction failed: {e}")
@@ -217,7 +222,7 @@ def extract_concord(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
 
         for idx, container in enumerate(event_containers):
             text = container.get_text()
-            lines = [line.strip() for line in text.split('\n') if line.strip()]
+            lines = [line.strip() for line in text.split("\n") if line.strip()]
 
             if not lines:
                 continue
@@ -228,35 +233,41 @@ def extract_concord(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
             for line in lines:
                 if line == "Selling Fast" or not event_name:
                     if line != "Selling Fast" and len(line) > 3:
-                        if not any(x in line for x in ['Doors', 'doors', 'age']):
+                        if not any(x in line for x in ["Doors", "doors", "age"]):
                             event_name = line
                             break
 
             for line in lines:
-                if re.search(r'\d{1,2}/\d{1,2}', line):
+                if re.search(r"\d{1,2}/\d{1,2}", line):
                     event_date = line
                     break
 
             if event_name and len(event_name) > 3:
                 # Extract event URL: look for link in container, fall back to generated URL
                 event_url = config.website_url
-                link = container.find('a', href=True)
-                if link and link.get('href'):
-                    href = link.get('href')
-                    if href.startswith('/'):
-                        event_url = config.website_url.rstrip('/') + href
-                    elif href.startswith('http'):
+                link = container.find("a", href=True)
+                if link and link.get("href"):
+                    href = link.get("href")
+                    if href.startswith("/"):
+                        event_url = config.website_url.rstrip("/") + href
+                    elif href.startswith("http"):
                         event_url = href
                 else:
-                    slug = re.sub(r'[^\w\s-]', '', event_name).replace(' ', '-').lower()
+                    slug = re.sub(r"[^\w\s-]", "", event_name).replace(" ", "-").lower()
                     event_url = f"{config.website_url.rstrip('/')}#{slug}-{idx}"
 
-                events.append(VenueEvent(
-                    name=event_name, date=event_date, time=None,
-                    location=f"{config.name}, {config.address}",
-                    url=event_url, venue_name=config.name, category=config.category,
-                    cost=parse_cost(container.get_text(" ", strip=True)),
-                ))
+                events.append(
+                    VenueEvent(
+                        name=event_name,
+                        date=event_date,
+                        time=None,
+                        location=f"{config.name}, {config.address}",
+                        url=event_url,
+                        venue_name=config.name,
+                        category=config.category,
+                        cost=parse_cost(container.get_text(" ", strip=True)),
+                    )
+                )
 
         logger.info(f"{config.name}: extracted {len(events)} events")
     except Exception as e:
@@ -280,7 +291,7 @@ def extract_rosas_lounge(soup: BeautifulSoup, config: VenueConfig) -> list[Venue
                 continue
 
             # Skip navigation links
-            skip_terms = ['Home', 'Login', 'Sign up', 'back', 'next', 'cart', 'search', 'checkout']
+            skip_terms = ["Home", "Login", "Sign up", "back", "next", "cart", "search", "checkout"]
             if any(term in text for term in skip_terms):
                 continue
 
@@ -290,16 +301,18 @@ def extract_rosas_lounge(soup: BeautifulSoup, config: VenueConfig) -> list[Venue
                 url = f"{config.website_url}{url}"
 
             # This is an event name
-            events.append(VenueEvent(
-                name=text,
-                date=None,  # Dates not exposed in static calendar
-                time=None,
-                location=f"{config.name}, {config.address}",
-                url=url if url != config.website_url else config.website_url,
-                venue_name=config.name,
-                category=config.category,
-                cost=parse_cost(link.get_text(" ", strip=True)),
-            ))
+            events.append(
+                VenueEvent(
+                    name=text,
+                    date=None,  # Dates not exposed in static calendar
+                    time=None,
+                    location=f"{config.name}, {config.address}",
+                    url=url if url != config.website_url else config.website_url,
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=parse_cost(link.get_text(" ", strip=True)),
+                )
+            )
 
         logger.info(f"{config.name}: extracted {len(events)} events")
     except Exception as e:
@@ -329,27 +342,29 @@ def extract_hideout(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
 
             # Extract event URL: look for link in item, fall back to generated URL
             event_url = config.website_url
-            link = item.find('a', href=True)
-            if link and link.get('href'):
-                href = link.get('href')
-                if href.startswith('/'):
-                    event_url = config.website_url.rstrip('/') + href
-                elif href.startswith('http'):
+            link = item.find("a", href=True)
+            if link and link.get("href"):
+                href = link.get("href")
+                if href.startswith("/"):
+                    event_url = config.website_url.rstrip("/") + href
+                elif href.startswith("http"):
                     event_url = href
             else:
-                slug = re.sub(r'[^\w\s-]', '', name).replace(' ', '-').lower()
+                slug = re.sub(r"[^\w\s-]", "", name).replace(" ", "-").lower()
                 event_url = f"{config.website_url.rstrip('/')}#{slug}-{idx}"
 
-            events.append(VenueEvent(
-                name=name,
-                date=date_str,  # "October 3, 2026" format
-                time=None,
-                location=f"{config.name}, {config.address}",
-                url=event_url,
-                venue_name=config.name,
-                category=config.category,
-                cost=parse_cost(item.get_text(" ", strip=True)),
-            ))
+            events.append(
+                VenueEvent(
+                    name=name,
+                    date=date_str,  # "October 3, 2026" format
+                    time=None,
+                    location=f"{config.name}, {config.address}",
+                    url=event_url,
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=parse_cost(item.get_text(" ", strip=True)),
+                )
+            )
 
         logger.info(f"{config.name}: extracted {len(events)} events")
     except Exception as e:
@@ -358,10 +373,10 @@ def extract_hideout(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
     return events
 
 
-
 def extract_rhapsody_theater(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from Rhapsody Theater ThunderTix iframe (rendered by Playwright)."""
     import re
+
     events = []
     try:
         # Get all text from the page (includes iframe content rendered by Playwright)
@@ -369,7 +384,7 @@ def extract_rhapsody_theater(soup: BeautifulSoup, config: VenueConfig) -> list[V
 
         # Look for time + event pattern
         # Example: "7:00p Kiki Queens - Drag to the Future"
-        pattern = r'(\d{1,2}):(\d{2})\s*([ap])\s+([A-Za-z0-9\s\-:&]+?)(?=\d{1,2}:|Oct|Day|SUN|$)'
+        pattern = r"(\d{1,2}):(\d{2})\s*([ap])\s+([A-Za-z0-9\s\-:&]+?)(?=\d{1,2}:|Oct|Day|SUN|$)"
         matches = re.findall(pattern, text, re.IGNORECASE | re.MULTILINE)
 
         # Don't deduplicate - each time entry is a separate show
@@ -377,15 +392,17 @@ def extract_rhapsody_theater(soup: BeautifulSoup, config: VenueConfig) -> list[V
             title = event_name.strip()
             if len(title) > 3:
                 # Map time to approximate date (Oct 15-17 visible in calendar)
-                events.append(VenueEvent(
-                    name=title,
-                    date="Oct 15, 2026",
-                    time=f"{hour}:{minute}{ampm}",
-                    location=f"{config.name}, {config.address}",
-                    url=config.website_url,
-                    venue_name=config.name,
-                    category=config.category
-                ))
+                events.append(
+                    VenueEvent(
+                        name=title,
+                        date="Oct 15, 2026",
+                        time=f"{hour}:{minute}{ampm}",
+                        location=f"{config.name}, {config.address}",
+                        url=config.website_url,
+                        venue_name=config.name,
+                        category=config.category,
+                    )
+                )
 
         logger.info(f"{config.name}: extracted {len(events)} events from ThunderTix calendar")
         return events
@@ -398,16 +415,17 @@ def extract_rhapsody_theater(soup: BeautifulSoup, config: VenueConfig) -> list[V
 async def extract_salt_shed_playwright(page, config: VenueConfig) -> list[VenueEvent]:
     """Extract Salt Shed events from dynamically loaded cards using Playwright."""
     import re
+
     events = []
     try:
         # Wait for All Events container
-        await page.wait_for_selector('div[data-venue-events]', timeout=30000)
+        await page.wait_for_selector("div[data-venue-events]", timeout=30000)
 
         # Scroll and load all cards
         for _ in range(20):
             try:
                 # Try to click "load more" button
-                more = page.locator('text=/load more|show more|see more/i')
+                more = page.locator("text=/load more|show more|see more/i")
                 if await more.count():
                     await more.first.click()
                     await page.wait_for_timeout(1200)
@@ -460,22 +478,28 @@ async def extract_salt_shed_playwright(page, config: VenueConfig) -> list[VenueE
 
         # Parse extracted cards
         for card in cards:
-            if card['date'] and card['title']:
+            if card["date"] and card["title"]:
                 # Parse date like "TUE, OCT 6"
-                date_match = re.search(r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})', card['date'], re.IGNORECASE)
+                date_match = re.search(
+                    r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})",
+                    card["date"],
+                    re.IGNORECASE,
+                )
                 if date_match:
                     month = date_match.group(1)
                     day = date_match.group(2)
 
-                    events.append(VenueEvent(
-                        name=card['title'],
-                        date=f"{month} {day}, {infer_event_year(month)}",
-                        time=card['doors'],
-                        location=f"{config.name}, {config.address}",
-                        url=card.get('url') or config.website_url,
-                        venue_name=config.name,
-                        category=config.category
-                    ))
+                    events.append(
+                        VenueEvent(
+                            name=card["title"],
+                            date=f"{month} {day}, {infer_event_year(month)}",
+                            time=card["doors"],
+                            location=f"{config.name}, {config.address}",
+                            url=card.get("url") or config.website_url,
+                            venue_name=config.name,
+                            category=config.category,
+                        )
+                    )
 
         logger.info(f"{config.name}: extracted {len(events)} events from dynamic cards")
         return events
@@ -488,16 +512,19 @@ async def extract_salt_shed_playwright(page, config: VenueConfig) -> list[VenueE
 def extract_salt_shed(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from Salt Shed (ve-events__card articles)."""
     import re
+
     events = []
     try:
         # Salt Shed uses article.ve-events__card for each event
-        articles = soup.select('article.ve-events__card')
+        articles = soup.select("article.ve-events__card")
 
         for article in articles:
             text = article.get_text(strip=True)
 
             # Look for date pattern: "Sat, Feb 20" or similar
-            date_match = re.search(r'(\w{3}),?\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})', text)
+            date_match = re.search(
+                r"(\w{3}),?\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})", text
+            )
             if not date_match:
                 continue
 
@@ -505,24 +532,32 @@ def extract_salt_shed(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEve
             day = date_match.group(3)
 
             # Look for time pattern: "Doors: 6:00 PM"
-            time_match = re.search(r'Doors:\s*(\d{1,2}):(\d{2})\s*([AP]M)', text, re.IGNORECASE)
-            time_str = f"{time_match.group(1)}:{time_match.group(2)}{time_match.group(3)}" if time_match else None
+            time_match = re.search(r"Doors:\s*(\d{1,2}):(\d{2})\s*([AP]M)", text, re.IGNORECASE)
+            time_str = (
+                f"{time_match.group(1)}:{time_match.group(2)}{time_match.group(3)}"
+                if time_match
+                else None
+            )
 
             # Extract title - text after PM until age restriction or venue name (non-greedy)
-            title_match = re.search(r'[AP]M\s+(.+?)(?:17 & Over|All Ages|The Salt Shed|Shed)', text, re.IGNORECASE)
+            title_match = re.search(
+                r"[AP]M\s+(.+?)(?:17 & Over|All Ages|The Salt Shed|Shed)", text, re.IGNORECASE
+            )
             title = title_match.group(1).strip() if title_match else None
 
             if title and len(title) > 3:
-                events.append(VenueEvent(
-                    name=title,
-                    date=f"{month} {day}, 2026",
-                    time=time_str,
-                    location=f"{config.name}, {config.address}",
-                    url=config.website_url,
-                    venue_name=config.name,
-                    category=config.category,
-                    cost=parse_cost(article.get_text(" ", strip=True)),
-                ))
+                events.append(
+                    VenueEvent(
+                        name=title,
+                        date=f"{month} {day}, 2026",
+                        time=time_str,
+                        location=f"{config.name}, {config.address}",
+                        url=config.website_url,
+                        venue_name=config.name,
+                        category=config.category,
+                        cost=parse_cost(article.get_text(" ", strip=True)),
+                    )
+                )
 
         logger.info(f"{config.name}: extracted {len(events)} events from ve-events__card")
         return events
@@ -547,18 +582,19 @@ def extract_eb_item(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
     is why this venue reported exactly four events while the grid held seventy.
     """
     import re
+
     events = []
     try:
-        for item in soup.select('.eb-item'):
-            title_elem = item.select_one('.title')
+        for item in soup.select(".eb-item"):
+            title_elem = item.select_one(".title")
             title = title_elem.get_text(" ", strip=True) if title_elem else None
             if not title or len(title) < 3:
                 continue
 
-            date_elem = item.select_one('.date')
+            date_elem = item.select_one(".date")
             date_text = date_elem.get_text(" ", strip=True) if date_elem else ""
             match = re.search(
-                r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})',
+                r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})",
                 date_text,
                 re.IGNORECASE,
             )
@@ -567,27 +603,29 @@ def extract_eb_item(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
             month = match.group(1).title()[:3]
             day = match.group(2)
 
-            time_elem = item.select_one('.start-time')
+            time_elem = item.select_one(".start-time")
             time_str = time_elem.get_text(" ", strip=True) if time_elem else None
 
-            link = item.select_one('a[href*="ticketweb"]') or item.select_one('a[href]')
-            url = link.get('href', config.website_url) if link else config.website_url
-            if not url.startswith('http'):
+            link = item.select_one('a[href*="ticketweb"]') or item.select_one("a[href]")
+            url = link.get("href", config.website_url) if link else config.website_url
+            if not url.startswith("http"):
                 url = f"{config.website_url}{url}"
 
-            venue_elem = item.select_one('.venue')
+            venue_elem = item.select_one(".venue")
             venue_name = venue_elem.get_text(" ", strip=True) if venue_elem else config.name
 
-            events.append(VenueEvent(
-                name=title,
-                date=f"{month} {day}, {infer_event_year(month)}",
-                time=time_str,
-                location=f"{config.name}, {config.address}",
-                url=url,
-                venue_name=venue_name or config.name,
-                category=config.category,
-                cost=parse_cost(item.get_text(" ", strip=True)),
-            ))
+            events.append(
+                VenueEvent(
+                    name=title,
+                    date=f"{month} {day}, {infer_event_year(month)}",
+                    time=time_str,
+                    location=f"{config.name}, {config.address}",
+                    url=url,
+                    venue_name=venue_name or config.name,
+                    category=config.category,
+                    cost=parse_cost(item.get_text(" ", strip=True)),
+                )
+            )
 
         logger.info(f"{config.name}: extracted {len(events)} events from .eb-item grid")
         return events
@@ -606,13 +644,14 @@ def extract_lh_st(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     all 132 shows.
     """
     import re
+
     events = []
     try:
         # "Schubas Tavern" -> "schubas", "Lincoln Hall" -> "lincoln hall"
         wanted = config.name.lower().replace(" tavern", "").strip()
 
-        for card in soup.select('.card'):
-            title_elem = card.select_one('.card-title')
+        for card in soup.select(".card"):
+            title_elem = card.select_one(".card-title")
             title = title_elem.get_text(" ", strip=True) if title_elem else None
             if not title or len(title) < 3:
                 continue
@@ -623,7 +662,7 @@ def extract_lh_st(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
 
             # "OCT 07"
             match = re.search(
-                r'\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\.?\s+(\d{1,2})\b',
+                r"\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\.?\s+(\d{1,2})\b",
                 text,
                 re.IGNORECASE,
             )
@@ -632,25 +671,27 @@ def extract_lh_st(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
             month = match.group(1).title()
             day = match.group(2)
 
-            time_elem = card.select_one('.tessera-showTime')
+            time_elem = card.select_one(".tessera-showTime")
             time_str = time_elem.get_text(" ", strip=True) if time_elem else None
 
-            ages_elem = card.select_one('.showAges')
-            link = card.select_one('a[href]')
-            url = link.get('href', config.website_url) if link else config.website_url
-            if not url.startswith('http'):
+            ages_elem = card.select_one(".showAges")
+            link = card.select_one("a[href]")
+            url = link.get("href", config.website_url) if link else config.website_url
+            if not url.startswith("http"):
                 url = f"{config.website_url}{url}"
 
-            events.append(VenueEvent(
-                name=title,
-                date=f"{month} {day}, {infer_event_year(month)}",
-                time=time_str,
-                location=f"{config.name}, {config.address}",
-                url=url,
-                venue_name=config.name,
-                category=config.category,
-                cost=parse_cost(card.get_text(" ", strip=True)),
-            ))
+            events.append(
+                VenueEvent(
+                    name=title,
+                    date=f"{month} {day}, {infer_event_year(month)}",
+                    time=time_str,
+                    location=f"{config.name}, {config.address}",
+                    url=url,
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=parse_cost(card.get_text(" ", strip=True)),
+                )
+            )
 
         logger.info(f"{config.name}: extracted {len(events)} events from lh-st cards")
         return events
@@ -669,12 +710,13 @@ def extract_martyrs(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
         .views-field-field-show-bands-nid       "Phil Angotti & Friends ..."
     """
     import re
+
     events = []
     try:
-        for schedule in soup.select('.views-field-field-show-schedule-value'):
+        for schedule in soup.select(".views-field-field-show-schedule-value"):
             line = schedule.get_text(" ", strip=True)
             match = re.search(
-                r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2})',
+                r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2})",
                 line,
                 re.IGNORECASE,
             )
@@ -689,7 +731,7 @@ def extract_martyrs(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
                 row = row.parent
                 if row is None:
                     break
-                bands = row.select_one('.views-field-field-show-bands-nid')
+                bands = row.select_one(".views-field-field-show-bands-nid")
                 if bands:
                     break
             title = bands.get_text(" ", strip=True) if bands else None
@@ -697,28 +739,32 @@ def extract_martyrs(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
                 continue
 
             # "Doors 6:30PM - Show 7:30PM" -> keep the show time where given
-            show = re.search(r'Show\s*(\d{1,2}(?::\d{2})?\s*[APap]\.?[Mm])', line)
-            doors = re.search(r'Doors\s*(\d{1,2}(?::\d{2})?\s*[APap]\.?[Mm])', line)
-            time_str = (show or doors).group(1).upper().replace(" ", "") if (show or doors) else None
+            show = re.search(r"Show\s*(\d{1,2}(?::\d{2})?\s*[APap]\.?[Mm])", line)
+            doors = re.search(r"Doors\s*(\d{1,2}(?::\d{2})?\s*[APap]\.?[Mm])", line)
+            time_str = (
+                (show or doors).group(1).upper().replace(" ", "") if (show or doors) else None
+            )
 
             cost = None
-            if re.search(r'no cover|free', line, re.IGNORECASE):
+            if re.search(r"no cover|free", line, re.IGNORECASE):
                 cost = "Free"
             else:
-                price = re.search(r'\$(\d+)', line)
+                price = re.search(r"\$(\d+)", line)
                 if price:
                     cost = f"${price.group(1)}"
 
-            events.append(VenueEvent(
-                name=title[:200],
-                date=f"{month} {day}, {infer_event_year(month)}",
-                time=time_str,
-                location=f"{config.name}, {config.address}",
-                url=config.event_page_url,
-                venue_name=config.name,
-                category=config.category,
-                cost=cost,
-            ))
+            events.append(
+                VenueEvent(
+                    name=title[:200],
+                    date=f"{month} {day}, {infer_event_year(month)}",
+                    time=time_str,
+                    location=f"{config.name}, {config.address}",
+                    url=config.event_page_url,
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=cost,
+                )
+            )
 
         logger.info(f"{config.name}: extracted {len(events)} events from calendar rows")
         return events
@@ -738,14 +784,15 @@ def extract_old_town_school(soup: BeautifulSoup, config: VenueConfig) -> list[Ve
         "Thursday · October 08 2026 · 1:00 PM CDT · Maurer Hall"
     """
     import re
+
     events = []
     try:
         line_pattern = re.compile(
-            r'(January|February|March|April|May|June|July|August|September|October|November|December)'
-            r'\s+(\d{1,2})\s+(\d{4})(?:.*?(\d{1,2}:\d{2}\s*[AP]M))?',
+            r"(January|February|March|April|May|June|July|August|September|October|November|December)"
+            r"\s+(\d{1,2})\s+(\d{4})(?:.*?(\d{1,2}:\d{2}\s*[AP]M))?",
             re.IGNORECASE,
         )
-        for row in soup.select('.concertListing'):
+        for row in soup.select(".concertListing"):
             text = row.get_text(" ", strip=True)
             match = line_pattern.search(text)
             if not match:
@@ -753,31 +800,33 @@ def extract_old_town_school(soup: BeautifulSoup, config: VenueConfig) -> list[Ve
             month, day, year, time_str = match.groups()
 
             # The billing is the first heading in the row.
-            heading = row.find(['h2', 'h3', 'h4'])
+            heading = row.find(["h2", "h3", "h4"])
             title = heading.get_text(" ", strip=True) if heading else None
             if not title:
                 # Fall back to the longest link text, which is the show name.
-                links = [a.get_text(" ", strip=True) for a in row.select('a')]
-                links = [t for t in links if t and 'ticket' not in t.lower()]
+                links = [a.get_text(" ", strip=True) for a in row.select("a")]
+                links = [t for t in links if t and "ticket" not in t.lower()]
                 title = max(links, key=len) if links else None
             if not title or len(title) < 3:
                 continue
 
-            link = row.select_one('a[href]')
-            url = link.get('href', config.website_url) if link else config.website_url
-            if not url.startswith('http'):
+            link = row.select_one("a[href]")
+            url = link.get("href", config.website_url) if link else config.website_url
+            if not url.startswith("http"):
                 url = f"{config.website_url}{url}"
 
-            events.append(VenueEvent(
-                name=title[:200],
-                date=f"{month[:3].title()} {day}, {year}",
-                time=time_str.upper() if time_str else None,
-                location=f"{config.name}, {config.address}",
-                url=url,
-                venue_name=config.name,
-                category=config.category,
-                cost=parse_cost(row.get_text(" ", strip=True)),
-            ))
+            events.append(
+                VenueEvent(
+                    name=title[:200],
+                    date=f"{month[:3].title()} {day}, {year}",
+                    time=time_str.upper() if time_str else None,
+                    location=f"{config.name}, {config.address}",
+                    url=url,
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=parse_cost(row.get_text(" ", strip=True)),
+                )
+            )
 
         logger.info(f"{config.name}: extracted {len(events)} events from concert listings")
         return events
@@ -797,18 +846,18 @@ def extract_squarespace_eventlist(soup: BeautifulSoup, config: VenueConfig) -> l
     """
     events = []
     try:
-        for item in soup.select('.eventlist-event'):
-            classes = " ".join(item.get('class', []))
-            if 'past' in classes:
+        for item in soup.select(".eventlist-event"):
+            classes = " ".join(item.get("class", []))
+            if "past" in classes:
                 continue
 
-            title_elem = item.select_one('.eventlist-title, .eventlist-title-link')
+            title_elem = item.select_one(".eventlist-title, .eventlist-title-link")
             title = title_elem.get_text(" ", strip=True) if title_elem else None
             if not title or len(title) < 3:
                 continue
 
-            stamp = item.select_one('time[datetime]')
-            iso = stamp.get('datetime') if stamp else None
+            stamp = item.select_one("time[datetime]")
+            iso = stamp.get("datetime") if stamp else None
             if not iso:
                 continue
             try:
@@ -816,25 +865,27 @@ def extract_squarespace_eventlist(soup: BeautifulSoup, config: VenueConfig) -> l
             except ValueError:
                 continue
 
-            time_elem = item.select_one('.event-time-12hr')
+            time_elem = item.select_one(".event-time-12hr")
             # Squarespace uses a narrow no-break space inside times.
             time_str = time_elem.get_text(" ", strip=True).replace(" ", " ") if time_elem else None
 
-            link = item.select_one('a[href]')
-            url = link.get('href', config.website_url) if link else config.website_url
-            if not url.startswith('http'):
+            link = item.select_one("a[href]")
+            url = link.get("href", config.website_url) if link else config.website_url
+            if not url.startswith("http"):
                 url = f"{config.website_url}{url}"
 
-            events.append(VenueEvent(
-                name=title[:200],
-                date=f"{parsed.strftime('%b')} {parsed.day}, {parsed.year}",
-                time=time_str,
-                location=f"{config.name}, {config.address}",
-                url=url,
-                venue_name=config.name,
-                category=config.category,
-                cost=parse_cost(item.get_text(" ", strip=True)),
-            ))
+            events.append(
+                VenueEvent(
+                    name=title[:200],
+                    date=f"{parsed.strftime('%b')} {parsed.day}, {parsed.year}",
+                    time=time_str,
+                    location=f"{config.name}, {config.address}",
+                    url=url,
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=parse_cost(item.get_text(" ", strip=True)),
+                )
+            )
 
         logger.info(f"{config.name}: extracted {len(events)} upcoming events from Squarespace list")
         return events
@@ -865,7 +916,9 @@ async def extract_eventscalendar_widget(page, config: VenueConfig) -> list[Venue
             # Two feeds matter: the widget's own project data, and the broker
             # that proxies the venue's Eventbrite listings. The project feed is
             # largely historical; the broker carries what is actually coming up.
-            if not any(part in response.url for part in ("/data/public/events", "/eventbrite/events")):
+            if not any(
+                part in response.url for part in ("/data/public/events", "/eventbrite/events")
+            ):
                 return
             try:
                 payloads.append(await response.json())
@@ -895,7 +948,7 @@ async def extract_eventscalendar_widget(page, config: VenueConfig) -> list[Venue
                 try:
                     # Epoch milliseconds, UTC.
                     when = datetime.utcfromtimestamp(start / 1000)
-                except (TypeError, ValueError, OSError):
+                except TypeError, ValueError, OSError:
                     continue
 
                 key = (when.date(), title.lower())
@@ -903,15 +956,17 @@ async def extract_eventscalendar_widget(page, config: VenueConfig) -> list[Venue
                     continue
                 seen.add(key)
 
-                events.append(VenueEvent(
-                    name=title[:200],
-                    date=f"{when.strftime('%b')} {when.day}, {when.year}",
-                    time=when.strftime("%-I:%M %p") if (when.hour or when.minute) else None,
-                    location=f"{config.name}, {config.address}",
-                    url=config.event_page_url,
-                    venue_name=config.name,
-                    category=config.category,
-                ))
+                events.append(
+                    VenueEvent(
+                        name=title[:200],
+                        date=f"{when.strftime('%b')} {when.day}, {when.year}",
+                        time=when.strftime("%-I:%M %p") if (when.hour or when.minute) else None,
+                        location=f"{config.name}, {config.address}",
+                        url=config.event_page_url,
+                        venue_name=config.name,
+                        category=config.category,
+                    )
+                )
 
         logger.info(f"{config.name}: extracted {len(events)} events from calendar widget API")
         return events
@@ -933,48 +988,51 @@ def extract_tessitura_calendar(soup: BeautifulSoup, config: VenueConfig) -> list
     which is both unambiguous and immune to month-boundary spillover.
     """
     import re
+
     events = []
     try:
         full_date = re.compile(
-            r'(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})',
+            r"(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})",
             re.IGNORECASE,
         )
-        for cell in soup.select('.tn-events-calendar__day'):
-            items = cell.select('.tn-events-calendar__day-event-list-item')
+        for cell in soup.select(".tn-events-calendar__day"):
+            items = cell.select(".tn-events-calendar__day-event-list-item")
             if not items:
                 continue
 
-            label = cell.select_one('.sr-only')
+            label = cell.select_one(".sr-only")
             match = full_date.search(label.get_text(" ", strip=True)) if label else None
             if not match:
                 continue
             day, month, year = match.group(1), match.group(2)[:3].title(), match.group(3)
 
             for item in items:
-                name_elem = item.select_one('.tn-events-calendar__event-name')
+                name_elem = item.select_one(".tn-events-calendar__event-name")
                 title = name_elem.get_text(" ", strip=True) if name_elem else None
                 if not title or len(title) < 3:
                     continue
 
-                time_elem = item.select_one('.tn-events-calendar__event-time')
+                time_elem = item.select_one(".tn-events-calendar__event-time")
                 raw_time = time_elem.get_text(" ", strip=True) if time_elem else ""
-                stamp = re.search(r'(\d{1,2}:\d{2}\s*[APap]\.?[Mm])', raw_time)
+                stamp = re.search(r"(\d{1,2}:\d{2}\s*[APap]\.?[Mm])", raw_time)
 
-                link = item.select_one('a[href]')
-                url = link.get('href', config.event_page_url) if link else config.event_page_url
-                if not url.startswith('http'):
+                link = item.select_one("a[href]")
+                url = link.get("href", config.event_page_url) if link else config.event_page_url
+                if not url.startswith("http"):
                     url = f"{config.website_url}{url}"
 
-                events.append(VenueEvent(
-                    name=title[:200],
-                    date=f"{month} {day}, {year}",
-                    time=stamp.group(1).upper().replace(" ", "") if stamp else None,
-                    location=f"{config.name}, {config.address}",
-                    url=url,
-                    venue_name=config.name,
-                    category=config.category,
-                    cost=parse_cost(item.get_text(" ", strip=True)),
-                ))
+                events.append(
+                    VenueEvent(
+                        name=title[:200],
+                        date=f"{month} {day}, {year}",
+                        time=stamp.group(1).upper().replace(" ", "") if stamp else None,
+                        location=f"{config.name}, {config.address}",
+                        url=url,
+                        venue_name=config.name,
+                        category=config.category,
+                        cost=parse_cost(item.get_text(" ", strip=True)),
+                    )
+                )
 
         logger.info(f"{config.name}: extracted {len(events)} events from Tessitura calendar")
         return events
@@ -982,7 +1040,6 @@ def extract_tessitura_calendar(soup: BeautifulSoup, config: VenueConfig) -> list
     except Exception as e:
         logger.error(f"{config.name} extraction failed: {e}")
         return []
-
 
 
 def extract_dated_links(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
@@ -1024,15 +1081,17 @@ def extract_dated_links(soup: BeautifulSoup, config: VenueConfig) -> list[VenueE
         seen.add(key)
 
         url = href if href.startswith("http") else f"{config.website_url.rstrip('/')}{href}"
-        events.append(VenueEvent(
-            name=title[:200],
-            date=f"{when.strftime('%b')} {when.day}, {when.year}",
-            time=None,
-            location=f"{config.name}, {config.address}",
-            url=url,
-            venue_name=config.name,
-            category=config.category,
-        ))
+        events.append(
+            VenueEvent(
+                name=title[:200],
+                date=f"{when.strftime('%b')} {when.day}, {when.year}",
+                time=None,
+                location=f"{config.name}, {config.address}",
+                url=url,
+                venue_name=config.name,
+                category=config.category,
+            )
+        )
 
     logger.info(f"{config.name}: extracted {len(events)} events from dated links")
     return events
@@ -1056,7 +1115,7 @@ def extract_labelled_meeting(soup: BeautifulSoup, config: VenueConfig) -> list[V
         for i, line in enumerate(lines):
             if line.rstrip(":").strip().lower() == label.lower().rstrip(":"):
                 out = []
-                for nxt in lines[i + 1:i + 1 + limit]:
+                for nxt in lines[i + 1 : i + 1 + limit]:
                     if nxt.endswith(":") and len(nxt) < 24:
                         break
                     out.append(nxt)
@@ -1070,7 +1129,7 @@ def extract_labelled_meeting(soup: BeautifulSoup, config: VenueConfig) -> list[V
 
     # "Oct. 8, 2026, 6 p.m."
     match = re.search(
-        rf"(?P<m>{_MONTH})\s*(?P<d>\d{{1,2}}),\s*(?P<y>\d{{4}})", when[0], re.I
+        rf"(?P<m>{_MONTH})\s*(?P<d>\d{{1,2}}),\s*(?P<y>\d{{4}})", when[0], re.IGNORECASE
     )
     if not match:
         logger.info(f"{config.name}: could not read a date from {when[0]!r}")
@@ -1083,22 +1142,27 @@ def extract_labelled_meeting(soup: BeautifulSoup, config: VenueConfig) -> list[V
 
     # "NEXT EVENT CHIPY __MAIN__ MEETING" - drop the kicker.
     heading = next(
-        (h.get_text(" ", strip=True) for h in soup.find_all(["h1", "h2", "h3"])
-         if "meeting" in h.get_text(" ", strip=True).lower()),
+        (
+            h.get_text(" ", strip=True)
+            for h in soup.find_all(["h1", "h2", "h3"])
+            if "meeting" in h.get_text(" ", strip=True).lower()
+        ),
         config.name,
     )
-    title = re.sub(r"^\s*(next event|upcoming event)\s*", "", heading, flags=re.I).strip()
+    title = re.sub(r"^\s*(next event|upcoming event)\s*", "", heading, flags=re.IGNORECASE).strip()
 
-    return [VenueEvent(
-        name=(title or config.name)[:200],
-        date=f"{match.group('m')[:3].title()} {int(match.group('d'))}, {match.group('y')}",
-        time=(f"{clock.group(1)} {clock.group(2).upper()}M" if clock else None),
-        # The host venue, which changes month to month.
-        location=f"{venue}, {street}".strip(", "),
-        url=config.event_page_url,
-        venue_name=venue,
-        category=config.category,
-    )]
+    return [
+        VenueEvent(
+            name=(title or config.name)[:200],
+            date=f"{match.group('m')[:3].title()} {int(match.group('d'))}, {match.group('y')}",
+            time=(f"{clock.group(1)} {clock.group(2).upper()}M" if clock else None),
+            # The host venue, which changes month to month.
+            location=f"{venue}, {street}".strip(", "),
+            url=config.event_page_url,
+            venue_name=venue,
+            category=config.category,
+        )
+    ]
 
 
 def extract_aeg_showtime(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
@@ -1149,16 +1213,18 @@ def extract_aeg_showtime(soup: BeautifulSoup, config: VenueConfig) -> list[Venue
         support = card.select_one("h4.supporting")
         details = support.get_text(" ", strip=True) if support else None
 
-        events.append(VenueEvent(
-            name=title[:200],
-            date=date_str,
-            time=clock.group(1).upper().replace(".", "") if clock else None,
-            location=f"{config.name}, {config.address}",
-            url=href,
-            venue_name=config.name,
-            category=config.category,
-            cost=parse_cost(card.get_text(" ", strip=True)),
-        ))
+        events.append(
+            VenueEvent(
+                name=title[:200],
+                date=date_str,
+                time=clock.group(1).upper().replace(".", "") if clock else None,
+                location=f"{config.name}, {config.address}",
+                url=href,
+                venue_name=config.name,
+                category=config.category,
+                cost=parse_cost(card.get_text(" ", strip=True)),
+            )
+        )
 
     logger.info(f"{config.name}: extracted {len(events)} events from AEG Showtime")
     return events
@@ -1237,16 +1303,18 @@ def extract_tickeri_venue(soup: BeautifulSoup, config: VenueConfig) -> list[Venu
                 # it is the whole price.
                 cost = f"From ${low:g}" if low else "Free"
 
-        events.append(VenueEvent(
-            name=title[:200],
-            date=f"{when.strftime('%b')} {when.day}, {when.year}",
-            time=when.strftime("%-I:%M %p") if (when.hour or when.minute) else None,
-            location=f"{config.name}, {config.address}",
-            url=item.get("url") or config.event_page_url,
-            venue_name=config.name,
-            category=config.category,
-            cost=cost,
-        ))
+        events.append(
+            VenueEvent(
+                name=title[:200],
+                date=f"{when.strftime('%b')} {when.day}, {when.year}",
+                time=when.strftime("%-I:%M %p") if (when.hour or when.minute) else None,
+                location=f"{config.name}, {config.address}",
+                url=item.get("url") or config.event_page_url,
+                venue_name=config.name,
+                category=config.category,
+                cost=cost,
+            )
+        )
 
     logger.info(f"{config.name}: extracted {len(events)} events from Tickeri")
     return events
@@ -1281,8 +1349,9 @@ def extract_songkick_venue(soup: BeautifulSoup, config: VenueConfig) -> list[Ven
             low = line.lower()
             if not line or len(line) < 3:
                 continue
-            if low.startswith(("buy tickets", "interested", "going", "don't miss",
-                               "dont miss", "tickets")):
+            if low.startswith(
+                ("buy tickets", "interested", "going", "don't miss", "dont miss", "tickets")
+            ):
                 continue
             # The venue's own name and the date header are not the event.
             if config.name.lower() in low or low.startswith(_WEEKDAY_PREFIXES):
@@ -1300,19 +1369,20 @@ def extract_songkick_venue(soup: BeautifulSoup, config: VenueConfig) -> list[Ven
         href = link.get("href") or ""
         url = href if href.startswith("http") else f"https://www.songkick.com{href}"
 
-        events.append(VenueEvent(
-            name=title[:200],
-            date=f"{when.strftime('%b')} {when.day}, {when.year}",
-            time=when.strftime("%-I:%M %p") if (when.hour or when.minute) else None,
-            location=f"{config.name}, {config.address}",
-            url=url,
-            venue_name=config.name,
-            category=config.category,
-        ))
+        events.append(
+            VenueEvent(
+                name=title[:200],
+                date=f"{when.strftime('%b')} {when.day}, {when.year}",
+                time=when.strftime("%-I:%M %p") if (when.hour or when.minute) else None,
+                location=f"{config.name}, {config.address}",
+                url=url,
+                venue_name=config.name,
+                category=config.category,
+            )
+        )
 
     logger.info(f"{config.name}: extracted {len(events)} events from Songkick")
     return events
-
 
 
 def extract_dated_list_items(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
@@ -1340,14 +1410,18 @@ def extract_dated_list_items(soup: BeautifulSoup, config: VenueConfig) -> list[V
         seen = set()
         for card in soup.select(container_selector):
             title_el = card.select_one(title_selector) if title_selector else None
-            title = (title_el.get_text(" ", strip=True) if title_el
-                     else _title_from(_card_lines(card), config.name))
+            title = (
+                title_el.get_text(" ", strip=True)
+                if title_el
+                else _title_from(_card_lines(card), config.name)
+            )
             if not title:
                 continue
 
             date_el = card.select_one(date_selector) if date_selector else None
-            date_text = (date_el.get_text(" ", strip=True) if date_el
-                         else card.get_text(" ", strip=True))
+            date_text = (
+                date_el.get_text(" ", strip=True) if date_el else card.get_text(" ", strip=True)
+            )
             date_str, date_end_str = _dates_from_text(date_text)
             if not date_str:
                 continue
@@ -1357,24 +1431,27 @@ def extract_dated_list_items(soup: BeautifulSoup, config: VenueConfig) -> list[V
                 continue
             seen.add(key)
 
-            clock = re.search(r"\b(\d{1,2}(?::\d{2})?\s*[apAP]\.?[mM]\.?)",
-                              card.get_text(" ", strip=True))
+            clock = re.search(
+                r"\b(\d{1,2}(?::\d{2})?\s*[apAP]\.?[mM]\.?)", card.get_text(" ", strip=True)
+            )
             link = card.select_one("a[href]")
             url = link["href"] if link else config.event_page_url
             if not url.startswith("http"):
                 url = f"{config.website_url.rstrip('/')}{url if url.startswith('/') else '/' + url}"
 
-            events.append(VenueEvent(
-                name=title[:200],
-                date=date_str,
-                date_end=date_end_str,
-                time=clock.group(1).upper().replace(".", "") if clock else None,
-                location=f"{config.name}, {config.address}",
-                url=url,
-                venue_name=config.name,
-                category=config.category,
-                cost=parse_cost(card.get_text(" ", strip=True)),
-            ))
+            events.append(
+                VenueEvent(
+                    name=title[:200],
+                    date=date_str,
+                    date_end=date_end_str,
+                    time=clock.group(1).upper().replace(".", "") if clock else None,
+                    location=f"{config.name}, {config.address}",
+                    url=url,
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=parse_cost(card.get_text(" ", strip=True)),
+                )
+            )
         logger.info(f"{config.name}: extracted {len(events)} events from named selectors")
         return events
 
@@ -1391,14 +1468,18 @@ def extract_dated_list_items(soup: BeautifulSoup, config: VenueConfig) -> list[V
         seen = set()
         for card in soup.select(container_selector):
             title_el = card.select_one(title_selector) if title_selector else None
-            title = (title_el.get_text(" ", strip=True) if title_el
-                     else _title_from(_card_lines(card), config.name))
+            title = (
+                title_el.get_text(" ", strip=True)
+                if title_el
+                else _title_from(_card_lines(card), config.name)
+            )
             if not title:
                 continue
 
             date_el = card.select_one(date_selector) if date_selector else None
-            date_text = (date_el.get_text(" ", strip=True) if date_el
-                         else card.get_text(" ", strip=True))
+            date_text = (
+                date_el.get_text(" ", strip=True) if date_el else card.get_text(" ", strip=True)
+            )
             date_str, date_end_str = _dates_from_text(date_text)
             if not date_str:
                 continue
@@ -1408,24 +1489,27 @@ def extract_dated_list_items(soup: BeautifulSoup, config: VenueConfig) -> list[V
                 continue
             seen.add(key)
 
-            clock = re.search(r"\b(\d{1,2}(?::\d{2})?\s*[apAP]\.?[mM]\.?)",
-                              card.get_text(" ", strip=True))
+            clock = re.search(
+                r"\b(\d{1,2}(?::\d{2})?\s*[apAP]\.?[mM]\.?)", card.get_text(" ", strip=True)
+            )
             link = card.select_one("a[href]")
             url = link["href"] if link else config.event_page_url
             if not url.startswith("http"):
                 url = f"{config.website_url.rstrip('/')}{url if url.startswith('/') else '/' + url}"
 
-            events.append(VenueEvent(
-                name=title[:200],
-                date=date_str,
-                date_end=date_end_str,
-                time=clock.group(1).upper().replace(".", "") if clock else None,
-                location=f"{config.name}, {config.address}",
-                url=url,
-                venue_name=config.name,
-                category=config.category,
-                cost=parse_cost(card.get_text(" ", strip=True)),
-            ))
+            events.append(
+                VenueEvent(
+                    name=title[:200],
+                    date=date_str,
+                    date_end=date_end_str,
+                    time=clock.group(1).upper().replace(".", "") if clock else None,
+                    location=f"{config.name}, {config.address}",
+                    url=url,
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=parse_cost(card.get_text(" ", strip=True)),
+                )
+            )
         logger.info(f"{config.name}: extracted {len(events)} events from named selectors")
         return events
 
@@ -1452,7 +1536,8 @@ def extract_dated_list_items(soup: BeautifulSoup, config: VenueConfig) -> list[V
     # than pairwise, which would be quadratic on a large page.
     qualified = {id(el) for el in candidates}
     chosen = [
-        el for el in candidates
+        el
+        for el in candidates
         if not any(id(d) in qualified for d in el.descendants if d is not el)
     ]
 
@@ -1500,17 +1585,19 @@ def extract_dated_list_items(soup: BeautifulSoup, config: VenueConfig) -> list[V
         if not url.startswith("http"):
             url = f"{config.website_url.rstrip('/')}{url if url.startswith('/') else '/' + url}"
 
-        events.append(VenueEvent(
-            name=title[:200],
-            date=date_str,
-            date_end=date_end_str,
-            time=clock.group(1).upper().replace(".", "") if clock else None,
-            location=f"{config.name}, {config.address}",
-            url=url,
-            venue_name=config.name,
-            category=config.category,
-            cost=parse_cost(el.get_text(" ", strip=True)),
-        ))
+        events.append(
+            VenueEvent(
+                name=title[:200],
+                date=date_str,
+                date_end=date_end_str,
+                time=clock.group(1).upper().replace(".", "") if clock else None,
+                location=f"{config.name}, {config.address}",
+                url=url,
+                venue_name=config.name,
+                category=config.category,
+                cost=parse_cost(el.get_text(" ", strip=True)),
+            )
+        )
 
     logger.info(f"{config.name}: extracted {len(events)} events from dated list items")
     return events
@@ -1523,6 +1610,7 @@ def scrolling(extractor_fn, passes: int = 5):
     the scraper's flat post-load wait sees an empty list no matter how long it
     is. Scrolling is what actually triggers the render.
     """
+
     async def page_extractor(page, config: VenueConfig) -> list[VenueEvent]:
         for _ in range(passes):
             await page.mouse.wheel(0, 1600)
@@ -1586,7 +1674,9 @@ def extract_tribe_events(soup: BeautifulSoup, config: VenueConfig) -> list[Venue
         seen.add(key)
 
         time_elem = item.select_one("[class*='event-datetime'], [class*='event-time']")
-        time_text = time_elem.get_text(" ", strip=True) if time_elem else item.get_text(" ", strip=True)
+        time_text = (
+            time_elem.get_text(" ", strip=True) if time_elem else item.get_text(" ", strip=True)
+        )
         clock = re.search(r"\b(\d{1,2}(?::\d{2})?\s*[apAP]\.?[mM]\.?)", time_text)
 
         link = item.select_one("a[href]")
@@ -1594,16 +1684,18 @@ def extract_tribe_events(soup: BeautifulSoup, config: VenueConfig) -> list[Venue
         if not url.startswith("http"):
             url = f"{config.website_url.rstrip('/')}{url}"
 
-        events.append(VenueEvent(
-            name=title[:200],
-            date=f"{when.strftime('%b')} {when.day}, {when.year}",
-            time=clock.group(1).upper().replace(".", "") if clock else None,
-            location=f"{config.name}, {config.address}",
-            url=url,
-            venue_name=config.name,
-            category=config.category,
-            cost=parse_cost(item.get_text(" ", strip=True)),
-        ))
+        events.append(
+            VenueEvent(
+                name=title[:200],
+                date=f"{when.strftime('%b')} {when.day}, {when.year}",
+                time=clock.group(1).upper().replace(".", "") if clock else None,
+                location=f"{config.name}, {config.address}",
+                url=url,
+                venue_name=config.name,
+                category=config.category,
+                cost=parse_cost(item.get_text(" ", strip=True)),
+            )
+        )
 
     logger.info(f"{config.name}: extracted {len(events)} events from The Events Calendar")
     return events
@@ -1622,6 +1714,7 @@ async def extract_ace_calendar(page, config: VenueConfig) -> list[VenueEvent]:
     (December here) and the click is otherwise unverifiable.
     """
     from zoneinfo import ZoneInfo
+
     chicago = ZoneInfo("America/Chicago")
     next_selector = (
         "button[aria-label*='next' i], a[aria-label*='next' i], "
@@ -1646,7 +1739,7 @@ async def extract_ace_calendar(page, config: VenueConfig) -> list[VenueEvent]:
                     continue
                 try:
                     when = datetime.fromtimestamp(int(stamp.group(1)), tz=chicago)
-                except (ValueError, OSError):
+                except ValueError, OSError:
                     continue
 
                 for card in cell.select(".ace-cal-grid-event"):
@@ -1678,16 +1771,18 @@ async def extract_ace_calendar(page, config: VenueConfig) -> list[VenueEvent]:
                     if not url.startswith("http"):
                         url = f"{config.website_url}{url}"
 
-                    events.append(VenueEvent(
-                        name=title[:200],
-                        date=f"{when.strftime('%b')} {when.day}, {when.year}",
-                        time=time_str,
-                        location=f"{config.name}, {config.address}",
-                        url=url,
-                        venue_name=config.name,
-                        category=config.category,
-                        cost=cost,
-                    ))
+                    events.append(
+                        VenueEvent(
+                            name=title[:200],
+                            date=f"{when.strftime('%b')} {when.day}, {when.year}",
+                            time=time_str,
+                            location=f"{config.name}, {config.address}",
+                            url=url,
+                            venue_name=config.name,
+                            category=config.category,
+                            cost=cost,
+                        )
+                    )
 
             if month == 8:
                 break
@@ -1738,18 +1833,19 @@ def extract_den_theatre(soup: BeautifulSoup, config: VenueConfig) -> list[VenueE
     whatever follows it in the cell.
     """
     import re
+
     events = []
     try:
         seen = set()
-        for item in soup.select('.item'):
-            link = item.select_one('a[href]')
-            href = link.get('href', '') if link else ''
-            stamp = re.search(r'/calendar/(\d{4})/(\d{1,2})/(\d{1,2})', href)
+        for item in soup.select(".item"):
+            link = item.select_one("a[href]")
+            href = link.get("href", "") if link else ""
+            stamp = re.search(r"/calendar/(\d{4})/(\d{1,2})/(\d{1,2})", href)
             if not stamp:
                 continue
             year, month, day = (int(g) for g in stamp.groups())
 
-            time_elem = item.select_one('.item-time--12hr')
+            time_elem = item.select_one(".item-time--12hr")
             # Squarespace separates the time from the billing with a narrow
             # no-break space and a non-breaking space.
             time_str = time_elem.get_text(strip=True).replace(" ", " ") if time_elem else None
@@ -1758,11 +1854,14 @@ def extract_den_theatre(soup: BeautifulSoup, config: VenueConfig) -> list[VenueE
             # localized - so strip those elements out before reading the
             # billing, or the title comes back as "19:15 7:15 PM Chad Daniels".
             from copy import copy
+
             billing = copy(item)
             for stamp in billing.select('[class*="item-time"]'):
                 stamp.decompose()
             title = billing.get_text(" ", strip=True).replace(" ", " ").replace(" ", " ")
-            title = re.sub(r'^\s*\d{1,2}:\d{2}\s*([AP]M)?\s*', '', title, flags=re.IGNORECASE).strip()
+            title = re.sub(
+                r"^\s*\d{1,2}:\d{2}\s*([AP]M)?\s*", "", title, flags=re.IGNORECASE
+            ).strip()
             if not title or len(title) < 3:
                 continue
 
@@ -1772,16 +1871,18 @@ def extract_den_theatre(soup: BeautifulSoup, config: VenueConfig) -> list[VenueE
             seen.add(key)
 
             when = datetime(year, month, day)
-            events.append(VenueEvent(
-                name=title[:200],
-                date=f"{when.strftime('%b')} {when.day}, {when.year}",
-                time=time_str,
-                location=f"{config.name}, {config.address}",
-                url=_den_event_url(href, config),
-                venue_name=config.name,
-                category=config.category,
-                cost=parse_cost(item.get_text(" ", strip=True)),
-            ))
+            events.append(
+                VenueEvent(
+                    name=title[:200],
+                    date=f"{when.strftime('%b')} {when.day}, {when.year}",
+                    time=time_str,
+                    location=f"{config.name}, {config.address}",
+                    url=_den_event_url(href, config),
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=parse_cost(item.get_text(" ", strip=True)),
+                )
+            )
 
         logger.info(f"{config.name}: extracted {len(events)} events from calendar items")
         return events
@@ -1803,12 +1904,13 @@ def extract_dice_widget(soup: BeautifulSoup, config: VenueConfig) -> list[VenueE
     states its date as "Wed 7 Oct - 2:30pm".
     """
     import re
+
     events = []
     try:
         when = re.compile(
-            r'\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*\.?,?\s+'
-            r'(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*'
-            r'(?:\s*[‐-―\-—]\s*(\d{1,2}(?::\d{2})?\s*[ap]m))?',
+            r"\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*\.?,?\s+"
+            r"(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*"
+            r"(?:\s*[‐-―\-—]\s*(\d{1,2}(?::\d{2})?\s*[ap]m))?",
             re.IGNORECASE,
         )
         seen = set()
@@ -1819,10 +1921,10 @@ def extract_dice_widget(soup: BeautifulSoup, config: VenueConfig) -> list[VenueE
         # looks upward for a date, each of those reached the nearest card and
         # was stored as a third copy of that event.
         for link in soup.select('a[href*="link.dice.fm/"]'):
-            href = link.get('href', '')
+            href = link.get("href", "")
             if not href or href in seen:
                 continue
-            if re.search(r"/(privacy|terms|cookie|about|app|help)", href, re.I):
+            if re.search(r"/(privacy|terms|cookie|about|app|help)", href, re.IGNORECASE):
                 continue
 
             # Climb until an ancestor carries the date line - that block is the card.
@@ -1841,10 +1943,15 @@ def extract_dice_widget(soup: BeautifulSoup, config: VenueConfig) -> list[VenueE
             lines = [l.strip() for l in card.get_text("\n", strip=True).split("\n") if l.strip()]
             # The billing is the first line that is neither the date nor a button.
             title = next(
-                (l for l in lines
-                 if not when.search(l)
-                 and not re.fullmatch(r'(buy now|join the waiting list|more info|sold out|\+)', l, re.IGNORECASE)
-                 and len(l) > 3),
+                (
+                    l
+                    for l in lines
+                    if not when.search(l)
+                    and not re.fullmatch(
+                        r"(buy now|join the waiting list|more info|sold out|\+)", l, re.IGNORECASE
+                    )
+                    and len(l) > 3
+                ),
                 None,
             )
             if not title:
@@ -1852,16 +1959,18 @@ def extract_dice_widget(soup: BeautifulSoup, config: VenueConfig) -> list[VenueE
 
             seen.add(href)
             day, month, time_str = match.group(1), match.group(2).title(), match.group(3)
-            events.append(VenueEvent(
-                name=title[:200],
-                date=f"{month} {day}, {infer_event_year(month)}",
-                time=time_str.upper().replace(" ", "") if time_str else None,
-                location=f"{config.name}, {config.address}",
-                url=href,
-                venue_name=config.name,
-                category=config.category,
-                cost=parse_cost(link.get_text(" ", strip=True)),
-            ))
+            events.append(
+                VenueEvent(
+                    name=title[:200],
+                    date=f"{month} {day}, {infer_event_year(month)}",
+                    time=time_str.upper().replace(" ", "") if time_str else None,
+                    location=f"{config.name}, {config.address}",
+                    url=href,
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=parse_cost(link.get_text(" ", strip=True)),
+                )
+            )
 
         logger.info(f"{config.name}: extracted {len(events)} events from Dice widget")
         return events
@@ -1880,23 +1989,24 @@ def extract_green_mill(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEv
     emitted as separate events.
     """
     import re
+
     events = []
     try:
         seen = set()
         for link in soup.select('a[href*="/events/"]'):
-            href = link.get('href', '')
-            stamp = re.search(r'/events/(\d{4})-(\d{2})-(\d{2})', href)
+            href = link.get("href", "")
+            stamp = re.search(r"/events/(\d{4})-(\d{2})-(\d{2})", href)
             if not stamp:
                 continue
             year, month, day = stamp.groups()
 
-            cell = link.find_parent(class_='eventful') or link.parent
+            cell = link.find_parent(class_="eventful") or link.parent
             text = cell.get_text("\n", strip=True) if cell else link.get_text(strip=True)
 
             for line in text.split("\n"):
                 line = line.strip()
                 # "(8pm - midnight) ALAN GRESIK'S SWING ORCHESTRA"
-                billing = re.match(r'^\(([^)]*)\)\s*(.+)$', line)
+                billing = re.match(r"^\(([^)]*)\)\s*(.+)$", line)
                 if billing:
                     time_str, title = billing.group(1).strip(), billing.group(2).strip()
                 elif len(line) > 4 and not line.isdigit():
@@ -1904,7 +2014,7 @@ def extract_green_mill(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEv
                 else:
                     continue
                 # A bare time range is the set time, not the act.
-                if re.fullmatch(r'[\d:apm\s–—.\-]+', title, re.IGNORECASE):
+                if re.fullmatch(r"[\d:apm\s–—.\-]+", title, re.IGNORECASE):
                     continue
                 if len(title) < 4:
                     continue
@@ -1915,16 +2025,18 @@ def extract_green_mill(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEv
                 seen.add(key)
 
                 when = datetime(int(year), int(month), int(day))
-                events.append(VenueEvent(
-                    name=title[:200],
-                    date=f"{when.strftime('%b')} {when.day}, {when.year}",
-                    time=time_str,
-                    location=f"{config.name}, {config.address}",
-                    url=href if href.startswith('http') else f"{config.website_url}{href}",
-                    venue_name=config.name,
-                    category=config.category,
-                    cost=parse_cost(line),
-                ))
+                events.append(
+                    VenueEvent(
+                        name=title[:200],
+                        date=f"{when.strftime('%b')} {when.day}, {when.year}",
+                        time=time_str,
+                        location=f"{config.name}, {config.address}",
+                        url=href if href.startswith("http") else f"{config.website_url}{href}",
+                        venue_name=config.name,
+                        category=config.category,
+                        cost=parse_cost(line),
+                    )
+                )
 
         logger.info(f"{config.name}: extracted {len(events)} events from calendar links")
         return events
@@ -1946,12 +2058,13 @@ def extract_day_month_card(soup: BeautifulSoup, config: VenueConfig) -> list[Ven
     two sites order and class them differently.
     """
     import re
+
     events = []
     try:
-        containers = soup.select('.chakra-card') or soup.select('.show')
+        containers = soup.select(".chakra-card") or soup.select(".show")
         month_day = re.compile(
-            r'\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\.?\s*(\d{1,2})\b|'
-            r'\b(\d{1,2})\s*(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\b',
+            r"\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\.?\s*(\d{1,2})\b|"
+            r"\b(\d{1,2})\s*(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\b",
             re.IGNORECASE,
         )
         for card in containers:
@@ -1969,11 +2082,11 @@ def extract_day_month_card(soup: BeautifulSoup, config: VenueConfig) -> list[Ven
             # The billing is the longest line that is not a date tile, a weekday,
             # a doors notice or a merchandising label.
             noise = re.compile(
-                r'^(MON|TUE|WED|THU|FRI|SAT|SUN)|^\d{1,2}$|doors|selling fast|sold out|'
-                r'^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\.?$|presents?$|'
+                r"^(MON|TUE|WED|THU|FRI|SAT|SUN)|^\d{1,2}$|doors|selling fast|sold out|"
+                r"^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\.?$|presents?$|"
                 # Button labels sit in the same card and are often the longest line.
-                r'buy tickets?|get tickets?|more info|tickets available|on sale|waiting list|'
-                r'^\s*(free|rsvp|learn more)\s*$',
+                r"buy tickets?|get tickets?|more info|tickets available|on sale|waiting list|"
+                r"^\s*(free|rsvp|learn more)\s*$",
                 re.IGNORECASE,
             )
             candidates = [l for l in lines if not noise.search(l) and len(l) > 4]
@@ -1981,22 +2094,24 @@ def extract_day_month_card(soup: BeautifulSoup, config: VenueConfig) -> list[Ven
                 continue
             title = max(candidates, key=len)
 
-            doors = re.search(r'(\d{1,2}(?::\d{2})?\s*[APap]\.?[Mm])', joined)
-            link = card.select_one('a[href]')
-            url = link.get('href', config.website_url) if link else config.website_url
-            if not url.startswith('http'):
+            doors = re.search(r"(\d{1,2}(?::\d{2})?\s*[APap]\.?[Mm])", joined)
+            link = card.select_one("a[href]")
+            url = link.get("href", config.website_url) if link else config.website_url
+            if not url.startswith("http"):
                 url = f"{config.website_url}{url}"
 
-            events.append(VenueEvent(
-                name=title[:200],
-                date=f"{month} {day}, {infer_event_year(month)}",
-                time=doors.group(1).upper().replace(" ", "") if doors else None,
-                location=f"{config.name}, {config.address}",
-                url=url,
-                venue_name=config.name,
-                category=config.category,
-                cost=parse_cost(card.get_text(" ", strip=True)),
-            ))
+            events.append(
+                VenueEvent(
+                    name=title[:200],
+                    date=f"{month} {day}, {infer_event_year(month)}",
+                    time=doors.group(1).upper().replace(" ", "") if doors else None,
+                    location=f"{config.name}, {config.address}",
+                    url=url,
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=parse_cost(card.get_text(" ", strip=True)),
+                )
+            )
 
         logger.info(f"{config.name}: extracted {len(events)} events from date-tile cards")
         return events
@@ -2014,13 +2129,17 @@ def extract_bramble(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
     of those expose structured dates. So titles and URLs only; date stays None.
     """
     import re
+
     events = []
     try:
         seen = set()
-        ticketing = re.compile(r'universe\.com|tickettailor\.com|eventbrite\.com|pointtheatreproject\.com', re.IGNORECASE)
+        ticketing = re.compile(
+            r"universe\.com|tickettailor\.com|eventbrite\.com|pointtheatreproject\.com",
+            re.IGNORECASE,
+        )
 
-        for link in soup.select('a[href]'):
-            href = link.get('href', '')
+        for link in soup.select("a[href]"):
+            href = link.get("href", "")
             if not ticketing.search(href):
                 continue
 
@@ -2029,18 +2148,22 @@ def extract_bramble(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
                 continue
             seen.add(href)
 
-            events.append(VenueEvent(
-                name=title,
-                date=None,
-                time=None,
-                location=f"{config.name}, {config.address}",
-                url=href,
-                venue_name=config.name,
-                category=config.category,
-                cost=parse_cost(link.get_text(" ", strip=True)),
-            ))
+            events.append(
+                VenueEvent(
+                    name=title,
+                    date=None,
+                    time=None,
+                    location=f"{config.name}, {config.address}",
+                    url=href,
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=parse_cost(link.get_text(" ", strip=True)),
+                )
+            )
 
-        logger.info(f"{config.name}: extracted {len(events)} events from ticket links (no dates published)")
+        logger.info(
+            f"{config.name}: extracted {len(events)} events from ticket links (no dates published)"
+        )
         return events
 
     except Exception as e:
@@ -2051,42 +2174,47 @@ def extract_bramble(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
 def extract_outset(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from Outset (listings block with "15 Oct • 6:30pm" meta)."""
     import re
+
     events = []
     try:
-        for listing in soup.select('.listings-block-list__listing'):
-            title_elem = listing.select_one('.listing__title')
+        for listing in soup.select(".listings-block-list__listing"):
+            title_elem = listing.select_one(".listing__title")
             title = title_elem.get_text(strip=True) if title_elem else None
             if not title or len(title) < 3:
                 continue
 
-            meta_elem = listing.select_one('.listingDateTime')
+            meta_elem = listing.select_one(".listingDateTime")
             meta = meta_elem.get_text(" ", strip=True) if meta_elem else ""
 
             date_match = re.search(
-                r'(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)', meta, re.IGNORECASE
+                r"(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)",
+                meta,
+                re.IGNORECASE,
             )
             if not date_match:
                 continue
             day, month = date_match.group(1), date_match.group(2).title()
 
-            time_match = re.search(r'(\d{1,2}(?::\d{2})?\s*[ap]m)', meta, re.IGNORECASE)
+            time_match = re.search(r"(\d{1,2}(?::\d{2})?\s*[ap]m)", meta, re.IGNORECASE)
             time_str = time_match.group(1).upper().replace(" ", "") if time_match else None
 
-            link = listing.select_one('.listing__titleLink')
-            url = link.get('href', config.website_url) if link else config.website_url
+            link = listing.select_one(".listing__titleLink")
+            url = link.get("href", config.website_url) if link else config.website_url
             if not url.startswith("http"):
                 url = f"{config.website_url}{url}"
 
-            events.append(VenueEvent(
-                name=title,
-                date=f"{month} {day}, {infer_event_year(month)}",
-                time=time_str,
-                location=f"{config.name}, {config.address}",
-                url=url,
-                venue_name=config.name,
-                category=config.category,
-                cost=parse_cost(listing.get_text(" ", strip=True)),
-            ))
+            events.append(
+                VenueEvent(
+                    name=title,
+                    date=f"{month} {day}, {infer_event_year(month)}",
+                    time=time_str,
+                    location=f"{config.name}, {config.address}",
+                    url=url,
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=parse_cost(listing.get_text(" ", strip=True)),
+                )
+            )
 
         logger.info(f"{config.name}: extracted {len(events)} events from listings block")
         return events
@@ -2099,14 +2227,15 @@ def extract_outset(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]
 def extract_united_center(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from United Center (a.eventLink rows on the events list)."""
     import re
+
     events = []
     try:
         seen = set()
         # Each event links to /events/YYYY/MM/DD/slug/ - the date lives in the href,
         # which is more reliable than the calendar cell text.
-        for link in soup.select('a.eventLink[href]'):
-            href = link.get('href', '')
-            date_match = re.search(r'/events/(\d{4})/(\d{2})/(\d{2})/', href)
+        for link in soup.select("a.eventLink[href]"):
+            href = link.get("href", "")
+            date_match = re.search(r"/events/(\d{4})/(\d{2})/(\d{2})/", href)
             if not date_match:
                 continue
 
@@ -2114,7 +2243,7 @@ def extract_united_center(soup: BeautifulSoup, config: VenueConfig) -> list[Venu
             if not title or len(title) < 3:
                 continue
 
-            url = href if href.startswith('http') else f"{config.website_url}{href}"
+            url = href if href.startswith("http") else f"{config.website_url}{href}"
             if url in seen:
                 continue
             seen.add(url)
@@ -2124,20 +2253,24 @@ def extract_united_center(soup: BeautifulSoup, config: VenueConfig) -> list[Venu
             date_str = f"{event_date.strftime('%b')} {event_date.day}, {event_date.year}"
 
             # Time appears next to the title in the row: "Gorillaz (07:30 PM)"
-            row = link.find_parent('li') or link.parent
-            time_match = re.search(r'\((\d{1,2}:\d{2}\s*[AP]M)\)', row.get_text(" ", strip=True), re.IGNORECASE)
+            row = link.find_parent("li") or link.parent
+            time_match = re.search(
+                r"\((\d{1,2}:\d{2}\s*[AP]M)\)", row.get_text(" ", strip=True), re.IGNORECASE
+            )
             time_str = time_match.group(1).upper() if time_match else None
 
-            events.append(VenueEvent(
-                name=title,
-                date=date_str,
-                time=time_str,
-                location=f"{config.name}, {config.address}",
-                url=url,
-                venue_name=config.name,
-                category=config.category,
-                cost=parse_cost(link.get_text(" ", strip=True)),
-            ))
+            events.append(
+                VenueEvent(
+                    name=title,
+                    date=date_str,
+                    time=time_str,
+                    location=f"{config.name}, {config.address}",
+                    url=url,
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=parse_cost(link.get_text(" ", strip=True)),
+                )
+            )
 
         logger.info(f"{config.name}: extracted {len(events)} events from event links")
         return events
@@ -2152,33 +2285,38 @@ def extract_cobra_lounge(soup: BeautifulSoup, config: VenueConfig) -> list[Venue
     events = []
     try:
         # Cobra Lounge uses article tags
-        articles = soup.select('article')
+        articles = soup.select("article")
 
         for article in articles:
             # Get img alt text (event title)
-            img = article.find('img')
-            if img and img.get('alt'):
-                title = img.get('alt').strip()
+            img = article.find("img")
+            if img and img.get("alt"):
+                title = img.get("alt").strip()
 
                 # Cobra events might not have visible dates, so use None
                 # Extract any visible text that might be date-related
                 text = article.get_text()
                 import re
-                date_match = re.search(r'(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)', text)
+
+                date_match = re.search(
+                    r"(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)", text
+                )
                 date_str = None
                 if date_match:
                     date_str = f"{date_match.group(2)} {date_match.group(1)}, 2026"
 
-                events.append(VenueEvent(
-                    name=title,
-                    date=date_str,
-                    time=None,
-                    location=f"{config.name}, {config.address}",
-                    url=config.website_url,
-                    venue_name=config.name,
-                    category=config.category,
-                    cost=parse_cost(article.get_text(" ", strip=True)),
-                ))
+                events.append(
+                    VenueEvent(
+                        name=title,
+                        date=date_str,
+                        time=None,
+                        location=f"{config.name}, {config.address}",
+                        url=config.website_url,
+                        venue_name=config.name,
+                        category=config.category,
+                        cost=parse_cost(article.get_text(" ", strip=True)),
+                    )
+                )
 
         logger.info(f"{config.name}: extracted {len(events)} events from articles")
         return events
@@ -2191,10 +2329,11 @@ def extract_cobra_lounge(soup: BeautifulSoup, config: VenueConfig) -> list[Venue
 def extract_auditorium_theatre(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from Auditorium Theatre (uses eventItem divs)."""
     import re
+
     events = []
     try:
         # Auditorium Theatre uses div.eventItem with nested structure
-        containers = soup.select('div.eventItem')
+        containers = soup.select("div.eventItem")
 
         for container in containers:
             # Get all text from container
@@ -2205,7 +2344,9 @@ def extract_auditorium_theatre(soup: BeautifulSoup, config: VenueConfig) -> list
                 continue
 
             # Date pattern: "Thu,Oct8, 2026" or similar
-            date_match = re.search(r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(\d{1,2}),?\s*2026', text)
+            date_match = re.search(
+                r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(\d{1,2}),?\s*2026", text
+            )
             if not date_match:
                 continue
 
@@ -2213,7 +2354,11 @@ def extract_auditorium_theatre(soup: BeautifulSoup, config: VenueConfig) -> list
             day = date_match.group(2)
 
             # Title is usually first substantial text before date
-            lines = text.split('Buy Tickets')[0].split('More Info')[0].split(',')[1:] if ',' in text else text.split()
+            lines = (
+                text.split("Buy Tickets")[0].split("More Info")[0].split(",")[1:]
+                if "," in text
+                else text.split()
+            )
             title = None
             for line in lines:
                 cleaned = line.strip()
@@ -2222,16 +2367,18 @@ def extract_auditorium_theatre(soup: BeautifulSoup, config: VenueConfig) -> list
                     break
 
             if title:
-                events.append(VenueEvent(
-                    name=title,
-                    date=f"{month} {day}, 2026",
-                    time=None,
-                    location=f"{config.name}, {config.address}",
-                    url=config.website_url,
-                    venue_name=config.name,
-                    category=config.category,
-                    cost=parse_cost(line),
-                ))
+                events.append(
+                    VenueEvent(
+                        name=title,
+                        date=f"{month} {day}, 2026",
+                        time=None,
+                        location=f"{config.name}, {config.address}",
+                        url=config.website_url,
+                        venue_name=config.name,
+                        category=config.category,
+                        cost=parse_cost(line),
+                    )
+                )
 
         logger.info(f"{config.name}: extracted {len(events)} events from eventItem")
         return events
@@ -2244,16 +2391,19 @@ def extract_auditorium_theatre(soup: BeautifulSoup, config: VenueConfig) -> list
 def extract_jamusa_events(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from Jam Presents/Jamusa.com venues (Park West, Riviera Theatre)."""
     import re
+
     events = []
     try:
         # Jam Presents uses div.eventItem containers
-        containers = soup.select('div.eventItem')
+        containers = soup.select("div.eventItem")
 
         for container in containers:
             text = container.get_text(strip=True)
 
             # Date format: "Oct7Wed" or "Oct23Mon"
-            date_match = re.search(r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(\d{1,2})\w{3}', text)
+            date_match = re.search(
+                r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(\d{1,2})\w{3}", text
+            )
             if not date_match:
                 continue
 
@@ -2261,20 +2411,22 @@ def extract_jamusa_events(soup: BeautifulSoup, config: VenueConfig) -> list[Venu
             day = date_match.group(2)
 
             # Extract title - look for artist name after "Jam Presents"
-            title_match = re.search(r'Jam Presents(.+?)(?:with |Doors:|$)', text)
+            title_match = re.search(r"Jam Presents(.+?)(?:with |Doors:|$)", text)
             if title_match:
                 title = title_match.group(1).strip()
                 if len(title) > 3 and len(title) < 200:
-                    events.append(VenueEvent(
-                        name=title,
-                        date=f"{month} {day}, 2026",
-                        time=None,
-                        location=f"{config.name}, {config.address}",
-                        url=config.website_url,
-                        venue_name=config.name,
-                        category=config.category,
-                        cost=parse_cost(container.get_text(" ", strip=True)),
-                    ))
+                    events.append(
+                        VenueEvent(
+                            name=title,
+                            date=f"{month} {day}, 2026",
+                            time=None,
+                            location=f"{config.name}, {config.address}",
+                            url=config.website_url,
+                            venue_name=config.name,
+                            category=config.category,
+                            cost=parse_cost(container.get_text(" ", strip=True)),
+                        )
+                    )
 
         logger.info(f"{config.name}: extracted {len(events)} events from Jam Presents")
         return events
@@ -2287,10 +2439,11 @@ def extract_jamusa_events(soup: BeautifulSoup, config: VenueConfig) -> list[Venu
 def extract_generic_javascript_events(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Generic extractor for JavaScript-rendered event pages using Playwright."""
     import re
+
     events = []
     try:
         # More permissive container selectors - cast wider net
-        for selector in ['div', '[class*="event"]', 'article', '.show', '.item', 'li']:
+        for selector in ["div", '[class*="event"]', "article", ".show", ".item", "li"]:
             containers = soup.select(selector)
             if not containers:
                 continue
@@ -2303,29 +2456,33 @@ def extract_generic_javascript_events(soup: BeautifulSoup, config: VenueConfig) 
                     continue
 
                 # Look for date pattern (month + day)
-                date_match = re.search(r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})', text)
+                date_match = re.search(
+                    r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})", text
+                )
                 if not date_match:
                     continue
 
                 # Extract title - take first substantial line
-                lines = [l.strip() for l in text.split('\n') if l.strip()]
+                lines = [l.strip() for l in text.split("\n") if l.strip()]
                 title = None
                 for line in lines:
-                    if 8 <= len(line) <= 200 and not line.startswith('http'):
+                    if 8 <= len(line) <= 200 and not line.startswith("http"):
                         title = line
                         break
 
                 if title:
-                    events.append(VenueEvent(
-                        name=title,
-                        date=f"{date_match.group(1)} {date_match.group(2)}, 2026",
-                        time=None,
-                        location=f"{config.name}, {config.address}",
-                        url=config.website_url,
-                        venue_name=config.name,
-                        category=config.category,
-                        cost=parse_cost(line),
-                    ))
+                    events.append(
+                        VenueEvent(
+                            name=title,
+                            date=f"{date_match.group(1)} {date_match.group(2)}, 2026",
+                            time=None,
+                            location=f"{config.name}, {config.address}",
+                            url=config.website_url,
+                            venue_name=config.name,
+                            category=config.category,
+                            cost=parse_cost(line),
+                        )
+                    )
 
         # Deduplicate by title
         seen = set()
@@ -2350,27 +2507,27 @@ def extract_zanies_calendar(soup: BeautifulSoup, config: VenueConfig) -> list[Ve
     # Note: This extractor runs AFTER Playwright renders, so calendar data is in HTML
     try:
         # Get all calendar day cells with data-date attribute
-        day_cells = soup.select('[data-date]')
+        day_cells = soup.select("[data-date]")
 
         for cell in day_cells:
-            date_str = cell.get('data-date')
+            date_str = cell.get("data-date")
 
             # Get events in this cell
             event_titles = cell.select('[class*="event-title"], .fc-event-title')
 
             for event_el in event_titles:
                 text = event_el.get_text(strip=True)
-                if not text or 'Timezone' in text:
+                if not text or "Timezone" in text:
                     continue
 
                 # Parse title and time
-                lines = text.split('\n')
+                lines = text.split("\n")
                 title = lines[0].strip()
 
                 # Find time (HH:MM AM/PM pattern)
                 time_str = None
                 for line in lines:
-                    if ':' in line and ('AM' in line.upper() or 'PM' in line.upper()):
+                    if ":" in line and ("AM" in line.upper() or "PM" in line.upper()):
                         time_str = line.strip()
                         break
 
@@ -2380,16 +2537,18 @@ def extract_zanies_calendar(soup: BeautifulSoup, config: VenueConfig) -> list[Ve
                 except:
                     parsed_date = None
 
-                events.append(VenueEvent(
-                    name=title,
-                    date=parsed_date.isoformat() if parsed_date else None,
-                    time=time_str,
-                    location=f"{config.name}, {config.address}",
-                    url=config.website_url,  # No individual event URLs, use venue URL
-                    venue_name=config.name,
-                    category=config.category,
-                    cost=parse_cost(line),
-                ))
+                events.append(
+                    VenueEvent(
+                        name=title,
+                        date=parsed_date.isoformat() if parsed_date else None,
+                        time=time_str,
+                        location=f"{config.name}, {config.address}",
+                        url=config.website_url,  # No individual event URLs, use venue URL
+                        venue_name=config.name,
+                        category=config.category,
+                        cost=parse_cost(line),
+                    )
+                )
 
         logger.info(f"{config.name}: extracted {len(events)} events from calendar")
     except Exception as e:
@@ -2420,7 +2579,7 @@ def extract_squarespace_calendar(soup: BeautifulSoup, config: VenueConfig) -> li
     """
     header = soup.select_one(".yui3-calendar-header, [class*=calendar-header]")
     header_text = header.get_text(" ", strip=True) if header else ""
-    month_match = re.search(rf"({_MONTH})\s*(\d{{4}})", header_text, re.I)
+    month_match = re.search(rf"({_MONTH})\s*(\d{{4}})", header_text, re.IGNORECASE)
     if not month_match:
         logger.warning(f"{config.name}: no month header on the calendar")
         return []
@@ -2456,14 +2615,14 @@ def extract_squarespace_calendar(soup: BeautifulSoup, config: VenueConfig) -> li
 
             time_el = item.select_one("span.item-time--12hr")
             # Squarespace uses a narrow no-break space in times.
-            time_str = (time_el.get_text(" ", strip=True).replace("\u202f", " ")
-                        if time_el else None)
+            time_str = time_el.get_text(" ", strip=True).replace("\u202f", " ") if time_el else None
 
             end_el = item.select_one("span.item-enddate")
             date_end = None
             if end_el:
-                end_match = re.search(rf"({_MONTH})\s*(\d{{1,2}})",
-                                      end_el.get_text(" ", strip=True), re.I)
+                end_match = re.search(
+                    rf"({_MONTH})\s*(\d{{1,2}})", end_el.get_text(" ", strip=True), re.IGNORECASE
+                )
                 if end_match:
                     end_month = _MONTHS.get(end_match.group(1)[:3].title())
                     if end_month:
@@ -2475,8 +2634,11 @@ def extract_squarespace_calendar(soup: BeautifulSoup, config: VenueConfig) -> li
             if existing and existing["when"] <= when:
                 continue
             found[key] = {
-                "when": when, "title": title, "time": time_str,
-                "date_end": date_end, "href": href,
+                "when": when,
+                "title": title,
+                "time": time_str,
+                "date_end": date_end,
+                "href": href,
             }
 
     events = []
@@ -2484,16 +2646,18 @@ def extract_squarespace_calendar(soup: BeautifulSoup, config: VenueConfig) -> li
         url = entry["href"] or config.event_page_url
         if not url.startswith("http"):
             url = f"{config.website_url.rstrip('/')}{url if url.startswith('/') else '/' + url}"
-        events.append(VenueEvent(
-            name=entry["title"][:200],
-            date=f"{entry['when']:%b} {entry['when'].day}, {entry['when'].year}",
-            date_end=entry["date_end"],
-            time=entry["time"],
-            location=f"{config.name}, {config.address}",
-            url=url,
-            venue_name=config.name,
-            category=config.category,
-        ))
+        events.append(
+            VenueEvent(
+                name=entry["title"][:200],
+                date=f"{entry['when']:%b} {entry['when'].day}, {entry['when'].year}",
+                date_end=entry["date_end"],
+                time=entry["time"],
+                location=f"{config.name}, {config.address}",
+                url=url,
+                venue_name=config.name,
+                category=config.category,
+            )
+        )
 
     logger.info(f"{config.name}: extracted {len(events)} events from the calendar grid")
     return events
@@ -2512,55 +2676,94 @@ def extract_squarespace_events(soup: BeautifulSoup, config: VenueConfig) -> list
                 continue
 
             # Skip navigation and UI items
-            skip_terms = ['home', 'calendar', 'faqs', 'faq', 'contact', 'about', 'menu', 'search',
-                         'login', 'signup', 'cart', 'checkout', 'gallery', 'photos', 'videos',
-                         'news', 'blog', 'press', 'instagram', 'facebook', 'twitter', 'social']
+            skip_terms = [
+                "home",
+                "calendar",
+                "faqs",
+                "faq",
+                "contact",
+                "about",
+                "menu",
+                "search",
+                "login",
+                "signup",
+                "cart",
+                "checkout",
+                "gallery",
+                "photos",
+                "videos",
+                "news",
+                "blog",
+                "press",
+                "instagram",
+                "facebook",
+                "twitter",
+                "social",
+            ]
             if any(term in text.lower() for term in skip_terms):
                 continue
 
             # Also skip month names if very short (likely navigation)
-            if any(month in text.lower() for month in
-                   ['january', 'february', 'march', 'april', 'may', 'june',
-                    'july', 'august', 'september', 'october', 'november', 'december']):
+            if any(
+                month in text.lower()
+                for month in [
+                    "january",
+                    "february",
+                    "march",
+                    "april",
+                    "may",
+                    "june",
+                    "july",
+                    "august",
+                    "september",
+                    "october",
+                    "november",
+                    "december",
+                ]
+            ):
                 if len(text) < 20:
                     continue
 
             # Extract time
-            time_match = re.search(r'(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm))', text)
+            time_match = re.search(r"(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm))", text)
             time_str = time_match.group(1) if time_match else None
-            event_name = re.sub(r'^\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)\s*', '', text).strip()
+            event_name = re.sub(r"^\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)\s*", "", text).strip()
 
             # Extract date
             date_str = None
-            ends_match = re.search(r'\(ends?\s+(.+?)\)', event_name, re.IGNORECASE)
+            ends_match = re.search(r"\(ends?\s+(.+?)\)", event_name, re.IGNORECASE)
             if ends_match:
                 date_str = ends_match.group(1).strip()
-                event_name = re.sub(r'\(ends?.+?\)', '', event_name).strip()
+                event_name = re.sub(r"\(ends?.+?\)", "", event_name).strip()
 
             if not event_name or len(event_name) < 2:
                 continue
 
             # Extract event URL: look for link in item, fall back to website URL
             event_url = config.website_url
-            link = item.find('a', href=True)
-            if link and link.get('href'):
-                href = link.get('href')
+            link = item.find("a", href=True)
+            if link and link.get("href"):
+                href = link.get("href")
                 # Convert relative URLs to absolute
-                if href.startswith('/'):
-                    event_url = config.website_url.rstrip('/') + href
-                elif href.startswith('http'):
+                if href.startswith("/"):
+                    event_url = config.website_url.rstrip("/") + href
+                elif href.startswith("http"):
                     event_url = href
 
-            events.append(VenueEvent(
-                name=event_name, date=date_str, time=time_str,
-                location=f"{config.name}, {config.address}",
-                url=event_url, venue_name=config.name,
-                category=config.category,
-                cost=parse_cost(item.get_text(" ", strip=True)),
-            ))
+            events.append(
+                VenueEvent(
+                    name=event_name,
+                    date=date_str,
+                    time=time_str,
+                    location=f"{config.name}, {config.address}",
+                    url=event_url,
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=parse_cost(item.get_text(" ", strip=True)),
+                )
+            )
 
         logger.info(f"{config.name}: extracted {len(events)} events")
     except Exception as e:
         logger.error(f"{config.name} extraction failed: {e}")
     return events
-

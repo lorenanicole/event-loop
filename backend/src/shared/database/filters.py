@@ -6,20 +6,19 @@ worth showing?". Keeping that definition here stops the three from drifting.
 """
 
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import and_, case, func, or_
 
 from .models import EventModel
 
 
-def start_of_day(moment: Optional[datetime] = None) -> datetime:
+def start_of_day(moment: datetime | None = None) -> datetime:
     """Midnight on the given day (defaults to today)."""
     moment = moment or datetime.now()
     return moment.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-def upcoming_events_filter(now: Optional[datetime] = None):
+def upcoming_events_filter(now: datetime | None = None):
     """Match events that have not finished yet.
 
     An event counts as upcoming from midnight on its start date, so a show
@@ -39,7 +38,7 @@ def upcoming_events_filter(now: Optional[datetime] = None):
     )
 
 
-def feed_order(now: Optional[datetime] = None):
+def feed_order(now: datetime | None = None):
     """The order a browse feed lists events in: soonest first, then name.
 
     Returned as a tuple to be splatted into `order_by`, so the REST list and

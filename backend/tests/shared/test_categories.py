@@ -11,12 +11,12 @@ from sqlalchemy.orm import declarative_base
 
 from shared.categories import (
     category_filter,
-    classify_all,
-    classify_from_title,
-    infer_category,
     category_labels,
     category_prefixes,
+    classify_all,
+    classify_from_title,
     extract_category_concepts,
+    infer_category,
     normalize_category,
 )
 
@@ -30,14 +30,17 @@ class Row(Base):
 
 
 class TestNormalizeCategory:
-    @pytest.mark.parametrize("raw,expected", [
-        ("music", "Music"),
-        ("Music", "Music"),
-        ("comedy", "Comedy"),
-        ("arts", "Arts"),
-        ("theater", "Theater"),
-        ("community", "Community"),
-    ])
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("music", "Music"),
+            ("Music", "Music"),
+            ("comedy", "Comedy"),
+            ("arts", "Arts"),
+            ("theater", "Theater"),
+            ("community", "Community"),
+        ],
+    )
     def test_casing_is_settled(self, raw, expected):
         assert normalize_category(raw) == expected
 
@@ -48,13 +51,13 @@ class TestNormalizeCategory:
         assert normalize_category("Food  &   Drink") == "Food & Drink"
 
     def test_acronyms_survive(self):
-        """"LGBTQ" must not become "Lgbtq"."""
+        """ "LGBTQ" must not become "Lgbtq"."""
         assert normalize_category("lgbtq") == "LGBTQ"
         assert normalize_category("LGBTQ") == "LGBTQ"
         assert normalize_category("TV & Film") == "TV & Film"
 
     def test_deliberate_internal_capital_survives(self):
-        """"DJs" is spelled that way on purpose, and is not an acronym."""
+        """ "DJs" is spelled that way on purpose, and is not an acronym."""
         assert normalize_category("Parties & DJs") == "Parties & DJs"
 
     def test_slash_separated_words_each_capitalized(self):
@@ -72,27 +75,30 @@ class TestNormalizeCategory:
 
 
 class TestExtractCategoryConcepts:
-    @pytest.mark.parametrize("query,concept", [
-        ("jazz tonight", "music"),
-        ("stand up comedy show", "comedy"),
-        ("broadway play drama", "theater"),
-        ("art gallery exhibition", "art"),
-        ("chicago bears game", "sports"),
-        ("film screening", "film"),
-        ("drag show", "lgbtq"),
-    ])
+    @pytest.mark.parametrize(
+        "query,concept",
+        [
+            ("jazz tonight", "music"),
+            ("stand up comedy show", "comedy"),
+            ("broadway play drama", "theater"),
+            ("art gallery exhibition", "art"),
+            ("chicago bears game", "sports"),
+            ("film screening", "film"),
+            ("drag show", "lgbtq"),
+        ],
+    )
     def test_concept_is_recognized(self, query, concept):
         assert concept in extract_category_concepts(query)
 
     def test_regular_plural_matches(self):
-        """"workshops" has to find the "workshop" keyword."""
+        """ "workshops" has to find the "workshop" keyword."""
         assert "community" in extract_category_concepts("plant workshops this weekend")
 
     def test_no_concept_named(self):
         assert extract_category_concepts("random words") == []
 
     def test_a_word_inside_another_word_does_not_match(self):
-        """"art" inside "Bartlett" is not a category reference."""
+        """ "art" inside "Bartlett" is not a category reference."""
         assert "art" not in extract_category_concepts("show at bartlett hall")
 
     def test_both_theatre_spellings_reach_one_concept(self):
@@ -119,16 +125,14 @@ class TestConceptLabels:
         assert "Arts & Theatre" in category_labels(["theater"])
 
     def test_art_names_the_genuine_arts_labels(self):
-        assert sorted(category_labels(["art"])) == [
-            "Arts", "Arts & Crafts", "Arts & Culture"
-        ]
+        assert sorted(category_labels(["art"])) == ["Arts", "Arts & Crafts", "Arts & Culture"]
 
     def test_art_does_not_claim_the_theater_segment(self):
         """Otherwise "art galleries" answers with 185 Broadway shows."""
         assert "Arts & Theatre" not in category_labels(["art"])
 
     def test_art_uses_no_bare_prefix(self):
-        """"art%" would sweep in every Arts label, theater included."""
+        """ "art%" would sweep in every Arts label, theater included."""
         assert category_prefixes(["art"]) == []
 
 
@@ -138,21 +142,26 @@ class TestCategoryFilter:
         assert category_filter(Row.category, []) is None
 
     def test_art_matches_its_named_labels(self):
-        clause = str(category_filter(Row.category, ["art"]).compile(
-            compile_kwargs={"literal_binds": True}))
+        clause = str(
+            category_filter(Row.category, ["art"]).compile(compile_kwargs={"literal_binds": True})
+        )
         assert "arts & crafts" in clause.lower()
         assert "arts & culture" in clause.lower()
 
     def test_theater_spans_all_three_stored_labels(self):
-        clause = str(category_filter(Row.category, ["theater"]).compile(
-            compile_kwargs={"literal_binds": True})).lower()
+        clause = str(
+            category_filter(Row.category, ["theater"]).compile(
+                compile_kwargs={"literal_binds": True}
+            )
+        ).lower()
         assert "theater%" in clause and "theatre%" in clause
         assert "arts & theatre" in clause
 
     def test_prefix_not_substring(self):
-        """"%music%" would also match "Music & Film Fest" mid-string."""
-        clause = str(category_filter(Row.category, ["music"]).compile(
-            compile_kwargs={"literal_binds": True}))
+        """ "%music%" would also match "Music & Film Fest" mid-string."""
+        clause = str(
+            category_filter(Row.category, ["music"]).compile(compile_kwargs={"literal_binds": True})
+        )
         assert "%music%" not in clause.lower()
         assert "music%" in clause.lower()
 
@@ -162,9 +171,10 @@ class TestInferCategory:
 
     def test_wine_special_at_a_music_pub(self):
         """The case that prompted this: "music tonight" returning a wine deal."""
-        assert infer_category(
-            "Wine Wednesday Half-Priced Wine by the Bottle", "Music"
-        ) == "Food & Drink"
+        assert (
+            infer_category("Wine Wednesday Half-Priced Wine by the Bottle", "Music")
+            == "Food & Drink"
+        )
 
     def test_sewing_class_at_a_music_hall(self):
         assert infer_category("SEWING FREAK", "Music") == "Arts & Crafts"
@@ -184,9 +194,7 @@ class TestInferCategory:
 
     def test_a_concert_billed_live_to_film_stays_a_concert(self):
         """Why "film" is not a rule: it matched concerts, not screenings."""
-        assert infer_category(
-            "Disney's Encanto In Concert Live to Film", "Theater"
-        ) == "Theater"
+        assert infer_category("Disney's Encanto In Concert Live to Film", "Theater") == "Theater"
 
     def test_craft_beer_is_not_arts_and_crafts(self):
         """Why "craft" is not a rule."""
@@ -208,16 +216,19 @@ class TestClassifyFromTitle:
         """The case that prompted this: it describes where, not what."""
         assert classify_from_title("Chicago Jazz Festival") == "Music"
 
-    @pytest.mark.parametrize("title,expected", [
-        ("Chicago Jazz Festival", "Music"),
-        ("Comedy Open Mic Night", "Comedy"),
-        ("Art Gallery Opening Reception", "Arts"),
-        ("Yoga in Millennium Park", "Health & Wellness"),
-        ("Pride Parade 2026", "LGBTQ"),
-        ("Film Screening: Casablanca", "Film"),
-        ("Astronomy on Tap", "Tech / Educational"),
-        ("In Conversation with Neil deGrasse Tyson", "Tech / Educational"),
-    ])
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            ("Chicago Jazz Festival", "Music"),
+            ("Comedy Open Mic Night", "Comedy"),
+            ("Art Gallery Opening Reception", "Arts"),
+            ("Yoga in Millennium Park", "Health & Wellness"),
+            ("Pride Parade 2026", "LGBTQ"),
+            ("Film Screening: Casablanca", "Film"),
+            ("Astronomy on Tap", "Tech / Educational"),
+            ("In Conversation with Neil deGrasse Tyson", "Tech / Educational"),
+        ],
+    )
     def test_classified_from_the_title(self, title, expected):
         assert classify_from_title(title) == expected
 
@@ -253,20 +264,21 @@ class TestClassifyAll:
         assert classify_all("MALL DRAG CHICAGO", "Music") == ["Music", "LGBTQ"]
 
     def test_a_drag_show_at_a_theater_is_both(self):
-        assert classify_all("Kiki Queens - Drag to the Future", "Theater") == [
-            "Theater", "LGBTQ"
-        ]
+        assert classify_all("Kiki Queens - Drag to the Future", "Theater") == ["Theater", "LGBTQ"]
 
     def test_a_user_group_meeting_is_tech_and_community(self):
         assert classify_all("CHIPY __MAIN__ MEETING", "Tech / Educational") == [
-            "Tech / Educational", "Community"
+            "Tech / Educational",
+            "Community",
         ]
 
     def test_the_primary_is_whatever_single_label_would_have_chosen(self):
         """Nothing that displays `category` had to change."""
-        for title, fallback in [("MALL DRAG CHICAGO", "Music"),
-                                ("SEWING FREAK", "Music"),
-                                ("Kiefer w/ Shibo", "Music")]:
+        for title, fallback in [
+            ("MALL DRAG CHICAGO", "Music"),
+            ("SEWING FREAK", "Music"),
+            ("Kiefer w/ Shibo", "Music"),
+        ]:
             assert classify_all(title, fallback)[0] == infer_category(title, fallback)
 
     def test_an_overridden_venue_category_does_not_come_back_as_a_secondary(self):
@@ -283,9 +295,8 @@ class TestClassifyAll:
 
     def test_capped(self):
         from shared.categories import MAX_CATEGORIES
-        labels = classify_all(
-            "Drag Comedy Yoga Film Brunch Workshop Gallery Concert", "Music"
-        )
+
+        labels = classify_all("Drag Comedy Yoga Film Brunch Workshop Gallery Concert", "Music")
         assert len(labels) <= MAX_CATEGORIES
 
     def test_no_duplicates(self):

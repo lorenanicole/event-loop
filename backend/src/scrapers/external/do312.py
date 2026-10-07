@@ -1,21 +1,22 @@
 import logging
+from datetime import datetime
+
 import httpx
-from datetime import datetime, timedelta
-from typing import Optional, Union
-from sqlalchemy.orm import Session
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from shared.models import EventCreate
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
+
+from app.ai.event_enrichment import (
+    extract_address,
+    extract_from_event_text,
+    extract_is_outdoor,
+    extract_venue_name,
+)
+from scrapers.custom.venue.chicago_events_scraper import venue_to_neighborhood
 from shared.database.models import EventModel
 from shared.database.neighborhoods import load_boundaries, resolve_neighborhood_id
 from shared.geo import resolve_neighborhood
-from scrapers.custom.venue.chicago_events_scraper import venue_to_neighborhood
-from app.ai.event_enrichment import (
-    extract_from_event_text,
-    extract_is_outdoor,
-    extract_address,
-    extract_venue_name,
-)
+from shared.models import EventCreate
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,6 @@ logger = logging.getLogger(__name__)
 # Raising busy_timeout to 30s did not help: no wait beats a transaction held
 # that long. Committing in batches does, by letting go between them.
 WRITE_BATCH = 50
-
 
 
 class DO312Scraper:
@@ -46,7 +46,9 @@ class DO312Scraper:
             events = []
             page = 1
 
-            async with httpx.AsyncClient(timeout=self.REQUEST_TIMEOUT, follow_redirects=True) as client:
+            async with httpx.AsyncClient(
+                timeout=self.REQUEST_TIMEOUT, follow_redirects=True
+            ) as client:
                 while True:
                     params = {
                         "page": page,
@@ -87,7 +89,7 @@ class DO312Scraper:
             logger.error(f"DO312 fetch error: {type(e).__name__}: {e}")
             return []
 
-    def _parse_event_data(self, data: dict) -> Optional[EventCreate]:
+    def _parse_event_data(self, data: dict) -> EventCreate | None:
         """Parse a single event from API response"""
         try:
             title = data.get("title", "").strip()
@@ -137,11 +139,13 @@ class DO312Scraper:
             # Fall back to the text extraction only when the venue is missing.
             venue = data.get("venue") or {}
             venue_name = venue.get("title") or extract_venue_name(title)
-            address = venue.get("full_address") or venue.get("address") or extract_address(full_text)
+            address = (
+                venue.get("full_address") or venue.get("address") or extract_address(full_text)
+            )
             try:
                 latitude = float(venue["latitude"])
                 longitude = float(venue["longitude"])
-            except (KeyError, TypeError, ValueError):
+            except KeyError, TypeError, ValueError:
                 latitude = longitude = None
 
             # Multi-day runs so the UI can show "Oct 22 - Dec 6" rather than
@@ -151,7 +155,7 @@ class DO312Scraper:
             if end_str:
                 try:
                     date_end = datetime.fromisoformat(end_str.replace("Z", "").split(".")[0])
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     date_end = None
             if date_end and date_end.date() <= event_date.date():
                 date_end = None
@@ -185,7 +189,7 @@ class DO312Scraper:
             logger.debug(f"Parse error: {e}")
             return None
 
-    async def scrape_and_save(self, db: Union[Session, AsyncSession], days_ahead: int = 30) -> int:
+    async def scrape_and_save(self, db: Session | AsyncSession, days_ahead: int = 30) -> int:
         """Fetch events and save new ones to database (sync or async)"""
         try:
             events = await self.fetch_events(days_ahead=days_ahead)
@@ -198,9 +202,9 @@ class DO312Scraper:
             # placing each venue costs no network calls.
             boundaries = await load_boundaries(db) if is_async else {}
             venue_map = venue_to_neighborhood()
-            neighborhood_ids: dict[str, Optional[int]] = {}
+            neighborhood_ids: dict[str, int | None] = {}
 
-            async def neighborhood_id_for(event_data) -> Optional[int]:
+            async def neighborhood_id_for(event_data) -> int | None:
                 """Place an event, caching the id per neighborhood."""
                 if not boundaries:
                     return None
@@ -241,9 +245,7 @@ class DO312Scraper:
 
                 if is_async:
                     # Async query
-                    result = await db.execute(
-                        select(EventModel).filter_by(origination_url=url)
-                    )
+                    result = await db.execute(select(EventModel).filter_by(origination_url=url))
                     existing = result.scalar_one_or_none()
                 else:
                     # Sync query

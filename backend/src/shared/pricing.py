@@ -37,7 +37,6 @@ thing on a listing somebody might plan around.
 
 import json
 import re
-from typing import Optional
 
 from bs4 import BeautifulSoup
 
@@ -51,7 +50,7 @@ def money(value: float) -> str:
     return f"${value:.0f}" if value == int(value) else f"${value:.2f}"
 
 
-def render(prices: list[float]) -> Optional[str]:
+def render(prices: list[float]) -> str | None:
     """A list of amounts as one displayable price, or a range."""
     if not prices:
         return None
@@ -65,18 +64,18 @@ def render(prices: list[float]) -> Optional[str]:
     return money(low) if low == high else f"{money(low)}-{money(high)}"
 
 
-def _as_amount(raw) -> Optional[float]:
+def _as_amount(raw) -> float | None:
     # `is` rather than `in (..., False)`: 0 == False in Python, so a membership
     # test discards a price of zero - every free event lost its price.
     if raw is None or raw is True or raw is False or raw == "":
         return None
     try:
         return float(str(raw).replace("$", "").replace(",", "").strip())
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
-def price_from_offers(node: dict) -> Optional[str]:
+def price_from_offers(node: dict) -> str | None:
     """Read a price out of a schema.org Event's `offers`.
 
     `offers` may be a single object or a list of them, one per ticket tier, in
@@ -102,7 +101,7 @@ def price_from_offers(node: dict) -> Optional[str]:
     return render(prices)
 
 
-def price_from_jsonld(soup: BeautifulSoup) -> Optional[str]:
+def price_from_jsonld(soup: BeautifulSoup) -> str | None:
     """The first price in any schema.org block on the page.
 
     Walks the whole structure rather than only the top level: sites wrap the
@@ -112,7 +111,7 @@ def price_from_jsonld(soup: BeautifulSoup) -> Optional[str]:
     for tag in soup.find_all("script", type="application/ld+json"):
         try:
             data = json.loads(tag.string or "")
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             continue
         stack = [data]
         visited = 0
@@ -144,62 +143,55 @@ SOURCE_PRICE_RULES: dict[str, list[tuple[str, str]]] = {
     # Most Park District programming is genuinely free, which is why this one
     # rule covers more rows than every other source put together.
     "chicago_park_district": [(r"Event Fee\s*\$(\d+(?:\.\d{2})?)", "one")],
-
     # "TICKETS General Admission $25 VIP $40 Student Tickets $20 CASH ONLY",
     # and some pages write "Thursday - $30 general admission - $45 VIP".
     "chicago_venue_jazz_showcase": [
         (r"General Admission\s*\$(\d+)", "one"),
         (r"\$(\d+)\s*(?:-|—|–)?\s*general admission", "one"),
     ],
-
     # "$23 General Public ($20 + $3 fee)" - the advertised total comes first,
     # and the parenthesised split is the base plus the service fee. Capturing
     # the leading number reports what somebody actually pays.
     "chicago_venue_old_town_school_of_folk_music": [
         (r"\$(\d+)\s+General Public", "one"),
     ],
-
     # "Doors open - 9:00 PM Tickets TIER 1 $20.00 Get tickets TIER 2 $25.00",
     # also spelled "EARLY BIRD" / "General Admission". Every tier is collected
     # so the row shows the span rather than just the cheapest.
     "chicago_venue_sleeping_village": [
         (r"(?:TIER\s*\d|EARLY BIRD|General Admission)\s*\$(\d+)(?:\.\d{2})?", "all"),
     ],
-
     # "Select Evening - 15 Performances - $73.00 to $82.00".
     "chicago_venue_goodman_theatre": [
         (r"\$(\d+)(?:\.\d{2})?\s+to\s+\$(\d+)(?:\.\d{2})?", "range"),
     ],
-
     # "Show Length: 60 Minutes Tickets: $20 Rated: R".
     "chicago_venue_den_theatre": [(r"Tickets:\s*\$(\d+)", "one")],
-
     # "Baffes Theatre at the Beverly Arts Center Tickets: $35 for adults".
     "chicago_venue_beverly_arts_center": [(r"Tickets:\s*\$(\d+)", "one")],
-
     # "Wed, Oct 7th - Doors 7PM - Show 8PM - $10adv/$15doors".
     "chicago_venue_martyrss": [
         (r"\$(\d+)\s*adv\s*/\s*\$(\d+)\s*doors?", "range"),
     ],
-
     # "General admission is $27 when tickets are purchased online".
     "chicago_venue_navy_pier": [(r"General admission is \$(\d+)", "one")],
 }
 
 
-def price_from_source_rules(source: Optional[str], text: str) -> Optional[str]:
+def price_from_source_rules(source: str | None, text: str) -> str | None:
     """Apply the patterns written for this source, if there are any."""
     for pattern, mode in SOURCE_PRICE_RULES.get(source or "", []):
         if mode == "all":
             amounts = [
-                a for m in re.finditer(pattern, text, re.I)
+                a
+                for m in re.finditer(pattern, text, re.IGNORECASE)
                 if (a := _as_amount(m.group(1))) is not None
             ]
             if amounts:
                 return render(amounts)
             continue
 
-        match = re.search(pattern, text, re.I)
+        match = re.search(pattern, text, re.IGNORECASE)
         if not match:
             continue
         if mode == "range":
@@ -220,7 +212,7 @@ def visible_text(soup: BeautifulSoup) -> str:
     return " ".join((soup.get_text(" ") or "").split())
 
 
-def cost_from_page(html: str, source: Optional[str] = None) -> Optional[str]:
+def cost_from_page(html: str, source: str | None = None) -> str | None:
     """The ticket price on an event page, structured data preferred."""
     if not html or "<" not in html:
         return None

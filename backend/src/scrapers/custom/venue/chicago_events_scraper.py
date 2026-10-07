@@ -16,18 +16,14 @@ the split is invisible to them.
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime
 
 import httpx
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
 
 from shared.categories import classify_all, infer_category, normalize_category
-from shared.database.models import Base, EventModel, NeighborhoodModel, VenueModel
+from shared.database.models import EventModel
 from shared.database.neighborhoods import canonical_neighborhood, resolve_neighborhood_id
-from shared.localtime import to_chicago_naive
 
 # Re-exported for callers that imported these from here before the split.
 # Named explicitly rather than star-imported: a star says "something in there"
@@ -50,10 +46,11 @@ from .venue_parsing import (  # noqa: F401
     venue_source_name,
 )
 from .venue_scraper import VenueConfig, VenueEvent, VenueScraper, parse_cost  # noqa: F401
-from .venues import CHICAGO_VENUES  # noqa: F401
+from .venues import CHICAGO_VENUES
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 def venue_to_neighborhood() -> dict[str, str]:
     """Map lowercased venue name -> canonical neighborhood name.
@@ -70,9 +67,7 @@ def venue_to_neighborhood() -> dict[str, str]:
 
 async def _url_taken(session, url: str) -> bool:
     """True if some event row already claims this origination_url."""
-    result = await session.execute(
-        select(EventModel.id).where(EventModel.origination_url == url)
-    )
+    result = await session.execute(select(EventModel.id).where(EventModel.origination_url == url))
     return result.scalars().first() is not None
 
 
@@ -80,7 +75,7 @@ async def save_events_to_db(
     async_session_maker,
     config: VenueConfig,
     events: list[VenueEvent],
-    neighborhood: Optional[str] = None,
+    neighborhood: str | None = None,
 ) -> None:
     """Save extracted events to database (upsert to avoid duplicates)."""
     if not events:
@@ -126,8 +121,12 @@ async def save_events_to_db(
             # Add or update events
             for i, event in enumerate(events):
                 # Parse date string to datetime objects
-                parsed_date, parsed_date_end = parse_date_range(event.date) if event.date else (None, None)
-                parsed_date_end_override, _ = parse_date_range(event.date_end) if event.date_end else (None, None)
+                parsed_date, parsed_date_end = (
+                    parse_date_range(event.date) if event.date else (None, None)
+                )
+                parsed_date_end_override, _ = (
+                    parse_date_range(event.date_end) if event.date_end else (None, None)
+                )
 
                 # Use override if provided, otherwise use parsed end date
                 final_date_end = parsed_date_end_override or parsed_date_end
@@ -138,9 +137,9 @@ async def save_events_to_db(
                 # This handles venues that don't have unique event URLs (all use fallback)
                 existing = await session.execute(
                     select(EventModel).where(
-                        (EventModel.name == event.name) &
-                        (EventModel.source == source_name) &
-                        (EventModel.date == parsed_date)  # Same event on same date
+                        (EventModel.name == event.name)
+                        & (EventModel.source == source_name)
+                        & (EventModel.date == parsed_date)  # Same event on same date
                     )
                 )
                 existing_event = existing.scalars().first()
@@ -179,9 +178,7 @@ async def save_events_to_db(
                         date_end=final_date_end,
                         time=event.time,
                         time_end=event.time_end,
-                        category=normalize_category(
-                            infer_category(event.name, event.category)
-                        ),
+                        category=normalize_category(infer_category(event.name, event.category)),
                         # Every applicable label, so the event is findable
                         # under its secondary categories too.
                         categories=classify_all(event.name, event.category),
@@ -216,9 +213,9 @@ async def scrape_chicago_events() -> dict[str, list[VenueEvent]]:
 
     async with httpx.AsyncClient(timeout=15) as client:
         for neighborhood, venues in CHICAGO_VENUES.items():
-            logger.info(f"\n{'='*60}")
+            logger.info(f"\n{'=' * 60}")
             logger.info(f"Scraping {neighborhood} ({len(venues)} venues)")
-            logger.info('='*60)
+            logger.info("=" * 60)
 
             neighborhood_events = []
             for config in venues:
@@ -235,17 +232,19 @@ async def scrape_chicago_events() -> dict[str, list[VenueEvent]]:
                     # Save events to database
                     await save_events_to_db(async_session, config, events, neighborhood)
 
-                except asyncio.TimeoutError:
-                    logger.error(f"{config.name}: timed out after {VENUE_SCRAPE_TIMEOUT}s, skipping")
+                except TimeoutError:
+                    logger.error(
+                        f"{config.name}: timed out after {VENUE_SCRAPE_TIMEOUT}s, skipping"
+                    )
                 except Exception as e:
                     logger.error(f"Error scraping {config.name}: {e}")
 
             results[neighborhood] = neighborhood_events
             logger.info(f"{neighborhood}: {len(neighborhood_events)} total events\n")
 
-    logger.info(f"\n{'='*60}")
+    logger.info(f"\n{'=' * 60}")
     logger.info(f"✅ TOTAL CHICAGO EVENTS: {total_events}")
-    logger.info('='*60)
+    logger.info("=" * 60)
 
     for neighborhood in sorted(results.keys()):
         events = results[neighborhood]
@@ -262,4 +261,5 @@ async def scrape_chicago_events() -> dict[str, list[VenueEvent]]:
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(scrape_chicago_events())

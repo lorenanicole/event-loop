@@ -17,11 +17,11 @@ import asyncio
 import logging
 import re
 import time
-from typing import Optional
 
 from sqlalchemy import select
 
 from shared.database.models import GeocodeCacheModel
+
 from .chicago_neighborhoods import chicago_neighborhoods
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ def looks_like_address(text: str) -> bool:
     return True
 
 
-def normalize_address(address: Optional[str], venue_name: Optional[str] = None) -> Optional[str]:
+def normalize_address(address: str | None, venue_name: str | None = None) -> str | None:
     """Cache key for a location: lowercase, collapsed whitespace, Chicago implied.
 
     Returns None when the text is not plausibly a place.
@@ -73,9 +73,7 @@ def normalize_address(address: Optional[str], venue_name: Optional[str] = None) 
 
 
 async def _cached_coordinates(session, key: str):
-    result = await session.execute(
-        select(GeocodeCacheModel).where(GeocodeCacheModel.query == key)
-    )
+    result = await session.execute(select(GeocodeCacheModel).where(GeocodeCacheModel.query == key))
     return result.scalars().first()
 
 
@@ -110,12 +108,12 @@ async def _geocode_with_nominatim(key: str):
         return None
     try:
         return float(payload[0]["lat"]), float(payload[0]["lon"])
-    except (KeyError, IndexError, TypeError, ValueError):
+    except KeyError, IndexError, TypeError, ValueError:
         return None
 
 
 async def coordinates_for_address(
-    session, address: Optional[str], venue_name: Optional[str] = None, allow_network: bool = True
+    session, address: str | None, venue_name: str | None = None, allow_network: bool = True
 ):
     """Coordinates for a free-text address, from cache or the geocoder."""
     key = normalize_address(address, venue_name)
@@ -149,13 +147,13 @@ async def coordinates_for_address(
 async def resolve_neighborhood(
     session,
     boundaries: dict,
-    latitude: Optional[float] = None,
-    longitude: Optional[float] = None,
-    address: Optional[str] = None,
-    venue_name: Optional[str] = None,
-    venue_map: Optional[dict] = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
+    address: str | None = None,
+    venue_name: str | None = None,
+    venue_map: dict | None = None,
     allow_network: bool = True,
-) -> tuple[Optional[str], Optional[float], Optional[float]]:
+) -> tuple[str | None, float | None, float | None]:
     """Best-effort neighborhood for an event.
 
     Returns (neighborhood, latitude, longitude) - the coordinates come back too

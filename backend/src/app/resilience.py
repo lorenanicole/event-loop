@@ -3,16 +3,17 @@ Resilience patterns: circuit breaker, retry logic, graceful degradation.
 Handles LLM failures, database unavailability, and rate limiting.
 """
 
-from enum import Enum
-from datetime import datetime, timedelta
-import logging
 import asyncio
+import logging
+from datetime import datetime, timedelta
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
 
 class ServiceStatus(Enum):
     """Circuit breaker states."""
+
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"
@@ -107,14 +108,12 @@ class RetryPolicy:
             except Exception as e:
                 if attempt < self.max_retries:
                     logger.warning(
-                        f"Retry {attempt + 1}/{self.max_retries} for {operation_name}: {str(e)}"
+                        f"Retry {attempt + 1}/{self.max_retries} for {operation_name}: {e!s}"
                     )
                     await asyncio.sleep(delay_ms / 1000.0)
                     delay_ms = min(delay_ms * 2, self.max_delay_ms)  # Exponential backoff
                 else:
-                    logger.error(
-                        f"All retries exhausted for {operation_name}: {str(e)}"
-                    )
+                    logger.error(f"All retries exhausted for {operation_name}: {e!s}")
                     raise
 
 
@@ -130,7 +129,10 @@ class ErrorClassifier:
         error_str = str(error).lower()
 
         # Authentication/Authorization errors (permanent)
-        if any(x in error_str for x in ["invalid api key", "invalid_api_key", "unauthorized", "403", "401"]):
+        if any(
+            x in error_str
+            for x in ["invalid api key", "invalid_api_key", "unauthorized", "403", "401"]
+        ):
             return ("auth_error", False)
 
         # Rate limiting (transient) - check this before "quota" in insufficient_quota
@@ -157,10 +159,7 @@ class ErrorClassifier:
         error_str = str(error).lower()
 
         # Connection errors (transient)
-        if any(
-            x in error_str
-            for x in ["connection", "timeout", "pool", "connect", "refused"]
-        ):
+        if any(x in error_str for x in ["connection", "timeout", "pool", "connect", "refused"]):
             return ("connection_error", True)
 
         # Query errors (permanent)

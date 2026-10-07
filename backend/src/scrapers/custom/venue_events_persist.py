@@ -4,11 +4,12 @@ Fetch and persist events from venue scrapers to the database.
 
 import logging
 from datetime import datetime
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
-from shared.database.models import EventModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from scrapers.venue_scraper import scrape_all_venues
+from shared.database.models import EventModel
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ async def fetch_and_persist_venue_events(session: AsyncSession) -> int:
                     try:
                         # Try parsing various date formats
                         from dateutil import parser
+
                         event_date = parser.parse(event.date)
                     except Exception:
                         logger.debug(f"Could not parse date: {event.date}")

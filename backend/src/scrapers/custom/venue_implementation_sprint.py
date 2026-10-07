@@ -12,19 +12,22 @@ Strategy:
 """
 
 import asyncio
-import sys
 import json
-sys.path.insert(0, '/Users/lorenamesa/Workspace/python315')
+import sys
 
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker, selectinload
-from sqlalchemy import select, update
-from shared.database.models import NeighborhoodModel, VenueModel
-from playwright.async_api import async_playwright
+sys.path.insert(0, "/Users/lorenamesa/Workspace/python315")
+
+
 from bs4 import BeautifulSoup
-import re
+from playwright.async_api import async_playwright
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+
+from shared.database.models import NeighborhoodModel, VenueModel
 
 DATABASE_URL = "sqlite+aiosqlite:////Users/lorenamesa/Workspace/python315/events.db"
+
 
 async def analyze_venue_page(venue: VenueModel) -> dict:
     """
@@ -41,10 +44,10 @@ async def analyze_venue_page(venue: VenueModel) -> dict:
         async with async_playwright() as p:
             browser = await p.chromium.launch(
                 headless=True,
-                args=['--disable-blink-features=AutomationControlled', '--disable-dev-shm-usage']
+                args=["--disable-blink-features=AutomationControlled", "--disable-dev-shm-usage"],
             )
             page = await browser.new_page(
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             )
             await page.add_init_script("""
                 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
@@ -99,7 +102,7 @@ async def analyze_venue_page(venue: VenueModel) -> dict:
                             selector_results[selector] = {
                                 "count": len(elements),
                                 "samples": sample_texts,
-                                "description": description
+                                "description": description,
                             }
                 except:
                     pass
@@ -117,20 +120,21 @@ async def analyze_venue_page(venue: VenueModel) -> dict:
 
             return analysis
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return {
             "venue_id": venue.id,
             "venue_name": venue.name,
             "status": "timeout",
-            "message": "Page loading timed out"
+            "message": "Page loading timed out",
         }
     except Exception as e:
         return {
             "venue_id": venue.id,
             "venue_name": venue.name,
             "status": "error",
-            "message": str(e)
+            "message": str(e),
         }
+
 
 async def sprint_neighborhood(neighborhood_name: str, max_venues: int = 5):
     """
@@ -160,9 +164,9 @@ async def sprint_neighborhood(neighborhood_name: str, max_venues: int = 5):
             print(f"\n✓ No untested venues in {neighborhood_name}")
             return
 
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print(f"SPRINT: {neighborhood_name} ({len(venues)} venues to test)")
-        print(f"{'='*70}\n")
+        print(f"{'=' * 70}\n")
 
         sprint_results = []
 
@@ -173,7 +177,7 @@ async def sprint_neighborhood(neighborhood_name: str, max_venues: int = 5):
             sprint_results.append(analysis)
 
             if analysis["status"] == "selectors_found":
-                print(f"  ✓ Found selectors!")
+                print("  ✓ Found selectors!")
                 print(f"    Recommended: {analysis['recommended_selector']}")
                 print(f"    Matches: {analysis['recommended_selector_matches']} elements")
 
@@ -183,15 +187,15 @@ async def sprint_neighborhood(neighborhood_name: str, max_venues: int = 5):
                     .where(VenueModel.id == venue.id)
                     .values(
                         scraper_status="in_progress",
-                        description=json.dumps(analysis["selectors_found"])
+                        description=json.dumps(analysis["selectors_found"]),
                     )
                 )
                 await session.execute(stmt)
 
-                print(f"  → Saved to database, ready for scraper implementation\n")
+                print("  → Saved to database, ready for scraper implementation\n")
 
             elif analysis["status"] == "no_events_found":
-                print(f"  ✗ No events found on page")
+                print("  ✗ No events found on page")
                 stmt = (
                     update(VenueModel)
                     .where(VenueModel.id == venue.id)
@@ -213,24 +217,26 @@ async def sprint_neighborhood(neighborhood_name: str, max_venues: int = 5):
 
         # Summary
         working = sum(1 for r in sprint_results if r["status"] == "selectors_found")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
         print(f"Sprint Summary: {working}/{len(sprint_results)} venues have viable selectors")
-        print(f"{'='*70}\n")
+        print(f"{'=' * 70}\n")
 
     await engine.dispose()
+
 
 async def main():
     """Run sprints on priority neighborhoods."""
 
     # Priority neighborhoods with researched event page URLs
     priority_neighborhoods = [
-        "Loop",      # 3 venues, major theaters
-        "Uptown",    # 3 venues, jazz/music venues
+        "Loop",  # 3 venues, major theaters
+        "Uptown",  # 3 venues, jazz/music venues
         "Lincoln Park",  # 5 venues, major entertainment district
     ]
 
     for neighborhood in priority_neighborhoods:
         await sprint_neighborhood(neighborhood, max_venues=10)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

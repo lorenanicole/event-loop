@@ -1,13 +1,17 @@
-import logging
 import re
 from datetime import datetime, timedelta
-from typing import Optional
-from fastapi import APIRouter, Depends, Query, Path, HTTPException
-from fastapi.responses import StreamingResponse
-from pydantic import ConfigDict, BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import String, and_, cast, func, or_, select
 
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import String, and_, cast, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app import telemetry
+from app.ai.executor import ChatExecutor, sse_event_formatter
+from app.logging import get_logger
+from app.security import rate_limiter
+from shared.categories import category_filter, extract_category_concepts
 from shared.database import feed_order, get_db, start_of_day, upcoming_events_filter
 from shared.database.models import (
     AuditLogModel,
@@ -15,12 +19,7 @@ from shared.database.models import (
     EventModel,
     NeighborhoodModel,
 )
-from shared.categories import category_filter, extract_category_concepts
 from shared.models import Event, EventSearch
-from app.ai.executor import ChatExecutor, sse_event_formatter
-from app import telemetry
-from app.security import rate_limiter
-from app.logging import get_logger
 
 logger = get_logger(__name__)
 # No router-level tags: each endpoint declares its own, and a tag here
@@ -63,19 +62,28 @@ _RUN_EXAMPLE = {
 
 def _ok(example, description="Successful response"):
     """One 200 block carrying a concrete example."""
-    return {200: {"description": description,
-                  "content": {"application/json": {"example": example}}}}
+    return {
+        200: {"description": description, "content": {"application/json": {"example": example}}}
+    }
 
 
 _VALIDATION_ERROR = {
     422: {
         "description": "A query or body value failed validation - for instance "
-                       "`limit` outside 1-100, or a missing `query`.",
-        "content": {"application/json": {"example": {
-            "detail": [{"loc": ["query", "limit"], "msg":
-                        "Input should be less than or equal to 100",
-                        "type": "less_than_equal"}]
-        }}},
+        "`limit` outside 1-100, or a missing `query`.",
+        "content": {
+            "application/json": {
+                "example": {
+                    "detail": [
+                        {
+                            "loc": ["query", "limit"],
+                            "msg": "Input should be less than or equal to 100",
+                            "type": "less_than_equal",
+                        }
+                    ]
+                }
+            }
+        },
     }
 }
 
@@ -108,9 +116,13 @@ def _category_matches(label: str):
         "have happened. Paging past the end returns an empty array, not a 404."
     ),
     tags=["Events"],
-    responses={**_ok([_EVENT_EXAMPLE, _RUN_EXAMPLE],
-                     "Events, soonest first. Empty array if `skip` is past the end."),
-               **_VALIDATION_ERROR},
+    responses={
+        **_ok(
+            [_EVENT_EXAMPLE, _RUN_EXAMPLE],
+            "Events, soonest first. Empty array if `skip` is past the end.",
+        ),
+        **_VALIDATION_ERROR,
+    },
 )
 async def list_events(
     skip: int = Query(0, ge=0, description="Number of events to skip"),
@@ -166,11 +178,22 @@ async def list_events(
         "alongside 'Health & Wellness' - because they come from different sources."
     ),
     tags=["Events"],
-    responses=_ok(["Arts & Culture", "Comedy", "Food & Drink", "Health & Wellness",
-                   "Music", "Theatre & Performing Arts", "comedy", "music", "theater"],
-                  "Categories with upcoming events. Casing and wording are "
-                  "inconsistent because each source labels its own events; "
-                  "'Music' and 'music' are different sources, not duplicates."),
+    responses=_ok(
+        [
+            "Arts & Culture",
+            "Comedy",
+            "Food & Drink",
+            "Health & Wellness",
+            "Music",
+            "Theatre & Performing Arts",
+            "comedy",
+            "music",
+            "theater",
+        ],
+        "Categories with upcoming events. Casing and wording are "
+        "inconsistent because each source labels its own events; "
+        "'Music' and 'music' are different sources, not duplicates.",
+    ),
 )
 async def get_event_categories(db: AsyncSession = Depends(get_db)):
     """
@@ -198,17 +221,17 @@ async def get_event_categories(db: AsyncSession = Depends(get_db)):
         cat_lower = cat.lower()
 
         # Exclude placeholder/junk categories
-        if cat_lower in ['undefined', 'miscellaneous', 'events', 'other', 'online search']:
+        if cat_lower in ["undefined", "miscellaneous", "events", "other", "online search"]:
             return False
 
         date_patterns = [
-            r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)',
-            r'^\d+\s*,',
-            r'until\s+',
-            r'\d{4}',
+            r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)",
+            r"^\d+\s*,",
+            r"until\s+",
+            r"\d{4}",
         ]
         has_date = any(re.search(pattern, cat_lower, re.IGNORECASE) for pattern in date_patterns)
-        has_digit = bool(re.search(r'\d', cat_lower))
+        has_digit = bool(re.search(r"\d", cat_lower))
         return not (has_date or has_digit)
 
     # The same category is stored with different casing ("Music" and "music"),
@@ -240,12 +263,18 @@ async def get_event_categories(db: AsyncSession = Depends(get_db)):
         "events. Pass min_events=1 for all of them."
     ),
     tags=["Events"],
-    responses={**_ok([{"name": "Loop", "event_count": 379},
-                      {"name": "Lincoln Park", "event_count": 295},
-                      {"name": "Wicker Park", "event_count": 294},
-                      {"name": "Pilsen", "event_count": 172}],
-                     "Neighborhoods with at least `min_events` upcoming events"),
-               **_VALIDATION_ERROR},
+    responses={
+        **_ok(
+            [
+                {"name": "Loop", "event_count": 379},
+                {"name": "Lincoln Park", "event_count": 295},
+                {"name": "Wicker Park", "event_count": 294},
+                {"name": "Pilsen", "event_count": 172},
+            ],
+            "Neighborhoods with at least `min_events` upcoming events",
+        ),
+        **_VALIDATION_ERROR,
+    },
 )
 async def get_event_neighborhoods(
     min_events: int = Query(
@@ -301,20 +330,28 @@ async def get_event_neighborhoods(
         "failing."
     ),
     tags=["Events"],
-    responses=_ok({"categories": [{"name": "Music", "event_count": 1912},
-                                  {"name": "Theater", "event_count": 209}],
-                   "neighborhoods": [{"name": "Loop", "event_count": 379},
-                                     {"name": "Lincoln Park", "event_count": 295}]},
-                  "Counts for each facet, busiest first"),
+    responses=_ok(
+        {
+            "categories": [
+                {"name": "Music", "event_count": 1912},
+                {"name": "Theater", "event_count": 209},
+            ],
+            "neighborhoods": [
+                {"name": "Loop", "event_count": 379},
+                {"name": "Lincoln Park", "event_count": 295},
+            ],
+        },
+        "Counts for each facet, busiest first",
+    ),
 )
 async def get_filter_counts(
-    category: Optional[str] = Query(
+    category: str | None = Query(
         None, description="Restrict the neighborhood counts to this category"
     ),
-    neighborhood: Optional[str] = Query(
+    neighborhood: str | None = Query(
         None, description="Restrict the category counts to this neighborhood"
     ),
-    timeframe: Optional[str] = Query(
+    timeframe: str | None = Query(
         None, description="Restrict both, e.g. 'tonight' or 'this weekend'"
     ),
     db: AsyncSession = Depends(get_db),
@@ -332,8 +369,7 @@ async def get_filter_counts(
                     EventModel.date <= end,
                     or_(
                         EventModel.date_end >= window_start,
-                        and_(EventModel.date_end.is_(None),
-                             EventModel.date >= window_start),
+                        and_(EventModel.date_end.is_(None), EventModel.date >= window_start),
                     ),
                 )
             )
@@ -354,21 +390,30 @@ async def get_filter_counts(
     label = func.json_each(
         func.coalesce(EventModel.categories, func.json_array(EventModel.category))
     ).table_valued("value", joins_implicitly=True)
-    category_stmt = constrain(
-        select(label.c.value, func.count(EventModel.id).label("n"))
-        .outerjoin(NeighborhoodModel, EventModel.neighborhood_id == NeighborhoodModel.id)
-        .where(EventModel.category.isnot(None)),
-        with_category=False,
-        with_neighborhood=True,
-    ).group_by(label.c.value).order_by(func.count(EventModel.id).desc())
+    category_stmt = (
+        constrain(
+            select(label.c.value, func.count(EventModel.id).label("n"))
+            .outerjoin(NeighborhoodModel, EventModel.neighborhood_id == NeighborhoodModel.id)
+            .where(EventModel.category.isnot(None)),
+            with_category=False,
+            with_neighborhood=True,
+        )
+        .group_by(label.c.value)
+        .order_by(func.count(EventModel.id).desc())
+    )
 
     # Neighborhoods: narrowed by category and timeframe, not by neighborhood.
-    neighborhood_stmt = constrain(
-        select(NeighborhoodModel.name, func.count(EventModel.id).label("n"))
-        .join(EventModel, EventModel.neighborhood_id == NeighborhoodModel.id),
-        with_category=True,
-        with_neighborhood=False,
-    ).group_by(NeighborhoodModel.name).order_by(func.count(EventModel.id).desc())
+    neighborhood_stmt = (
+        constrain(
+            select(NeighborhoodModel.name, func.count(EventModel.id).label("n")).join(
+                EventModel, EventModel.neighborhood_id == NeighborhoodModel.id
+            ),
+            with_category=True,
+            with_neighborhood=False,
+        )
+        .group_by(NeighborhoodModel.name)
+        .order_by(func.count(EventModel.id).desc())
+    )
 
     categories = (await db.execute(category_stmt)).all()
     neighborhoods = (await db.execute(neighborhood_stmt)).all()
@@ -376,7 +421,6 @@ async def get_filter_counts(
         "categories": [{"name": name, "event_count": n} for name, n in categories],
         "neighborhoods": [{"name": name, "event_count": n} for name, n in neighborhoods],
     }
-
 
 
 @router.get(
@@ -389,11 +433,14 @@ async def get_filter_counts(
         "still resolves rather than 404ing."
     ),
     tags=["Events"],
-    responses={**_ok(_EVENT_EXAMPLE, "The requested event"),
-               404: {"description": "No event with that id.",
-                     "content": {"application/json": {
-                         "example": {"detail": "Event not found"}}}},
-               **_VALIDATION_ERROR},
+    responses={
+        **_ok(_EVENT_EXAMPLE, "The requested event"),
+        404: {
+            "description": "No event with that id.",
+            "content": {"application/json": {"example": {"detail": "Event not found"}}},
+        },
+        **_VALIDATION_ERROR,
+    },
 )
 async def get_event(
     event_id: int = Path(..., description="Unique event identifier", ge=1),
@@ -428,10 +475,14 @@ async def get_event(
     "/search",
     response_model=list[Event],
     summary="Natural language event search",
-    responses={**_ok([_EVENT_EXAMPLE],
-                     "Matching events, soonest first. An empty array means "
-                     "nothing matched - it is not an error."),
-               **_VALIDATION_ERROR},
+    responses={
+        **_ok(
+            [_EVENT_EXAMPLE],
+            "Matching events, soonest first. An empty array means "
+            "nothing matched - it is not an error.",
+        ),
+        **_VALIDATION_ERROR,
+    },
     description="Search events using natural language queries with category and date filtering",
     tags=["Search"],
 )
@@ -492,16 +543,12 @@ async def search_events(
 
     # Filter by keywords
     if keywords:
-        keyword_conditions = [
-            EventModel.name.ilike(f"%{kw}%") for kw in keywords
-        ]
+        keyword_conditions = [EventModel.name.ilike(f"%{kw}%") for kw in keywords]
         filters.append(or_(*keyword_conditions))
 
     # Filter by category
     if category_filters:
-        condition = category_filter(
-            EventModel.category, category_filters, EventModel.categories
-        )
+        condition = category_filter(EventModel.category, category_filters, EventModel.categories)
         if condition is not None:
             filters.append(condition)
 
@@ -548,11 +595,7 @@ async def search_events(
 
     # Soonest first, then name - shared with GET /events so the two surfaces
     # cannot drift. See `feed_order` for why name is not the primary key.
-    db_query = (
-        db_query.order_by(*feed_order())
-        .offset(search.skip)
-        .limit(limit)
-    )
+    db_query = db_query.order_by(*feed_order()).offset(search.skip).limit(limit)
     result = await db.execute(db_query)
     results = result.scalars().all()
     return results
@@ -561,10 +604,18 @@ async def search_events(
 @router.get(
     "/search/categories",
     summary="Get available categories",
-    responses=_ok({"categories": ["Arts & Culture", "Comedy", "Food & Drink",
-                                  "Music", "Theatre & Performing Arts"]},
-                  "Same list as GET /api/events/categories, wrapped in an "
-                  "object for older clients."),
+    responses=_ok(
+        {
+            "categories": [
+                "Arts & Culture",
+                "Comedy",
+                "Food & Drink",
+                "Music",
+                "Theatre & Performing Arts",
+            ]
+        },
+        "Same list as GET /api/events/categories, wrapped in an object for older clients.",
+    ),
     description="List all event categories indexed in the database",
     tags=["Search"],
 )
@@ -605,9 +656,15 @@ async def get_categories(db: AsyncSession = Depends(get_db)):
         "`latest_event` are null when nothing is indexed."
     ),
     tags=["Search"],
-    responses=_ok({"total_events": 3150, "unique_categories": 24,
-                   "earliest_event": "2026-10-07", "latest_event": "2027-06-13"},
-                  "Aggregates over upcoming events"),
+    responses=_ok(
+        {
+            "total_events": 3150,
+            "unique_categories": 24,
+            "earliest_event": "2026-10-07",
+            "latest_event": "2027-06-13",
+        },
+        "Aggregates over upcoming events",
+    ),
 )
 async def get_stats(db: AsyncSession = Depends(get_db)):
     """
@@ -660,13 +717,17 @@ def _extract_keywords(query: str) -> list[str]:
     return list(dict.fromkeys(keywords))[:5]  # Limit to 5 keywords
 
 
-def _extract_date_range(query: str) -> Optional[tuple[datetime, datetime]]:
+def _extract_date_range(query: str) -> tuple[datetime, datetime] | None:
     """Extract date range from natural language query"""
     now = datetime.now()
     query_lower = query.lower()
 
     # Check for "this weekend"
-    if "this weekend" in query_lower or "this saturday" in query_lower or "this sunday" in query_lower:
+    if (
+        "this weekend" in query_lower
+        or "this saturday" in query_lower
+        or "this sunday" in query_lower
+    ):
         days_until_saturday = (5 - now.weekday()) % 7
         if days_until_saturday == 0:
             days_until_saturday = 7
@@ -704,7 +765,7 @@ def _extract_date_range(query: str) -> Optional[tuple[datetime, datetime]]:
 
 class ChatMessage(BaseModel):
     message: str
-    thread_id: Optional[str] = None
+    thread_id: str | None = None
 
 
 class ChatStreamRequest(BaseModel):
@@ -730,7 +791,7 @@ class ChatStreamRequest(BaseModel):
         description="A natural language question about Chicago events. A "
         "neighborhood, category or date phrase in here becomes a real filter.",
     )
-    thread_id: Optional[str] = Field(
+    thread_id: str | None = Field(
         None,
         description="Thread id from a previous `complete` frame, to continue "
         "that conversation. Omit to start a new one.",
@@ -749,9 +810,13 @@ class ChatStreamRequest(BaseModel):
         "unknown thread id is not an error. Nothing here is worth failing a "
         "page load over."
     ),
-    responses={200: {"content": {"application/json": {
-        "example": {"thread_id": "6782dca6-...", "closed": True}
-    }}}},
+    responses={
+        200: {
+            "content": {
+                "application/json": {"example": {"thread_id": "6782dca6-...", "closed": True}}
+            }
+        }
+    },
 )
 async def close_chat_thread(thread_id: str, db: AsyncSession = Depends(get_db)):
     from app.ai.threads import close_thread
@@ -839,20 +904,25 @@ async def chat_greeting(db: AsyncSession = Depends(get_db)):
         "runs out the reply says so instead of failing."
     ),
     tags=["Chat"],
-    responses={200: {"description":
-        "An SSE stream (`text/event-stream`). Frames arrive in order: one or "
-        "more `thinking`, then optionally `events`, then `response`, then "
-        "`complete`.",
-        "content": {"text/event-stream": {"example":
-            'data: {"event":"thinking","data":{"status":"Analyzing your question..."}}\n\n'
-            'data: {"event":"events","data":{"events":[{"id":1247,'
-            '"name":"Comedy Open Mic","date":"2026-10-07T00:00:00",'
-            '"venue_name":"Cole\'s Bar","cost":"Free"}]}}\n\n'
-            'data: {"event":"response","data":{"message":"There is a free comedy '
-            'open mic at Cole\'s Bar tonight.","tokens":312}}\n\n'
-            'data: {"event":"complete","data":{"thread_id":"a3f...","tokens_used":312}}\n\n'
-        }}},
-        **_VALIDATION_ERROR},
+    responses={
+        200: {
+            "description": "An SSE stream (`text/event-stream`). Frames arrive in order: one or "
+            "more `thinking`, then optionally `events`, then `response`, then "
+            "`complete`.",
+            "content": {
+                "text/event-stream": {
+                    "example": 'data: {"event":"thinking","data":{"status":"Analyzing your question..."}}\n\n'
+                    'data: {"event":"events","data":{"events":[{"id":1247,'
+                    '"name":"Comedy Open Mic","date":"2026-10-07T00:00:00",'
+                    '"venue_name":"Cole\'s Bar","cost":"Free"}]}}\n\n'
+                    'data: {"event":"response","data":{"message":"There is a free comedy '
+                    'open mic at Cole\'s Bar tonight.","tokens":312}}\n\n'
+                    'data: {"event":"complete","data":{"thread_id":"a3f...","tokens_used":312}}\n\n'
+                }
+            },
+        },
+        **_VALIDATION_ERROR,
+    },
 )
 async def chat_endpoint(request: ChatStreamRequest):
     """
@@ -900,6 +970,7 @@ async def chat_endpoint(request: ChatStreamRequest):
     **Token budget:** 4,000 tokens per session, 5 turns maximum
     **Rate limit:** 3 attempts before rate limiting
     """
+
     async def event_generator():
         executor = ChatExecutor()
         async for event in executor.execute(request.message, thread_id=request.thread_id):
@@ -912,17 +983,21 @@ async def chat_endpoint(request: ChatStreamRequest):
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
-        }
+        },
     )
 
 
 @analytics_router.get(
     "/analytics/telemetry",
     summary="OpenTelemetry metrics",
-    responses=_ok({"timestamp": "2026-10-07T11:45:18.810877",
-                   "metrics_data": "MetricsData(resource_metrics=[...])"},
-                  "Counters and histograms as OpenTelemetry's own repr, not "
-                  "parsed JSON - intended for eyeballing, not for machines."),
+    responses=_ok(
+        {
+            "timestamp": "2026-10-07T11:45:18.810877",
+            "metrics_data": "MetricsData(resource_metrics=[...])",
+        },
+        "Counters and histograms as OpenTelemetry's own repr, not "
+        "parsed JSON - intended for eyeballing, not for machines.",
+    ),
     description="Get current metrics snapshot for observability",
     tags=["Analytics"],
 )
@@ -946,19 +1021,31 @@ def get_telemetry():
 @analytics_router.get(
     "/analytics/audit",
     summary="Query audit logs",
-    responses={**_ok({"logs": [{"id": 1, "action": "chat_question",
-                                "detail": "comedy in Pilsen",
-                                "created_at": "2026-10-07T11:45:18"}],
-                      "count": 1},
-                     "Matching audit entries, newest first. `logs` is empty "
-                     "when nothing matches."),
-               **_VALIDATION_ERROR},
+    responses={
+        **_ok(
+            {
+                "logs": [
+                    {
+                        "id": 1,
+                        "action": "chat_question",
+                        "detail": "comedy in Pilsen",
+                        "created_at": "2026-10-07T11:45:18",
+                    }
+                ],
+                "count": 1,
+            },
+            "Matching audit entries, newest first. `logs` is empty when nothing matches.",
+        ),
+        **_VALIDATION_ERROR,
+    },
     description="Retrieve audit trail of operations with filtering",
     tags=["Analytics"],
 )
 async def get_audit_logs(
-    operation: Optional[str] = Query(None, description="Filter by operation type (e.g., 'chat', 'search', 'security_blocked')"),
-    status: Optional[str] = Query(None, description="Filter by status (e.g., 'success', 'error')"),
+    operation: str | None = Query(
+        None, description="Filter by operation type (e.g., 'chat', 'search', 'security_blocked')"
+    ),
+    status: str | None = Query(None, description="Filter by status (e.g., 'success', 'error')"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum logs to return (1-1000)"),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1006,13 +1093,21 @@ async def get_audit_logs(
 @analytics_router.get(
     "/analytics/summary",
     summary="Analytics dashboard summary",
-    responses=_ok({"total_sessions": 118, "completed_sessions": 0,
-                   "active_sessions": 118, "total_turns": 118,
-                   "total_tokens": 18163, "avg_tokens_per_session": 0,
-                   "avg_turns_per_session": 0, "operations": []},
-                  "Counters since the process started. A session counts as "
-                  "active until it is explicitly completed, so a restart "
-                  "leaves them active."),
+    responses=_ok(
+        {
+            "total_sessions": 118,
+            "completed_sessions": 0,
+            "active_sessions": 118,
+            "total_turns": 118,
+            "total_tokens": 18163,
+            "avg_tokens_per_session": 0,
+            "avg_turns_per_session": 0,
+            "operations": [],
+        },
+        "Counters since the process started. A session counts as "
+        "active until it is explicitly completed, so a restart "
+        "leaves them active.",
+    ),
     description="Get aggregate statistics for observability dashboard",
     tags=["Analytics"],
 )
@@ -1054,16 +1149,14 @@ async def get_analytics_summary(db: AsyncSession = Depends(get_db)):
     total_tokens_result = await db.execute(select(func.sum(ChatThreadModel.total_tokens)))
     total_tokens = total_tokens_result.scalar() or 0
 
-    avg_tokens_per_session = (
-        total_tokens / completed_sessions if completed_sessions > 0 else 0
-    )
-    avg_turns_per_session = (
-        total_turns / completed_sessions if completed_sessions > 0 else 0
-    )
+    avg_tokens_per_session = total_tokens / completed_sessions if completed_sessions > 0 else 0
+    avg_turns_per_session = total_turns / completed_sessions if completed_sessions > 0 else 0
 
     # Get operation counts from audit logs
     operations_result = await db.execute(
-        select(AuditLogModel.operation, func.count(AuditLogModel.id)).group_by(AuditLogModel.operation)
+        select(AuditLogModel.operation, func.count(AuditLogModel.id)).group_by(
+            AuditLogModel.operation
+        )
     )
     operations = operations_result.all()
 
@@ -1082,13 +1175,20 @@ async def get_analytics_summary(db: AsyncSession = Depends(get_db)):
 @analytics_router.get(
     "/analytics/security",
     summary="Security metrics dashboard",
-    responses=_ok({"security_events": {"blocked_requests": 0,
-                                       "outputs_sanitized": 0,
-                                       "out_of_scope_questions": 0},
-                   "active_injection_attempts": {}, "blocked_sessions": [],
-                   "recent_blocks": []},
-                  "Prompt-injection and sanitization counters. All zero means "
-                  "nothing has been blocked since startup."),
+    responses=_ok(
+        {
+            "security_events": {
+                "blocked_requests": 0,
+                "outputs_sanitized": 0,
+                "out_of_scope_questions": 0,
+            },
+            "active_injection_attempts": {},
+            "blocked_sessions": [],
+            "recent_blocks": [],
+        },
+        "Prompt-injection and sanitization counters. All zero means "
+        "nothing has been blocked since startup.",
+    ),
     description="Real-time security monitoring and threat detection metrics",
     tags=["Analytics"],
 )
@@ -1140,14 +1240,18 @@ async def get_security_summary(db: AsyncSession = Depends(get_db)):
     sanitized = sanitized_result.scalar()
 
     out_of_scope_result = await db.execute(
-        select(func.count(AuditLogModel.id)).filter(AuditLogModel.operation == "out_of_scope_question")
+        select(func.count(AuditLogModel.id)).filter(
+            AuditLogModel.operation == "out_of_scope_question"
+        )
     )
     out_of_scope = out_of_scope_result.scalar()
 
     # Get recent blocked requests
     recent_blocks_result = await db.execute(
-        select(AuditLogModel).filter(AuditLogModel.operation == "security_blocked")
-        .order_by(AuditLogModel.created_at.desc()).limit(10)
+        select(AuditLogModel)
+        .filter(AuditLogModel.operation == "security_blocked")
+        .order_by(AuditLogModel.created_at.desc())
+        .limit(10)
     )
     recent_blocks = recent_blocks_result.scalars().all()
 
@@ -1177,13 +1281,18 @@ async def get_security_summary(db: AsyncSession = Depends(get_db)):
 @router.post(
     "/venue-events/refresh",
     summary="Fetch and persist venue events",
-    responses={**_ok({"status": "success", "new_events": 43},
-                     "Scrape finished. `new_events` counts rows inserted; events "
-                     "already stored are updated in place and not counted."),
-               500: {"description": "The scrape or the database write failed; the "
-                                    "message carries the underlying error.",
-                     "content": {"application/json": {
-                         "example": {"detail": "database is locked"}}}}},
+    responses={
+        **_ok(
+            {"status": "success", "new_events": 43},
+            "Scrape finished. `new_events` counts rows inserted; events "
+            "already stored are updated in place and not counted.",
+        ),
+        500: {
+            "description": "The scrape or the database write failed; the "
+            "message carries the underlying error.",
+            "content": {"application/json": {"example": {"detail": "database is locked"}}},
+        },
+    },
     description="Scrape entertainment venues and persist their events to the database",
     tags=["Admin"],
 )

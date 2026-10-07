@@ -3,9 +3,8 @@ Security: Guard against prompt injection, output validation, and malicious input
 Based on: https://simonwillison.net/2023/Apr/14/worst-that-can-happen/
 """
 
-import re
 import logging
-from typing import Optional
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -22,19 +21,15 @@ class PromptInjectionDetector:
         r"(?i)(ignore|forget|discard).*(?:instructions|system prompt|rules|guidelines)",
         r"(?i)(from now on|you are|you will be|pretend you are|act as)",
         r"(?i)(override|bypass|disable).*(?:safety|filter|guard)",
-
         # Direct prompt extraction attempts
         r"(?i)(show|reveal|print|display).*(?:system prompt|instructions|rules)",
         r"(?i)(what is your|what's your|repeat your).*(?:system|prompt|instruction)",
-
         # SQL injection / code injection (defense in depth)
         r"';.*(?:DROP|DELETE|INSERT|UPDATE|SELECT)",
         r"^.*[{}\[\]`$()&|;<>].*(?:import|exec|eval|__)",
-
         # Boundary attacks
         r"(?i)---+\s*(?:SYSTEM|INSTRUCTION)",
         r"(?i)\[SYSTEM\]|\[INSTRUCTIONS\]|\[CONSTRAINT\]",
-
         # Tool manipulation
         r"(?i)(?:call|execute|invoke).*(?:search_google|delete_db|admin)",
     ]
@@ -47,7 +42,7 @@ class PromptInjectionDetector:
     ]
 
     @staticmethod
-    def detect(user_input: str) -> tuple[bool, Optional[str]]:
+    def detect(user_input: str) -> tuple[bool, str | None]:
         """
         Detect prompt injection attempts.
         Returns: (is_suspicious, pattern_matched)
@@ -81,7 +76,7 @@ class OutputValidator:
     ]
 
     @staticmethod
-    def validate(response: str) -> tuple[bool, Optional[str]]:
+    def validate(response: str) -> tuple[bool, str | None]:
         """
         Check if response contains sensitive information.
         Returns: (is_safe, leaked_pattern)
@@ -139,9 +134,7 @@ class InputSanitizer:
         sanitized = user_input.replace("\x00", "")
 
         # Remove suspicious Unicode control characters
-        sanitized = "".join(
-            char for char in sanitized if ord(char) >= 32 or char in "\n\t\r"
-        )
+        sanitized = "".join(char for char in sanitized if ord(char) >= 32 or char in "\n\t\r")
 
         return sanitized
 
@@ -207,7 +200,7 @@ class RateLimiter:
 rate_limiter = RateLimiter()
 
 
-def validate_and_sanitize(user_input: str, thread_id: str) -> tuple[bool, str, Optional[str]]:
+def validate_and_sanitize(user_input: str, thread_id: str) -> tuple[bool, str, str | None]:
     """
     Full security check: injection detection + sanitization + rate limiting.
     Returns: (is_safe, sanitized_input, threat_reason)
@@ -225,7 +218,7 @@ def validate_and_sanitize(user_input: str, thread_id: str) -> tuple[bool, str, O
     if is_suspicious:
         if not rate_limiter.record_injection_attempt(thread_id):
             return False, "", "Too many suspicious attempts"
-        return False, "", f"Potential prompt injection detected"
+        return False, "", "Potential prompt injection detected"
 
     # 4. Sanitize input
     sanitized = InputSanitizer.sanitize(user_input)

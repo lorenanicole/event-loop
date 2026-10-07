@@ -42,6 +42,7 @@ class TestSpawnBackground:
 
     async def test_the_task_is_released_once_finished(self):
         """Tracking must not become a leak that grows for the process's life."""
+
         async def work():
             return None
 
@@ -57,7 +58,8 @@ class TestSpawnBackground:
 
         logged = []
         monkeypatch.setattr(
-            chatbot.logger, "error",
+            chatbot.logger,
+            "error",
             lambda msg, *a, **k: logged.append(str(msg) % a if a else str(msg)),
         )
 
@@ -73,6 +75,7 @@ class TestSpawnBackground:
 
     async def test_a_failure_does_not_leak_the_task(self, monkeypatch):
         from app.ai import chatbot
+
         monkeypatch.setattr(chatbot.logger, "error", lambda *a, **k: None)
 
         async def boom():

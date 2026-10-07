@@ -70,7 +70,9 @@ class TestParentsOf:
 class TestToParents:
     def test_order_is_preserved_and_duplicates_dropped(self):
         assert to_parents(["Arts & Theatre", "Music", "Theater"]) == [
-            "Theater", "Arts", "Music",
+            "Theater",
+            "Arts",
+            "Music",
         ]
 
 
@@ -82,7 +84,7 @@ class TestInformativeSubtags:
         assert informative_subtags(["Music"], ["Music"]) == []
 
     def test_a_placeholder_is_never_kept_as_a_subtag(self):
-        """"Events" under Other is the absence of a category; printing it on a
+        """ "Events" under Other is the absence of a category; printing it on a
         card as though it were finer-grained is worse than printing nothing."""
         assert informative_subtags(["Events"], ["Other"]) == []
         assert informative_subtags(["Miscellaneous"], ["Other"]) == []
@@ -107,25 +109,31 @@ class TestSemanticFloor:
         beats the keyword rules on coverage AND precision at once. Lowering it
         raises coverage and loses precision, which is the wrong trade."""
         from shared.semantic_categories import SIMILARITY_FLOOR
+
         assert SIMILARITY_FLOOR == 0.45
 
     def test_every_exemplar_group_names_a_real_parent(self):
         from shared.semantic_categories import CATEGORY_EXEMPLARS
+
         for parent in CATEGORY_EXEMPLARS:
             assert parent in PARENT_CATEGORIES, parent
 
     def test_nothing_in_nothing_out(self):
         from shared.semantic_categories import semantic_category
+
         assert semantic_category(None) is None
         assert semantic_category("  ") is None
 
 
-@pytest.mark.parametrize("title,expected", [
-    # The model reaches these; no keyword matches any of them.
-    ("Drunk Shakespeare Chicago", "Theater"),
-    ("Renegade Craft Fair", "Shopping"),
-    ("Oktoberfestiversary", "Food & Drink"),
-])
+@pytest.mark.parametrize(
+    "title,expected",
+    [
+        # The model reaches these; no keyword matches any of them.
+        ("Drunk Shakespeare Chicago", "Theater"),
+        ("Renegade Craft Fair", "Shopping"),
+        ("Oktoberfestiversary", "Food & Drink"),
+    ],
+)
 def test_the_model_classifies_titles_the_rules_miss(title, expected):
     from shared.categories import classify_all
     from shared.semantic_categories import semantic_category

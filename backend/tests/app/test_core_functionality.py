@@ -3,26 +3,29 @@ Core Functionality Tests - Python 3.14 & 3.15 Compatibility
 Tests chat API, database, scraper, and search functionality
 """
 
-import pytest
 import asyncio
-import sys
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
+
+import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+
 # Fixtures
 @pytest.fixture
-async def async_client() -> AsyncGenerator[AsyncClient, None]:
+async def async_client() -> AsyncGenerator[AsyncClient]:
     """Provide async HTTP client for testing."""
     from app.main import app
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
 
 @pytest.fixture
-async def db_session() -> AsyncGenerator[AsyncSession, None]:
+async def db_session() -> AsyncGenerator[AsyncSession]:
     """Provide database session for testing."""
     from shared.database import AsyncSessionLocal
+
     async with AsyncSessionLocal() as session:
         yield session
 
@@ -51,7 +54,7 @@ class TestChatAPI:
         """Test SSE streaming for chat messages."""
         payload = {
             "message": "Find live music events in Wicker Park",
-            "neighborhood": "Wicker Park"
+            "neighborhood": "Wicker Park",
         }
         response = await async_client.post("/chat/stream", json=payload)
         # SSE endpoints return streaming response
@@ -67,14 +70,16 @@ class TestDatabase:
         assert db_session is not None
         # Query a simple count
         from sqlalchemy import text
+
         result = await db_session.execute(text("SELECT 1"))
         assert result is not None
 
     @pytest.mark.asyncio
     async def test_event_model_exists(self, db_session):
         """Test EventModel table exists."""
-        from shared.database.models import EventModel
         from sqlalchemy import inspect
+
+        from shared.database.models import EventModel
 
         # Check if table exists
         inspector = inspect(EventModel)
@@ -84,8 +89,9 @@ class TestDatabase:
     @pytest.mark.asyncio
     async def test_venue_model_exists(self, db_session):
         """Test VenueModel table exists."""
-        from shared.database.models import VenueModel
         from sqlalchemy import inspect
+
+        from shared.database.models import VenueModel
 
         inspector = inspect(VenueModel)
         assert inspector.columns is not None
@@ -98,7 +104,7 @@ class TestScraper:
     @pytest.mark.asyncio
     async def test_scraper_initialization(self):
         """Test scraper can be initialized."""
-        from scrapers.custom.venue.venue_scraper import VenueScraper, VenueConfig
+        from scrapers.custom.venue.venue_scraper import VenueConfig
 
         config = VenueConfig(
             name="Test Venue",
@@ -107,7 +113,7 @@ class TestScraper:
             category="music",
             address="123 Main St",
             selectors={},
-            use_playwright=False
+            use_playwright=False,
         )
 
         assert config.name == "Test Venue"
@@ -126,7 +132,7 @@ class TestScraper:
             category="theater",
             address="456 Broadway",
             selectors={},
-            use_playwright=True
+            use_playwright=True,
         )
 
         assert config.use_playwright is True
@@ -140,6 +146,7 @@ class TestSearch:
         """Test smart search module imports."""
         try:
             from app.ai.smart_search import get_smart_search_tool
+
             assert get_smart_search_tool is not None
         except ImportError:
             pytest.skip("Smart search module not available")
@@ -149,6 +156,7 @@ class TestSearch:
         """Test chatbot agent initializes."""
         try:
             from app.ai.chatbot import create_event_search_agent
+
             # Should be able to create agent
             assert True  # If import works, test passes
         except ImportError:
@@ -162,11 +170,12 @@ class TestPythonVersionFeatures:
         """Test frozendict is available (3.15) or gracefully missing (3.14)."""
         try:
             from builtins import frozendict
+
             # Test 3.15 feature
             fd = frozendict({"key": "value"})
             assert fd["key"] == "value"
             assert isinstance(fd, frozendict)
-        except (ImportError, TypeError):
+        except ImportError, TypeError:
             # 3.14 doesn't have frozendict
             pytest.skip("frozendict not available (Python < 3.15)")
 
@@ -174,10 +183,11 @@ class TestPythonVersionFeatures:
         """Test sentinel is available (3.15) or gracefully missing (3.14)."""
         try:
             from builtins import sentinel
+
             # Test 3.15 feature
             MISSING = sentinel("MISSING")
             assert MISSING is MISSING
-        except (ImportError, TypeError):
+        except ImportError, TypeError:
             # 3.14 doesn't have sentinel
             pytest.skip("sentinel not available (Python < 3.15)")
 
@@ -198,6 +208,7 @@ class TestPythonVersionFeatures:
         # 3.15 supports: lazy import json
         # 3.14 doesn't, but we can test the concept
         import json  # Normal import works on both
+
         assert json is not None
 
 
@@ -207,6 +218,7 @@ class TestAsyncCompatibility:
     @pytest.mark.asyncio
     async def test_asyncio_create_task(self):
         """Test asyncio.create_task works."""
+
         async def dummy():
             return 42
 
@@ -217,6 +229,7 @@ class TestAsyncCompatibility:
     @pytest.mark.asyncio
     async def test_async_context_manager(self):
         """Test async context managers work."""
+
         class AsyncResource:
             async def __aenter__(self):
                 return self
@@ -260,6 +273,7 @@ class TestDualVersionArchitecture:
         """Test parser client can be imported."""
         try:
             from scrapers import ParserClient
+
             assert ParserClient is not None
         except ImportError:
             pytest.skip("Parser client not available")
@@ -268,6 +282,7 @@ class TestDualVersionArchitecture:
         """Test backend server can be imported."""
         try:
             from app import app
+
             assert app is not None
         except ImportError:
             pytest.skip("Backend server not available")
@@ -277,6 +292,7 @@ class TestDualVersionArchitecture:
         """Test HTTP client for dual-version communication."""
         try:
             import httpx
+
             async with httpx.AsyncClient() as client:
                 assert client is not None
         except ImportError:

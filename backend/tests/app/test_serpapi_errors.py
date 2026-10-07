@@ -66,9 +66,7 @@ class TestSerpapiFailures:
         await chatbot.search_google_events(None, "ruby meetup")
         assert any("ReadTimeout" in line for line in logged), logged
 
-    async def test_a_timeout_tells_the_model_not_to_retry_this_turn(
-        self, monkeypatch, serpapi_key
-    ):
+    async def test_a_timeout_tells_the_model_not_to_retry_this_turn(self, monkeypatch, serpapi_key):
         """It already waited the full timeout; a second call just stalls the
         turn again and burns the budget."""
         fail_with(monkeypatch, httpx.ReadTimeout(""))

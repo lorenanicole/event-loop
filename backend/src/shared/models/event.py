@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from shared.categories import (
@@ -16,63 +16,63 @@ class EventCreate(BaseModel):
 
     name: str = Field(..., description="Event title as the venue publishes it")
     date: datetime = Field(..., description="Start date. Stored at midnight local time")
-    date_end: Optional[datetime] = Field(
+    date_end: datetime | None = Field(
         default=None,
         description="End date, set only for multi-day events (theatre runs, "
         "festivals, exhibitions). An event stays 'upcoming' until this passes.",
     )
-    time: Optional[str] = Field(
+    time: str | None = Field(
         default=None,
         description="Start time as published, so it is shown the way the venue "
         "wrote it. Free text, not parsed: '7:30 PM', 'Doors 8 pm', 'Show: 8 pm'.",
     )
-    time_end: Optional[str] = None
+    time_end: str | None = None
     category: str = Field(
         ...,
         description="The primary parent category, shown on a tile and a result "
         "card. A source may supply its own wording here - Ticketmaster sends "
         "'Arts & Theatre' - and it is mapped to a parent on the way in.",
     )
-    categories: Optional[list[str]] = Field(
+    categories: list[str] | None = Field(
         default=None,
         description="Every applicable parent category, primary first. One event "
         "often belongs to several - a drag show at a music venue is both Music "
         "and LGBTQ - and a category filter matches any of them. Derived from "
         "the title when not supplied.",
     )
-    subcategories: Optional[list[str]] = Field(
+    subcategories: list[str] | None = Field(
         default=None,
         description="The source's own finer labels, where they say more than "
         "the parent does: 'Arts & Crafts' under Arts, 'Parties & DJs' under "
         "Music. Shown on a card, never filtered on.",
     )
-    details: Optional[str] = Field(default=None, description="Description, where the source gives one")
+    details: str | None = Field(default=None, description="Description, where the source gives one")
     origination_url: str = Field(
         ...,
         description="Where the event came from. UNIQUE in the database, so it "
         "doubles as the deduplication key across repeated scrapes.",
     )
-    cost: Optional[str] = Field(
+    cost: str | None = Field(
         default=None,
         description="Price as text, because venues publish it in incompatible "
         "shapes: '$25', '$20-$25', 'From $64', 'Free', 'Donation'. null means "
         "the source published no price, not that the event is free.",
     )
-    age_range: Optional[str] = Field(default=None, description="e.g. '21+', 'All ages'")
-    is_outdoor: Optional[str] = None
-    address: Optional[str] = Field(default=None, description="Street address, venue name first")
-    venue_name: Optional[str] = None
-    latitude: Optional[float] = Field(
+    age_range: str | None = Field(default=None, description="e.g. '21+', 'All ages'")
+    is_outdoor: str | None = None
+    address: str | None = Field(default=None, description="Street address, venue name first")
+    venue_name: str | None = None
+    latitude: float | None = Field(
         default=None, description="Venue coordinates, when the source provides them"
     )
-    longitude: Optional[float] = None
+    longitude: float | None = None
     # Deliberately no `neighborhood` field: EventModel.neighborhood is the
     # relationship to NeighborhoodModel, so a same-named string field here makes
     # from_attributes read that object and fail validation on every response.
     date_retrieved: datetime = Field(
         default_factory=datetime.utcnow, description="When this row was last refreshed"
     )
-    category_hint: Optional[str] = Field(
+    category_hint: str | None = Field(
         default=None,
         exclude=True,
         description="The source's own words for what the event is - "
@@ -97,9 +97,7 @@ class EventCreate(BaseModel):
         # The source's own labels first - a trans pride festival is both
         # Community and LGBTQ, and storing one made it invisible under the
         # other.
-        subtags = self.categories or classify_all(
-            self.name, self.category, hint=self.category_hint
-        )
+        subtags = self.categories or classify_all(self.name, self.category, hint=self.category_hint)
 
         # Then the parents those labels roll up to, which is what a filter
         # matches and what a tile is named after. Done here, at the boundary,
@@ -215,13 +213,13 @@ class EventSearch(BaseModel):
         "by date, so paging is stable as long as the query is unchanged. Paging "
         "past the end returns an empty array rather than an error.",
     )
-    neighborhood: Optional[str] = Field(
+    neighborhood: str | None = Field(
         default=None,
         description="Restrict results to one Chicago neighborhood, e.g. 'Wicker Park'. "
         "Matched exactly against the stored name, so use a value from "
         "GET /api/events/neighborhoods.",
     )
-    category: Optional[str] = Field(
+    category: str | None = Field(
         default=None,
         description="Restrict results to one category, e.g. 'Health & Wellness'. "
         "Matched case-insensitively against the stored category.",

@@ -69,13 +69,18 @@ class TestPaging:
 
     async def test_paging_respects_a_filter(self, client):
         """Paging a filtered list must stay inside the filter."""
-        page = await client.post(SEARCH, json={
-            "query": "events", "limit": 5, "skip": 5, "category": "Music",
-        })
+        page = await client.post(
+            SEARCH,
+            json={
+                "query": "events",
+                "limit": 5,
+                "skip": 5,
+                "category": "Music",
+            },
+        )
         assert page.status_code == 200
         assert all(
-            e["category"] == "Music" or "Music" in (e.get("categories") or [])
-            for e in page.json()
+            e["category"] == "Music" or "Music" in (e.get("categories") or []) for e in page.json()
         )
 
     async def test_results_stay_in_date_order_across_pages(self, client):

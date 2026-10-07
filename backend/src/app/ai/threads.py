@@ -74,8 +74,9 @@ async def count_by_status(session) -> dict[str, int]:
     """How many threads are in each state, for a health check."""
     from sqlalchemy import func
 
-    rows = (await session.execute(
-        select(ChatThreadModel.status, func.count())
-        .group_by(ChatThreadModel.status)
-    )).all()
+    rows = (
+        await session.execute(
+            select(ChatThreadModel.status, func.count()).group_by(ChatThreadModel.status)
+        )
+    ).all()
     return {status: count for status, count in rows}

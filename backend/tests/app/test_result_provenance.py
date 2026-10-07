@@ -48,14 +48,17 @@ def serpapi(monkeypatch):
     def _install(events):
         payload = {"events_results": events}
         monkeypatch.setattr(chatbot.httpx, "AsyncClient", lambda **kw: FakeClient(payload))
+
     return _install
 
 
-LINKLESS = [{
-    "title": "Chicago Marathon Family Community Event",
-    "date": "Oct 11",
-    "address": ["Cooking with Cass LLC", "Lake View East"],
-}]
+LINKLESS = [
+    {
+        "title": "Chicago Marathon Family Community Event",
+        "date": "Oct 11",
+        "address": ["Cooking with Cass LLC", "Lake View East"],
+    }
+]
 
 
 @pytest.mark.asyncio
@@ -88,10 +91,15 @@ class TestWebResultProvenance:
     async def test_the_venue_is_split_out_of_the_address(self, monkeypatch, serpapi):
         """["Lincoln Park Zoo", "Chicago, IL"] is the venue, then where it is,
         so the first entry becomes venue_name like every other source."""
-        serpapi([{
-            "title": "Fall Fest", "date": "Oct 9",
-            "address": ["Lincoln Park Zoo", "Chicago, IL"],
-        }])
+        serpapi(
+            [
+                {
+                    "title": "Fall Fest",
+                    "date": "Oct 9",
+                    "address": ["Lincoln Park Zoo", "Chicago, IL"],
+                }
+            ]
+        )
 
         # Capture what would have been handed to persistence, by holding the
         # coroutine the tool spawns and awaiting it here instead.
@@ -113,7 +121,9 @@ class TestWebResultProvenance:
 
 class TestPromptDemandsAttribution:
     def test_the_prompt_tells_the_model_to_keep_sources_apart(self):
-        prompt = chatbot.agent._system_prompts[0] if hasattr(chatbot.agent, "_system_prompts") else ""
+        prompt = (
+            chatbot.agent._system_prompts[0] if hasattr(chatbot.agent, "_system_prompts") else ""
+        )
         if not prompt:
             pytest.skip("system prompt not introspectable in this pydantic-ai version")
         assert "never merge the two kinds" in prompt.lower()

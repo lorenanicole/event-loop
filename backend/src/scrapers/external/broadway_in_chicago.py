@@ -13,7 +13,6 @@ stored with a date and a date_end and surfaces for any day in between.
 import logging
 import re
 from datetime import datetime
-from typing import Optional, Union
 
 from bs4 import BeautifulSoup
 from sqlalchemy import select
@@ -36,8 +35,18 @@ WRITE_BATCH = 50
 
 
 _MONTHS = {
-    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
-    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
 }
 
 
@@ -51,14 +60,21 @@ class BroadwayInChicagoScraper:
     # listing gives, so it is mapped to the address and neighborhood here.
     THEATRES = {
         "cibc theatre": ("CIBC Theatre", "18 W Monroe St", "Loop"),
-        "james m. nederlander theatre": ("James M. Nederlander Theatre", "24 W Randolph St", "Loop"),
+        "james m. nederlander theatre": (
+            "James M. Nederlander Theatre",
+            "24 W Randolph St",
+            "Loop",
+        ),
         "nederlander theatre": ("James M. Nederlander Theatre", "24 W Randolph St", "Loop"),
         "cadillac palace theatre": ("Cadillac Palace Theatre", "151 W Randolph St", "Loop"),
         # 175 E Chestnut is in Streeterville; "Near North Side" is a
         # community area the city's neighborhood layer does not publish, so
         # nothing could ever be placed there by point-in-polygon.
         "broadway playhouse at water tower place": (
-            "Broadway Playhouse", "175 E Chestnut St", "Streeterville"),
+            "Broadway Playhouse",
+            "175 E Chestnut St",
+            "Streeterville",
+        ),
         "broadway playhouse": ("Broadway Playhouse", "175 E Chestnut St", "Streeterville"),
         "auditorium theatre": ("Auditorium Theatre", "50 E Ida B Wells Dr", "Loop"),
     }
@@ -82,7 +98,7 @@ class BroadwayInChicagoScraper:
             logger.error(f"Broadway In Chicago fetch failed: {exc}")
             return []
 
-    async def _fetch_html(self) -> Optional[str]:
+    async def _fetch_html(self) -> str | None:
         from playwright.async_api import async_playwright
 
         async with async_playwright() as p:
@@ -163,20 +179,22 @@ class BroadwayInChicagoScraper:
             seen.add(url)
 
             venue_name, address, _ = theatre or (None, None, None)
-            events.append(EventCreate(
-                name=title[:200],
-                date=start,
-                date_end=end,
-                category="theater",
-                origination_url=url,
-                venue_name=venue_name,
-                address=f"{venue_name}, {address}, Chicago, IL" if venue_name else None,
-            ))
+            events.append(
+                EventCreate(
+                    name=title[:200],
+                    date=start,
+                    date_end=end,
+                    category="theater",
+                    origination_url=url,
+                    venue_name=venue_name,
+                    address=f"{venue_name}, {address}, Chicago, IL" if venue_name else None,
+                )
+            )
 
         logger.info(f"Broadway In Chicago: parsed {len(events)} shows")
         return events
 
-    def _parse_run(self, run: re.Match) -> Optional[tuple[datetime, datetime]]:
+    def _parse_run(self, run: re.Match) -> tuple[datetime, datetime] | None:
         start_month = _MONTHS.get(run.group("m1")[:3].lower())
         end_month = _MONTHS.get((run.group("m2") or run.group("m1"))[:3].lower())
         if not start_month or not end_month:
@@ -191,15 +209,24 @@ class BroadwayInChicagoScraper:
         except ValueError:
             return None
 
-    def _title(self, lines: list[str], theatre) -> Optional[str]:
+    def _title(self, lines: list[str], theatre) -> str | None:
         """The title is the line that is neither the date, the theatre nor a CTA."""
         theatre_name = theatre[0].lower() if theatre else None
         for line in lines:
             low = line.lower()
             if low in self.THEATRES or (theatre_name and low == theatre_name):
                 continue
-            if low.startswith(("show and ticket", "buy tickets", "tickets", "learn more",
-                               "more info", "group", "info")):
+            if low.startswith(
+                (
+                    "show and ticket",
+                    "buy tickets",
+                    "tickets",
+                    "learn more",
+                    "more info",
+                    "group",
+                    "info",
+                )
+            ):
                 continue
             # Date fragments: "Sep 8", "-", "Nov 8, 2026".
             if re.fullmatch(r"[–—-]", line):
@@ -210,13 +237,13 @@ class BroadwayInChicagoScraper:
                 return line
         return None
 
-    async def scrape_and_save(self, db: Union[Session, AsyncSession]) -> int:
+    async def scrape_and_save(self, db: Session | AsyncSession) -> int:
         """Fetch and save shows, skipping any already stored."""
         try:
             events = await self.fetch_events()
             saved_count = 0
             is_async = isinstance(db, AsyncSession)
-            neighborhood_ids: dict[str, Optional[int]] = {}
+            neighborhood_ids: dict[str, int | None] = {}
 
             # The theatre name gives the neighborhood directly, so there is no
             # geocoding step here as there is for coordinate-based sources.
@@ -247,9 +274,7 @@ class BroadwayInChicagoScraper:
                     neighborhood_id = neighborhood_ids[hood]
 
                 if not existing:
-                    event = EventModel(
-                        **event_data.model_dump(), source="broadway_in_chicago"
-                    )
+                    event = EventModel(**event_data.model_dump(), source="broadway_in_chicago")
                     event.neighborhood_id = neighborhood_id
                     db.add(event)
                     saved_count += 1

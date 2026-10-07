@@ -32,14 +32,17 @@ class TestCharacterAndKnowledge:
         for side in ("North Side", "South Side", "Northwest Side", "West Side"):
             assert side in prompt, side
 
-    @pytest.mark.parametrize("line,neighborhood", [
-        ("Blue", "Logan Square"),
-        ("Blue", "Wicker Park"),
-        ("Brown", "Lincoln Square"),
-        ("Pink", "Pilsen"),
-        ("Red", "Uptown"),
-        ("Orange", "Bridgeport"),
-    ])
+    @pytest.mark.parametrize(
+        "line,neighborhood",
+        [
+            ("Blue", "Logan Square"),
+            ("Blue", "Wicker Park"),
+            ("Brown", "Lincoln Square"),
+            ("Pink", "Pilsen"),
+            ("Red", "Uptown"),
+            ("Orange", "Bridgeport"),
+        ],
+    )
     def test_it_knows_which_l_line_serves_where(self, line, neighborhood):
         """Naming the line and stop is what makes an answer local. Three
         different stations are called Damen, so a line without its stop - or a
@@ -62,12 +65,15 @@ class TestCharacterAndKnowledge:
 class TestTheRulesSurvive:
     """The hard-won ones, each added after seeing it get this wrong."""
 
-    @pytest.mark.parametrize("rule", [
-        "NEVER MENTION HOW YOU WORK:",
-        "DO NOT NARRATE YOUR OWN STANDARDS:",
-        "BE SHORT ABOUT WHAT YOU DID NOT FIND:",
-        "BE INFORMATIVE, NOT PRESCRIPTIVE:",
-    ])
+    @pytest.mark.parametrize(
+        "rule",
+        [
+            "NEVER MENTION HOW YOU WORK:",
+            "DO NOT NARRATE YOUR OWN STANDARDS:",
+            "BE SHORT ABOUT WHAT YOU DID NOT FIND:",
+            "BE INFORMATIVE, NOT PRESCRIPTIVE:",
+        ],
+    )
     def test_rule_is_present(self, rule):
         assert rule in persona_prompt()
 
@@ -103,10 +109,7 @@ class TestFacts:
     def test_counted_facts_join_the_rotation(self):
         """The database-derived ones are what make the pool refresh itself."""
         counted = ["Right now I'm tracking 3,304 upcoming events."]
-        seen = {
-            greeting(random.Random(seed), extra_facts=counted)
-            for seed in range(40)
-        }
+        seen = {greeting(random.Random(seed), extra_facts=counted) for seed in range(40)}
         assert any(counted[0] in text for text in seen)
 
     def test_the_greeting_works_with_no_counted_facts(self):
@@ -146,14 +149,17 @@ class TestGreetingAndFarewell:
 
 
 class TestTitleQuality:
-    @pytest.mark.parametrize("title,ok", [
-        ("A WRINKLE IN TIME", True),
-        ("Best of The Second City", True),
-        ("Closed", False),
-        ("doing our literal speed", False),
-        ("Multiple Days", False),
-        ("$10 cover", False),
-        ("TBA", False),
-    ])
+    @pytest.mark.parametrize(
+        "title,ok",
+        [
+            ("A WRINKLE IN TIME", True),
+            ("Best of The Second City", True),
+            ("Closed", False),
+            ("doing our literal speed", False),
+            ("Multiple Days", False),
+            ("$10 cover", False),
+            ("TBA", False),
+        ],
+    )
     def test_only_real_titles_reach_the_greeting(self, title, ok):
         assert reads_like_a_title(title) is ok

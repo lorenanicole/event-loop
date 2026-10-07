@@ -13,7 +13,6 @@ local, instant, deterministic and not subject to anyone's rate limit.
 import json
 import logging
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +40,7 @@ NEIGHBORHOOD_ALIASES = {
 }
 
 
-def _canonical(name: Optional[str]) -> Optional[str]:
+def _canonical(name: str | None) -> str | None:
     if not name:
         return None
     return NEIGHBORHOOD_ALIASES.get(name.strip().lower(), name.strip())
@@ -53,7 +52,7 @@ class ChicagoNeighborhoods:
     def __init__(self, path: Path = BOUNDARIES_PATH, url: str = BOUNDARIES_URL):
         self._path = path
         self._url = url
-        self._features: Optional[list] = None
+        self._features: list | None = None
 
     def _load(self) -> list:
         """Load boundaries, downloading them once if they are not cached."""
@@ -97,7 +96,7 @@ class ChicagoNeighborhoods:
                     inside = not inside
         return inside
 
-    def lookup(self, latitude: float, longitude: float) -> Optional[str]:
+    def lookup(self, latitude: float, longitude: float) -> str | None:
         """Neighborhood containing this point, or None if outside Chicago."""
         if latitude is None or longitude is None:
             return None
@@ -118,7 +117,7 @@ class ChicagoNeighborhoods:
                     return _canonical(feature.get("properties", {}).get("pri_neigh"))
         return None
 
-    def locate_in(self, latitude: float, longitude: float, boundaries: dict) -> Optional[str]:
+    def locate_in(self, latitude: float, longitude: float, boundaries: dict) -> str | None:
         """Place a point using boundaries already loaded from the database.
 
         `boundaries` maps neighborhood name -> parsed GeoJSON geometry, so this
@@ -140,7 +139,7 @@ class ChicagoNeighborhoods:
 chicago_neighborhoods = ChicagoNeighborhoods()
 
 
-def neighborhood_for(latitude: Optional[float], longitude: Optional[float]) -> Optional[str]:
+def neighborhood_for(latitude: float | None, longitude: float | None) -> str | None:
     """Neighborhood name for a coordinate, or None if it is outside the city."""
     if latitude is None or longitude is None:
         return None

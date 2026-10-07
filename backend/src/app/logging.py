@@ -2,8 +2,9 @@
 
 import logging
 import os
-import structlog
 from typing import Any
+
+import structlog
 
 
 def configure_logging(level: str = "INFO") -> None:

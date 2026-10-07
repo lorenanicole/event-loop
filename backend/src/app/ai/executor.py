@@ -5,37 +5,37 @@ Manages REACT agent execution and state transitions for streaming responses.
 
 from __future__ import annotations
 
-import logging
 import json
+import logging
+import time
+from collections.abc import AsyncGenerator
 from datetime import datetime
-from typing import AsyncGenerator, Optional
+
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.database import AsyncSessionLocal
-from shared.database.models import ChatThreadModel, ChatMessageModel, AuditLogModel, EventModel
-from app.ai.chatbot import agent
-from app.ai.intent_classifier import get_intent_classifier, Intent, get_intent_response
 from app import telemetry
-from app.security import (
-    validate_and_sanitize,
-    OutputValidator,
-    rate_limiter,
-)
+from app.ai.chatbot import agent
+from app.ai.intent_classifier import Intent, get_intent_classifier, get_intent_response
 from app.resilience import (
-    llm_circuit_breaker,
-    db_circuit_breaker,
     ErrorClassifier,
+    db_circuit_breaker,
     default_retry_policy,
+    llm_circuit_breaker,
 )
-import time
+from app.security import (
+    OutputValidator,
+    validate_and_sanitize,
+)
+from shared.database import AsyncSessionLocal
+from shared.database.models import AuditLogModel, ChatMessageModel, ChatThreadModel
 
 logger = logging.getLogger(__name__)
 
 
 class StreamEvent(BaseModel):
     """Base class for all SSE events emitted during chat execution."""
+
     event: str
     data: dict = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=datetime.utcnow)
@@ -43,12 +43,14 @@ class StreamEvent(BaseModel):
 
 class ChatStartedEvent(StreamEvent):
     """Emitted when chat thread is created."""
+
     event: str = "chat_started"
     thread_id: str | None = None
 
 
 class ThinkingEvent(StreamEvent):
     """Emitted when agent is reasoning."""
+
     event: str = "thinking"
     status: str
 
@@ -81,7 +83,7 @@ def _tools_used(result) -> list[tuple[str, dict]]:
             if isinstance(args, str):
                 try:
                     args = json.loads(args)
-                except (json.JSONDecodeError, TypeError):
+                except json.JSONDecodeError, TypeError:
                     args = {"raw": args}
             calls.append((name, args if isinstance(args, dict) else {}))
     return calls
@@ -89,6 +91,7 @@ def _tools_used(result) -> list[tuple[str, dict]]:
 
 class ToolCallEvent(StreamEvent):
     """Emitted when agent calls a tool."""
+
     event: str = "tool_call"
     tool: str
     args: dict
@@ -96,6 +99,7 @@ class ToolCallEvent(StreamEvent):
 
 class ToolResultEvent(StreamEvent):
     """Emitted when tool returns results."""
+
     event: str = "tool_result"
     tool: str
     result_count: int
@@ -104,6 +108,7 @@ class ToolResultEvent(StreamEvent):
 
 class ResponseEvent(StreamEvent):
     """Emitted with the final response."""
+
     event: str = "response"
     message: str
     tokens: int
@@ -111,6 +116,7 @@ class ResponseEvent(StreamEvent):
 
 class ConversationStatusEvent(StreamEvent):
     """Emitted when conversation is approaching limits."""
+
     event: str = "conversation_status"
     status: str
     remaining_tokens: int
@@ -119,6 +125,7 @@ class ConversationStatusEvent(StreamEvent):
 
 class CompleteEvent(StreamEvent):
     """Emitted when execution is complete."""
+
     event: str = "complete"
     thread_id: str
     tokens_used: int
@@ -157,7 +164,7 @@ class ChatExecutor:
         self,
         message: str,
         thread_id: str | None = None,
-    ) -> AsyncGenerator[StreamEvent, None]:
+    ) -> AsyncGenerator[StreamEvent]:
         """
         Execute a chat message through the REACT agent and yield SSE events.
 
@@ -181,7 +188,9 @@ class ChatExecutor:
                 logger.warning(f"Security check failed: {threat_reason}")
                 yield StreamEvent(
                     event="error",
-                    data={"error": "⚠️ Request blocked for security. Please try a different question."},
+                    data={
+                        "error": "⚠️ Request blocked for security. Please try a different question."
+                    },
                 )
                 return
 
@@ -234,15 +243,19 @@ class ChatExecutor:
                 # planning an evening in Wicker Park.
                 recent_text = []
                 if thread.turn_count:
-                    rows = (await db.execute(
-                        select(ChatMessageModel)
-                        .where(ChatMessageModel.thread_id == thread_id)
-                        .order_by(ChatMessageModel.created_at.desc())
-                        .limit(4)
-                    )).scalars().all()
-                    recent_text = [
-                        f"{r.role}: {(r.content or '')[:300]}" for r in reversed(rows)
-                    ]
+                    rows = (
+                        (
+                            await db.execute(
+                                select(ChatMessageModel)
+                                .where(ChatMessageModel.thread_id == thread_id)
+                                .order_by(ChatMessageModel.created_at.desc())
+                                .limit(4)
+                            )
+                        )
+                        .scalars()
+                        .all()
+                    )
+                    recent_text = [f"{r.role}: {(r.content or '')[:300]}" for r in reversed(rows)]
                 intent, confidence, reasoning = await classifier.classify(
                     message, recent=recent_text
                 )
@@ -267,24 +280,35 @@ class ChatExecutor:
                         tokens=0,
                         data={"message": farewell_text, "conversation_ended": True},
                     )
-                    db.add(ChatMessageModel(
-                        thread_id=thread_id, role="assistant",
-                        content=farewell_text, token_count=0,
-                    ))
+                    db.add(
+                        ChatMessageModel(
+                            thread_id=thread_id,
+                            role="assistant",
+                            content=farewell_text,
+                            token_count=0,
+                        )
+                    )
                     await db.commit()
                     await close_thread(db, thread_id)
                     yield ConversationStatusEvent(
                         status="Conversation ended.",
                         remaining_tokens=0,
                         remaining_turns=0,
-                        data={"status": "limit_reached", "reason": "goodbye",
-                              "message": farewell_text},
+                        data={
+                            "status": "limit_reached",
+                            "reason": "goodbye",
+                            "message": farewell_text,
+                        },
                     )
                     yield CompleteEvent(
                         thread_id=thread_id,
                         tokens_used=0,
-                        data={"thread_id": thread_id, "tokens_used": 0,
-                              "remaining_tokens": 0, "remaining_turns": 0},
+                        data={
+                            "thread_id": thread_id,
+                            "tokens_used": 0,
+                            "remaining_tokens": 0,
+                            "remaining_turns": 0,
+                        },
                     )
                     return
 
@@ -336,9 +360,7 @@ class ChatExecutor:
                 if remaining_turns <= 0 or remaining_tokens <= 0:
                     from app.ai.persona import farewell
 
-                    goodbye = farewell(
-                        "turns" if remaining_turns <= 0 else "tokens"
-                    )
+                    goodbye = farewell("turns" if remaining_turns <= 0 else "tokens")
                     # Sent as a message, not only a status chip: the person was
                     # talking to the assistant, so the assistant should be the
                     # one to say it is done and what to do next.
@@ -355,7 +377,7 @@ class ChatExecutor:
                             "status": "limit_reached",
                             "reason": "turns" if remaining_turns <= 0 else "tokens",
                             "message": goodbye,
-                        }
+                        },
                     )
                     yield CompleteEvent(
                         thread_id=thread_id,
@@ -387,8 +409,7 @@ class ChatExecutor:
 
                 # State 2: Thinking
                 yield ThinkingEvent(
-                    status="Analyzing your request...",
-                    data={"status": "Analyzing your request..."}
+                    status="Analyzing your request...", data={"status": "Analyzing your request..."}
                 )
 
                 # Run REACT agent with event interception
@@ -415,7 +436,7 @@ class ChatExecutor:
                         "message": full_response,
                         "tokens": total_tokens,
                         "tool_calls": tool_calls_made,
-                    }
+                    },
                 )
 
                 # Store assistant message
@@ -441,7 +462,9 @@ class ChatExecutor:
                 new_remaining_turns = self.MAX_TURNS_PER_CONVERSATION - thread.turn_count
                 is_session_complete = new_remaining_turns <= 0 or new_remaining_tokens <= 0
 
-                if new_remaining_tokens < (self.MAX_TOKENS_PER_CONVERSATION * (1 - self.TOKEN_WARNING_THRESHOLD)):
+                if new_remaining_tokens < (
+                    self.MAX_TOKENS_PER_CONVERSATION * (1 - self.TOKEN_WARNING_THRESHOLD)
+                ):
                     yield ConversationStatusEvent(
                         status="One more question available",
                         remaining_tokens=max(0, new_remaining_tokens),
@@ -450,16 +473,14 @@ class ChatExecutor:
                             "status": "limit_approaching",
                             "remaining_tokens": max(0, new_remaining_tokens),
                             "remaining_turns": max(0, new_remaining_turns),
-                        }
+                        },
                     )
 
                 # Record completion metrics if session is done
                 if is_session_complete:
                     from app.ai.persona import farewell
 
-                    goodbye = farewell(
-                        "turns" if new_remaining_turns <= 0 else "tokens"
-                    )
+                    goodbye = farewell("turns" if new_remaining_turns <= 0 else "tokens")
                     # Told on the turn that spends the last of the budget,
                     # rather than on the next one. Otherwise the person types a
                     # follow-up, waits, and only then learns the conversation
@@ -500,7 +521,7 @@ class ChatExecutor:
                         "tool_calls": tool_calls_made,
                         "remaining_tokens": max(0, new_remaining_tokens),
                         "remaining_turns": max(0, new_remaining_turns),
-                    }
+                    },
                 )
 
         except Exception as e:
@@ -515,10 +536,7 @@ class ChatExecutor:
 
             # Return user-friendly error
             error_message = self._get_user_friendly_error(str(e))
-            yield StreamEvent(
-                event="error",
-                data={"error": error_message}
-            )
+            yield StreamEvent(event="error", data={"error": error_message})
 
     def _get_user_friendly_error(self, error_str: str) -> str:
         """Convert technical errors into user-friendly messages."""
@@ -567,12 +585,18 @@ class ChatExecutor:
         from app.ai.chatbot import SYSTEM_PROMPT, todays_date
         from app.ai.persona import persona_prompt
 
-        rows = (await db.execute(
-            select(ChatMessageModel)
-            .where(ChatMessageModel.thread_id == thread_id)
-            .order_by(ChatMessageModel.created_at.desc())
-            .limit(self.HISTORY_MESSAGES + 1)
-        )).scalars().all()
+        rows = (
+            (
+                await db.execute(
+                    select(ChatMessageModel)
+                    .where(ChatMessageModel.thread_id == thread_id)
+                    .order_by(ChatMessageModel.created_at.desc())
+                    .limit(self.HISTORY_MESSAGES + 1)
+                )
+            )
+            .scalars()
+            .all()
+        )
 
         history = []
         for row in reversed(rows):
@@ -607,18 +631,23 @@ class ChatExecutor:
         #
         # The dynamic ones are evaluated now rather than stored, so a
         # conversation spanning midnight does not keep yesterday's date.
-        history.insert(0, ModelRequest(parts=[
-            SystemPromptPart(content=SYSTEM_PROMPT),
-            SystemPromptPart(content=persona_prompt()),
-            SystemPromptPart(content=todays_date()),
-        ]))
+        history.insert(
+            0,
+            ModelRequest(
+                parts=[
+                    SystemPromptPart(content=SYSTEM_PROMPT),
+                    SystemPromptPart(content=persona_prompt()),
+                    SystemPromptPart(content=todays_date()),
+                ]
+            ),
+        )
         return history
 
     async def _run_agent_with_events(
         self,
         message: str,
-        history: Optional[list] = None,
-    ) -> AsyncGenerator[StreamEvent, None]:
+        history: list | None = None,
+    ) -> AsyncGenerator[StreamEvent]:
         """
         Run PydanticAI agent with circuit breaker and graceful degradation.
         If LLM fails: fall back to simple database search.
@@ -670,11 +699,15 @@ class ChatExecutor:
                 if response_text.startswith('{"') and '"search_local_db"' in response_text:
                     try:
                         import json
+
                         tool_outputs = json.loads(response_text)
-                        if "search_local_db" in tool_outputs and tool_outputs["search_local_db"] != "NO_RESULTS":
+                        if (
+                            "search_local_db" in tool_outputs
+                            and tool_outputs["search_local_db"] != "NO_RESULTS"
+                        ):
                             # Use the formatted results from search_local_db
                             response_text = tool_outputs["search_local_db"]
-                    except (json.JSONDecodeError, KeyError):
+                    except json.JSONDecodeError, KeyError:
                         # If parsing fails, use the original response
                         pass
 
@@ -736,7 +769,7 @@ class ChatExecutor:
                 },
             )
 
-    async def _fallback_db_search(self, query: str) -> AsyncGenerator[ResponseEvent, None]:
+    async def _fallback_db_search(self, query: str) -> AsyncGenerator[ResponseEvent]:
         """
         Fallback: Search database only when LLM is unavailable.
         Simple keyword search without AI enhancement.
@@ -756,7 +789,6 @@ class ChatExecutor:
             data={"message": "DB search unavailable", "tokens": 15, "error": True},
         )
         return
-
 
     async def _audit_log(
         self,
@@ -784,19 +816,20 @@ class ChatExecutor:
         worse than none.
         """
         from shared.database import AsyncSessionLocal
-        from shared.database.models import AuditLogModel
 
         try:
             async with AsyncSessionLocal() as session:
-                session.add(AuditLogModel(
-                    thread_id=thread_id,
-                    operation=operation,
-                    status=status,
-                    duration_ms=duration_ms,
-                    tokens_used=tokens,
-                    metadata=json.dumps(metadata) if metadata else None,
-                    error_message=error_message,
-                ))
+                session.add(
+                    AuditLogModel(
+                        thread_id=thread_id,
+                        operation=operation,
+                        status=status,
+                        duration_ms=duration_ms,
+                        tokens_used=tokens,
+                        metadata=json.dumps(metadata) if metadata else None,
+                        error_message=error_message,
+                    )
+                )
                 await session.commit()
         except Exception as exc:  # noqa: BLE001 - see docstring
             logger.warning("audit log write failed: %s: %s", type(exc).__name__, exc)

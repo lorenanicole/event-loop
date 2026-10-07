@@ -38,7 +38,7 @@ still useful for noticing a label nobody has mapped yet - see
 """
 
 import re
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 from sqlalchemy import String, cast, or_
 
@@ -64,8 +64,7 @@ CATEGORY_TAXONOMY: dict[str, list[str]] = {
     # "Arts & Crafts" stays a distinct subtag under Arts. Making something and
     # going to look at something are different outings, and collapsing them
     # outright was the objection to a flat list in the first place.
-    "Arts": ["Arts", "Arts & Culture", "Arts & Crafts", "Poetry & Literary",
-             "Arts & Theatre"],
+    "Arts": ["Arts", "Arts & Culture", "Arts & Crafts", "Poetry & Literary", "Arts & Theatre"],
     "Comedy": ["Comedy"],
     "Film": ["Film", "TV & Film"],
     # "Activism & Community Events" is do312's own bucket, and it is why a
@@ -103,7 +102,7 @@ for _parent, _subtags in CATEGORY_TAXONOMY.items():
         _SUBTAG_PARENTS.setdefault(_subtag.lower(), []).append(_parent)
 
 
-def parents_of(label: Optional[str]) -> list[str]:
+def parents_of(label: str | None) -> list[str]:
     """The parent categories a source label belongs to, primary first.
 
     An unmapped label is returned as its own parent rather than dropped or
@@ -117,7 +116,7 @@ def parents_of(label: Optional[str]) -> list[str]:
     return list(_SUBTAG_PARENTS.get(clean.lower(), [clean]))
 
 
-def to_parents(labels: Iterable[Optional[str]]) -> list[str]:
+def to_parents(labels: Iterable[str | None]) -> list[str]:
     """Every parent for a list of source labels, in order, de-duplicated."""
     parents: list[str] = []
     for label in labels:
@@ -127,7 +126,7 @@ def to_parents(labels: Iterable[Optional[str]]) -> list[str]:
     return parents
 
 
-def informative_subtags(labels: Iterable[Optional[str]], parents: list[str]) -> list[str]:
+def informative_subtags(labels: Iterable[str | None], parents: list[str]) -> list[str]:
     """The source labels worth keeping next to their parents.
 
     A subtag earns its place by saying something the parent does not.
@@ -146,7 +145,7 @@ def informative_subtags(labels: Iterable[Optional[str]], parents: list[str]) -> 
     return keep
 
 
-def unmapped_labels(labels: Iterable[Optional[str]]) -> list[str]:
+def unmapped_labels(labels: Iterable[str | None]) -> list[str]:
     """Labels with no entry in the taxonomy, so a gap can be reported.
 
     This is the job similarity scoring is actually good at: not deciding where
@@ -159,6 +158,7 @@ def unmapped_labels(labels: Iterable[Optional[str]]) -> list[str]:
         if clean and clean.lower() not in _SUBTAG_PARENTS and clean not in missing:
             missing.append(clean)
     return missing
+
 
 # A concept -> the words a person might use for it, and the prefixes it should
 # match against stored category values. Prefixes rather than substrings because
@@ -175,11 +175,36 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
         # Only genre names that are not also ordinary words. "house" is left
         # out deliberately: it matches open house, haunted house and house
         # party. "soul" is out for "soul food" and song titles.
-        "words": ["music", "concert", "band", "dj", "acoustic", "gig",
-                  "live music", "blues", "jazz", "funk", "r&b", "hip hop",
-                  "rap", "techno", "punk", "metal", "indie", "folk",
-                  "bluegrass", "reggae", "salsa", "cumbia", "mariachi",
-                  "orchestra", "symphony", "opera", "choir", "dj set"],
+        "words": [
+            "music",
+            "concert",
+            "band",
+            "dj",
+            "acoustic",
+            "gig",
+            "live music",
+            "blues",
+            "jazz",
+            "funk",
+            "r&b",
+            "hip hop",
+            "rap",
+            "techno",
+            "punk",
+            "metal",
+            "indie",
+            "folk",
+            "bluegrass",
+            "reggae",
+            "salsa",
+            "cumbia",
+            "mariachi",
+            "orchestra",
+            "symphony",
+            "opera",
+            "choir",
+            "dj set",
+        ],
         "prefixes": ["music"],
     },
     "comedy": {
@@ -219,9 +244,22 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
     },
     "food": {
         "canonical": "Food & Drink",
-        "words": ["food", "dining", "restaurant", "chef", "cooking", "tasting",
-                  "brunch", "oktoberfest", "mocktoberfest", "beer garden",
-                  "wine", "cocktail", "whiskey", "brewery"],
+        "words": [
+            "food",
+            "dining",
+            "restaurant",
+            "chef",
+            "cooking",
+            "tasting",
+            "brunch",
+            "oktoberfest",
+            "mocktoberfest",
+            "beer garden",
+            "wine",
+            "cocktail",
+            "whiskey",
+            "brewery",
+        ],
         "prefixes": ["food"],
     },
     "sports": {
@@ -239,14 +277,36 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
         # a game from a gig.
         # "marathon", "5k" and "fun run" are races. Bare "run" is not added:
         # it matches a show's run, a run of dates, and "run the world".
-        "words": ["sports", "sport", "game", "match", "tournament", "athletic",
-                  "marathon", "triathlon", "5k", "10k", "fun run", "half marathon"],
+        "words": [
+            "sports",
+            "sport",
+            "game",
+            "match",
+            "tournament",
+            "athletic",
+            "marathon",
+            "triathlon",
+            "5k",
+            "10k",
+            "fun run",
+            "half marathon",
+        ],
         "prefixes": ["sport"],
     },
     "community": {
         "canonical": "Community",
-        "words": ["community", "volunteer", "meetup", "meeting", "user group",
-                  "workshop", "class", "potluck", "mixer", "social"],
+        "words": [
+            "community",
+            "volunteer",
+            "meetup",
+            "meeting",
+            "user group",
+            "workshop",
+            "class",
+            "potluck",
+            "mixer",
+            "social",
+        ],
         "prefixes": ["community", "activism"],
     },
     "wellness": {
@@ -256,10 +316,26 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
     },
     "education": {
         "canonical": "Tech / Educational",
-        "words": ["lecture", "seminar", "talk", "talks", "panel", "symposium",
-                  "hack night", "open hack", "hack day",
-                  "astronomy", "astronomer", "astrophysicist", "observation",
-                  "in conversation", "science", "stem", "coding", "hackathon"],
+        "words": [
+            "lecture",
+            "seminar",
+            "talk",
+            "talks",
+            "panel",
+            "symposium",
+            "hack night",
+            "open hack",
+            "hack day",
+            "astronomy",
+            "astronomer",
+            "astrophysicist",
+            "observation",
+            "in conversation",
+            "science",
+            "stem",
+            "coding",
+            "hackathon",
+        ],
         "prefixes": ["tech"],
     },
     "lgbtq": {
@@ -276,17 +352,38 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
     "holiday": {
         "canonical": "Holiday & Seasonal",
         "words": [
-            "halloween", "haunted", "haunt", "spooktacular", "spooky",
-            "jack-o-lantern", "trick or treat", "day of the dead",
-            "dia de los muertos", "christmas", "holiday", "hanukkah",
-            "kwanzaa", "new year", "nye", "thanksgiving", "easter",
-            "valentine", "lunar new year", "juneteenth",
+            "halloween",
+            "haunted",
+            "haunt",
+            "spooktacular",
+            "spooky",
+            "jack-o-lantern",
+            "trick or treat",
+            "day of the dead",
+            "dia de los muertos",
+            "christmas",
+            "holiday",
+            "hanukkah",
+            "kwanzaa",
+            "new year",
+            "nye",
+            "thanksgiving",
+            "easter",
+            "valentine",
+            "lunar new year",
+            "juneteenth",
             # How Chicago actually titles its October events: "A Nightmare on
             # Fulton Street", "Ravenswood Costume Crawl", "Creepy Cruise",
             # "Drunk Dracula", "Terror in the Tropics", "Howl-O-Ween Canine
             # Cruise". None of them contains the word Halloween.
-            "nightmare", "costume", "creepy", "terror", "dracula", "zombie",
-            "howl-o-ween", "all hallows",
+            "nightmare",
+            "costume",
+            "creepy",
+            "terror",
+            "dracula",
+            "zombie",
+            "howl-o-ween",
+            "all hallows",
             # "pumpkin" and "ghost" were here and are removed. Both are band
             # and series names at least as often as they are seasonal:
             # "Smashing Pumpkins" at the United Center and "Relax Attack Jazz
@@ -306,8 +403,16 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
     "shopping": {
         "canonical": "Shopping",
         "words": [
-            "market", "expo", "vintage", "flea", "bazaar", "pop-up",
-            "trunk show", "makers", "handmade", "shopping",
+            "market",
+            "expo",
+            "vintage",
+            "flea",
+            "bazaar",
+            "pop-up",
+            "trunk show",
+            "makers",
+            "handmade",
+            "shopping",
         ],
         "prefixes": ["shopping"],
     },
@@ -340,25 +445,29 @@ _TITLE_CATEGORY_RULES: list[tuple[str, str]] = [
     # Center is configured as a music venue, which is right for most of its
     # calendar and filed every Bulls and Blackhawks game under Music. A title
     # rule outranks the venue default, which is the point of these.
-    ("Sports",
-     r"(?:\b(?:volleyball|basketball|soccer|hockey|baseball|football|lacrosse"
-     r"|rugby|softball|tennis|wrestling"
-     r"|bulls|blackhawks|bears|cubs|white sox|sky|fire|red stars|sting)\b"
-     r"(?=.*\bv(?:s\.?)?\b))"
-     r"|(?:\bv(?:s\.?)?\b(?=.*\b(?:volleyball|basketball|soccer|hockey"
-     r"|baseball|football|lacrosse|rugby|softball|tennis|wrestling"
-     r"|bulls|blackhawks|bears|cubs|white sox|sky|fire|red stars|sting)\b))"),
+    (
+        "Sports",
+        r"(?:\b(?:volleyball|basketball|soccer|hockey|baseball|football|lacrosse"
+        r"|rugby|softball|tennis|wrestling"
+        r"|bulls|blackhawks|bears|cubs|white sox|sky|fire|red stars|sting)\b"
+        r"(?=.*\bv(?:s\.?)?\b))"
+        r"|(?:\bv(?:s\.?)?\b(?=.*\b(?:volleyball|basketball|soccer|hockey"
+        r"|baseball|football|lacrosse|rugby|softball|tennis|wrestling"
+        r"|bulls|blackhawks|bears|cubs|white sox|sky|fire|red stars|sting)\b))",
+    ),
     ("Comedy", r"\bcomedy\b|\bstand[- ]?up\b|\bimprov\b"),
     ("Karaoke/Trivia/Open Mics", r"\b(karaoke|trivia|bingo|open[- ]mic)\b"),
     ("Arts & Crafts", r"\b(sewing|knit|crochet|quilt|pottery|ceramics?|life drawing)\b"),
-    ("Food & Drink",
-     r"\b(wine wednesday|happy hour|bottomless|drag brunch|supper club)\b"
-     r"|\bhalf[- ]price[d]?\s+(wine|beer|drink)"
-     r"|\b(beer|whiskey|wine) tasting\b"),
+    (
+        "Food & Drink",
+        r"\b(wine wednesday|happy hour|bottomless|drag brunch|supper club)\b"
+        r"|\bhalf[- ]price[d]?\s+(wine|beer|drink)"
+        r"|\b(beer|whiskey|wine) tasting\b",
+    ),
 ]
 
 
-def infer_category(title: Optional[str], fallback: str) -> str:
+def infer_category(title: str | None, fallback: str) -> str:
     """Override a venue's blanket category where the title is unambiguous.
 
     Returns `fallback` unchanged when nothing matches, which is the common
@@ -373,7 +482,7 @@ def infer_category(title: Optional[str], fallback: str) -> str:
 
 
 def classify_from_title(
-    title: Optional[str], fallback: str = "Events", hint: Optional[str] = None
+    title: str | None, fallback: str = "Events", hint: str | None = None
 ) -> str:
     """Pick a category for an event that arrives without one.
 
@@ -411,7 +520,7 @@ def classify_from_title(
     return fallback
 
 
-def _with_hint(title: Optional[str], hint: Optional[str]) -> str:
+def _with_hint(title: str | None, hint: str | None) -> str:
     """Title and hint as one string for concept matching."""
     return " ".join(part for part in (title, hint) if part)
 
@@ -427,9 +536,7 @@ MAX_CATEGORIES = 3
 GENERIC_CATEGORY = "Events"
 
 
-def classify_all(
-    title: Optional[str], fallback: str = "Events", hint: Optional[str] = None
-) -> list[str]:
+def classify_all(title: str | None, fallback: str = "Events", hint: str | None = None) -> list[str]:
     """Every category an event plausibly belongs to, primary first.
 
     One event genuinely belongs to several: a trans pride festival is both
@@ -507,7 +614,7 @@ def classify_all(
     return normalized[:MAX_CATEGORIES]
 
 
-def normalize_category(value: Optional[str]) -> Optional[str]:
+def normalize_category(value: str | None) -> str | None:
     """Normalize a category's casing and whitespace, leaving its wording alone.
 
     "music" and "Music" are the same category from two sources and should not

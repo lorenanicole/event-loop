@@ -3,12 +3,13 @@ Fetch entertainment venues from OpenStreetMap using Nominatim API.
 Geocodes known Chicago venues and discovers their websites via SerpAPI.
 """
 
-import httpx
 import asyncio
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Optional
+
+import httpx
+
 from .chicago_venues import get_all_venue_names
 
 logger = logging.getLogger(__name__)
@@ -26,13 +27,11 @@ CHICAGO_NEIGHBORHOODS = {
     "South Loop": (41.8666, -87.6243),
     "Near South Side": (41.8500, -87.6250),
     "Printer's Row": (41.8689, -87.6386),
-
     # North Gold Coast
     "Gold Coast": (41.8980, -87.6244),
     "Old Town": (41.9061, -87.6137),
     "Lincoln Park": (41.9214, -87.6471),
     "Clybourn Corridor": (41.9080, -87.6490),
-
     # North Side
     "Lakeview": (41.9380, -87.6455),
     "Boystown": (41.9440, -87.6443),
@@ -40,7 +39,6 @@ CHICAGO_NEIGHBORHOODS = {
     "Andersonville": (41.9709, -87.6707),
     "Edgewater": (41.9730, -87.6570),
     "Rogers Park": (41.9978, -87.6752),
-
     # Northwest Side
     "Wicker Park": (41.9086, -87.6751),
     "Bucktown": (41.9189, -87.6899),
@@ -50,19 +48,16 @@ CHICAGO_NEIGHBORHOODS = {
     "Avondale": (41.9524, -87.7048),
     "Ravenswood": (41.9626, -87.6933),
     "Kilbourn Park": (41.9474, -87.7095),
-
     # West & Southwest
     "Pilsen": (41.8534, -87.6426),
     "Little Italy": (41.8715, -87.6475),
     "University Village": (41.8058, -87.6258),
     "Bridgeport": (41.8311, -87.6427),
     "Bronzeville": (41.8170, -87.6155),
-
     # Central/South
     "Oak Park": (41.8763, -87.7839),
     "Lincoln Square": (41.9748, -87.6954),
     "North Center": (41.9503, -87.6995),
-
     # Lakefront
     "Streeterville": (41.8867, -87.6066),
 }
@@ -71,13 +66,14 @@ CHICAGO_NEIGHBORHOODS = {
 @dataclass
 class Venue:
     """Entertainment venue from OpenStreetMap."""
+
     name: str
     lat: float
     lon: float
     venue_type: str
-    website: Optional[str] = None
-    phone: Optional[str] = None
-    neighborhood: Optional[str] = field(default=None)
+    website: str | None = None
+    phone: str | None = None
+    neighborhood: str | None = field(default=None)
 
     def get_neighborhood(self) -> str:
         """Find nearest Chicago neighborhood."""
@@ -85,7 +81,7 @@ class Venue:
             return self.neighborhood
 
         # Simple distance check to nearest neighborhood
-        min_distance = float('inf')
+        min_distance = float("inf")
         nearest = "Chicago"
 
         for nbhd, (lat, lon) in CHICAGO_NEIGHBORHOODS.items():
@@ -122,7 +118,7 @@ async def fetch_chicago_venues() -> list[Venue]:
                         "q": f"{venue_name}, Chicago",
                         "format": "json",
                         "limit": 1,
-                    }
+                    },
                 )
                 response.raise_for_status()
                 results = response.json()
@@ -148,7 +144,9 @@ async def fetch_chicago_venues() -> list[Venue]:
                         logger.debug(f"Failed to get website for {venue_name}: {e}")
 
                 venues.append(venue)
-                logger.debug(f"Added: {venue_name} ({venue.neighborhood}) - {venue.lat:.4f}, {venue.lon:.4f}")
+                logger.debug(
+                    f"Added: {venue_name} ({venue.neighborhood}) - {venue.lat:.4f}, {venue.lon:.4f}"
+                )
 
             except Exception as e:
                 logger.debug(f"Failed to geocode '{venue_name}': {e}")
@@ -157,7 +155,9 @@ async def fetch_chicago_venues() -> list[Venue]:
     return venues
 
 
-async def _get_venue_website(client: httpx.AsyncClient, venue_name: str, api_key: str) -> Optional[str]:
+async def _get_venue_website(
+    client: httpx.AsyncClient, venue_name: str, api_key: str
+) -> str | None:
     """Discover venue website using SerpAPI."""
     try:
         await asyncio.sleep(0.5)  # SerpAPI rate limiting
@@ -169,12 +169,12 @@ async def _get_venue_website(client: httpx.AsyncClient, venue_name: str, api_key
                 "api_key": api_key,
                 "engine": "google",
                 "num": 3,
-            }
+            },
         )
         response.raise_for_status()
 
         results = response.json()
-        if "organic_results" in results and results["organic_results"]:
+        if results.get("organic_results"):
             # Return first result's link
             first_result = results["organic_results"][0]
             link = first_result.get("link")
@@ -186,7 +186,7 @@ async def _get_venue_website(client: httpx.AsyncClient, venue_name: str, api_key
     return None
 
 
-def _parse_nominatim_result(result: dict) -> Optional[Venue]:
+def _parse_nominatim_result(result: dict) -> Venue | None:
     """Parse Nominatim search result into a Venue."""
     try:
         name = result.get("name", "").strip()
@@ -222,7 +222,7 @@ def _parse_nominatim_result(result: dict) -> Optional[Venue]:
             lon=lon,
             venue_type=venue_type,
             website=None,  # Nominatim doesn't provide website
-            phone=None,    # Nominatim doesn't provide phone
+            phone=None,  # Nominatim doesn't provide phone
         )
     except (ValueError, KeyError, TypeError) as e:
         logger.debug(f"Failed to parse Nominatim result: {e}")

@@ -15,13 +15,12 @@ which is what the date filters and the "tonight" window already assume.
 """
 
 from datetime import datetime
-from typing import Optional
 from zoneinfo import ZoneInfo
 
 CHICAGO = ZoneInfo("America/Chicago")
 
 
-def to_chicago_naive(value: Optional[datetime]) -> Optional[datetime]:
+def to_chicago_naive(value: datetime | None) -> datetime | None:
     """Convert an aware datetime to naive Chicago local time.
 
     A naive value is passed through untouched: it came from a venue page that
@@ -36,7 +35,7 @@ def to_chicago_naive(value: Optional[datetime]) -> Optional[datetime]:
     return value.astimezone(CHICAGO).replace(tzinfo=None)
 
 
-def utc_naive_to_chicago(value: Optional[datetime]) -> Optional[datetime]:
+def utc_naive_to_chicago(value: datetime | None) -> datetime | None:
     """Reinterpret a naive value that is really UTC, and convert it.
 
     For repairing rows already stored: the offset was dropped on the way in,

@@ -3,11 +3,11 @@ Avondale venues - using flexible config-driven scraping framework.
 Strategic approach: discover event pages, identify DOM selectors, configure extraction.
 """
 
-import httpx
 import logging
-from .venue_scraper import VenueScraper, VenueConfig, VenueEvent
-from bs4 import BeautifulSoup
-import re
+
+import httpx
+
+from .venue_scraper import VenueConfig, VenueEvent, VenueScraper
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ AVONDALE_VENUES = [
 async def scrape_avondale_venues() -> list[VenueEvent]:
     """Scrape all Avondale venues using flexible framework."""
     all_events = []
-    
+
     async with httpx.AsyncClient(timeout=15) as client:
         for config in AVONDALE_VENUES:
             try:

@@ -5,11 +5,14 @@ Run this script to initialize the database with all verified venues
 
 import asyncio
 import sys
-sys.path.insert(0, '/Users/lorenamesa/Workspace/python315')
+
+sys.path.insert(0, "/Users/lorenamesa/Workspace/python315")
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+
 from shared.database.models import Base, NeighborhoodModel, VenueModel
+
 from .chicago_venues_master import CHICAGO_VENUES_MASTER
 
 # Database URL - using aiosqlite for async SQLite
@@ -37,6 +40,7 @@ ENTERTAINMENT_LEVELS = {
     "Pilsen": "low",
 }
 
+
 async def populate_database():
     """Populate neighborhoods and venues into database."""
 
@@ -48,9 +52,7 @@ async def populate_database():
         await conn.run_sync(Base.metadata.create_all)
 
     # Create session factory
-    async_session = sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session() as session:
         print("Populating neighborhoods and venues...")
@@ -61,6 +63,7 @@ async def populate_database():
         for neighborhood_name, venues_list in sorted(CHICAGO_VENUES_MASTER.items()):
             # Check if neighborhood already exists
             from sqlalchemy import select
+
             stmt = select(NeighborhoodModel).where(NeighborhoodModel.name == neighborhood_name)
             result = await session.execute(stmt)
             existing = result.scalar_one_or_none()
@@ -83,8 +86,8 @@ async def populate_database():
             for venue_data in venues_list:
                 # Check if venue already exists
                 stmt = select(VenueModel).where(
-                    (VenueModel.name == venue_data["name"]) &
-                    (VenueModel.neighborhood_id == neighborhood.id)
+                    (VenueModel.name == venue_data["name"])
+                    & (VenueModel.neighborhood_id == neighborhood.id)
                 )
                 result = await session.execute(stmt)
                 existing_venue = result.scalar_one_or_none()
@@ -112,6 +115,7 @@ async def populate_database():
         print(f"✓ Total venues configured: {sum(len(v) for v in CHICAGO_VENUES_MASTER.values())}")
 
     await engine.dispose()
+
 
 if __name__ == "__main__":
     asyncio.run(populate_database())

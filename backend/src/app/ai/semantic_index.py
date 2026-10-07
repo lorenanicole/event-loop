@@ -11,7 +11,6 @@ in well under a second, and a query costs a fraction of a millisecond.
 
 import logging
 import threading
-from typing import Optional
 
 import numpy as np
 from sqlalchemy import select
@@ -40,7 +39,7 @@ class SemanticEventIndex:
         self._model = None
         self._lock = threading.Lock()
         self._event_ids: list[int] = []
-        self._vectors: Optional[np.ndarray] = None
+        self._vectors: np.ndarray | None = None
 
     @property
     def is_ready(self) -> bool:
@@ -77,9 +76,7 @@ class SemanticEventIndex:
 
     async def rebuild(self, session) -> int:
         """Re-embed every upcoming event. Returns the number indexed."""
-        result = await session.execute(
-            select(EventModel).where(upcoming_events_filter())
-        )
+        result = await session.execute(select(EventModel).where(upcoming_events_filter()))
         events = [e for e in result.scalars().all() if e.name]
         if not events:
             logger.info("Semantic index: no upcoming events to index")
@@ -100,7 +97,7 @@ class SemanticEventIndex:
         logger.info(f"Semantic index: embedded {len(events)} events")
         return len(events)
 
-    def _similarities(self, query: str) -> Optional[np.ndarray]:
+    def _similarities(self, query: str) -> np.ndarray | None:
         if not self.is_ready or not query.strip():
             return None
         model = self._load_model()
@@ -110,7 +107,9 @@ class SemanticEventIndex:
             return None
         return self._vectors @ (vector / norm)
 
-    def search(self, query: str, limit: int = 20, min_similarity: float = MIN_SIMILARITY) -> list[tuple[int, float]]:
+    def search(
+        self, query: str, limit: int = 20, min_similarity: float = MIN_SIMILARITY
+    ) -> list[tuple[int, float]]:
         """Most semantically similar events as (event_id, similarity), best first."""
         sims = self._similarities(query)
         if sims is None:
@@ -125,11 +124,7 @@ class SemanticEventIndex:
         if sims is None:
             return {}
         position = {eid: i for i, eid in enumerate(self._event_ids)}
-        return {
-            eid: float(sims[position[eid]])
-            for eid in event_ids
-            if eid in position
-        }
+        return {eid: float(sims[position[eid]]) for eid in event_ids if eid in position}
 
 
 # Module-level singleton: the model and its vectors are shared process-wide.

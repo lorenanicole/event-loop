@@ -1,5 +1,6 @@
-from datetime import datetime
 import uuid
+from datetime import datetime
+
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -19,6 +20,7 @@ Base = declarative_base()
 
 class NeighborhoodModel(Base):
     """Chicago neighborhood with metadata for event discovery."""
+
     __tablename__ = "neighborhoods"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -36,13 +38,12 @@ class NeighborhoodModel(Base):
     venues = relationship("VenueModel", back_populates="neighborhood", cascade="all, delete-orphan")
     events = relationship("EventModel", back_populates="neighborhood")
 
-    __table_args__ = (
-        Index("idx_name_researched", "name", "is_researched"),
-    )
+    __table_args__ = (Index("idx_name_researched", "name", "is_researched"),)
 
 
 class VenueModel(Base):
     """Entertainment venue within a neighborhood."""
+
     __tablename__ = "venues"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -60,7 +61,9 @@ class VenueModel(Base):
     description = Column(Text, nullable=True)
     capacity = Column(Integer, nullable=True)
     is_active = Column(Boolean, default=True, index=True)
-    scraper_status = Column(String(50), default="not_started", index=True)  # "not_started", "in_progress", "working", "failed"
+    scraper_status = Column(
+        String(50), default="not_started", index=True
+    )  # "not_started", "in_progress", "working", "failed"
     last_scraped_at = Column(DateTime, nullable=True)
     events_count = Column(Integer, default=0)  # Number of events extracted from this venue
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
@@ -82,6 +85,7 @@ class GeocodeCacheModel(Base):
     Caching the lookup per address means an external geocoder is consulted at
     most once for any given place, which keeps us inside its rate limits.
     """
+
     __tablename__ = "geocode_cache"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -124,7 +128,9 @@ class EventModel(Base):
     details = Column(Text, nullable=True)
     origination_url = Column(String(500), unique=True)
     date_retrieved = Column(DateTime, default=datetime.utcnow)
-    source = Column(String(50), default="unknown", index=True)  # do312, yourchicagoguide, ticketmaster, scraper, etc.
+    source = Column(
+        String(50), default="unknown", index=True
+    )  # do312, yourchicagoguide, ticketmaster, scraper, etc.
     cost = Column(String(100), nullable=True)  # "Free", "$25", "$15-30", "Donation", etc.
     age_range = Column(String(100), nullable=True)  # "All ages", "18+", "21+", "13+", etc.
     is_outdoor = Column(String(20), nullable=True)  # "outdoor", "indoor", "hybrid"
@@ -134,7 +140,9 @@ class EventModel(Base):
     # Stored so a neighborhood can be re-derived without re-scraping.
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
-    neighborhood_id = Column(Integer, ForeignKey("neighborhoods.id"), nullable=True, index=True)  # Link to neighborhood
+    neighborhood_id = Column(
+        Integer, ForeignKey("neighborhoods.id"), nullable=True, index=True
+    )  # Link to neighborhood
     venue_id = Column(Integer, ForeignKey("venues.id"), nullable=True, index=True)  # Link to venue
 
     neighborhood = relationship("NeighborhoodModel", back_populates="events")
@@ -154,6 +162,7 @@ class EventModel(Base):
 
 class ChatThreadModel(Base):
     """Represents a conversation thread (session)."""
+
     __tablename__ = "chat_threads"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
@@ -163,11 +172,14 @@ class ChatThreadModel(Base):
     turn_count = Column(Integer, default=0)  # Number of user-assistant exchanges
     status = Column(String(20), default="active", index=True)  # "active", "closed", "completed"
 
-    messages = relationship("ChatMessageModel", back_populates="thread", cascade="all, delete-orphan")
+    messages = relationship(
+        "ChatMessageModel", back_populates="thread", cascade="all, delete-orphan"
+    )
 
 
 class ChatMessageModel(Base):
     """Represents a single message in a conversation thread."""
+
     __tablename__ = "chat_messages"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -180,18 +192,19 @@ class ChatMessageModel(Base):
 
     thread = relationship("ChatThreadModel", back_populates="messages")
 
-    __table_args__ = (
-        Index("idx_thread_created", "thread_id", "created_at"),
-    )
+    __table_args__ = (Index("idx_thread_created", "thread_id", "created_at"),)
 
 
 class AuditLogModel(Base):
     """Audit trail for observability: tracks operations, metrics, and performance."""
+
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, index=True)
     thread_id = Column(String(36), ForeignKey("chat_threads.id"), index=True, nullable=True)
-    operation = Column(String(50), index=True)  # "chat_created", "question_asked", "tool_call", "completion"
+    operation = Column(
+        String(50), index=True
+    )  # "chat_created", "question_asked", "tool_call", "completion"
     status = Column(String(20), index=True)  # "success", "failure", "timeout"
     duration_ms = Column(Float)  # Operation duration in milliseconds
     tokens_used = Column(Integer, default=0)
@@ -208,10 +221,13 @@ class AuditLogModel(Base):
 
 class MetricsModel(Base):
     """Time-series metrics storage for observability dashboard."""
+
     __tablename__ = "metrics"
 
     id = Column(Integer, primary_key=True, index=True)
-    metric_name = Column(String(100), index=True)  # e.g., "http.server.request.duration", "chat.sessions.created"
+    metric_name = Column(
+        String(100), index=True
+    )  # e.g., "http.server.request.duration", "chat.sessions.created"
     metric_type = Column(String(20), index=True)  # "counter", "gauge", "histogram"
     value = Column(Float)  # Current value
     attributes = Column(Text)  # JSON string with labels/tags

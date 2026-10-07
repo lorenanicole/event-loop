@@ -28,7 +28,7 @@ class TestTodaysDate:
         assert f"{datetime.now(CHICAGO):%Z}" in prompt
 
     def test_it_resolves_the_weekend(self):
-        """"This weekend" is the single most common thing asked, and it is a
+        """ "This weekend" is the single most common thing asked, and it is a
         date calculation the model should not be doing from scratch."""
         prompt = todays_date()
         now = datetime.now(CHICAGO)
@@ -45,10 +45,12 @@ class TestTodaysDate:
     def test_it_is_evaluated_per_call_not_frozen(self):
         """A server started on Friday must not still believe it is Friday a
         week later, which a string baked into the static prompt would."""
-        import app.ai.chatbot as chatbot
+        from app.ai import chatbot
 
         assert callable(chatbot.todays_date)
         # Registered as a dynamic system prompt rather than concatenated in.
-        assert "Today is" not in chatbot.agent._instructions if hasattr(
-            chatbot.agent, "_instructions"
-        ) else True
+        assert (
+            "Today is" not in chatbot.agent._instructions
+            if hasattr(chatbot.agent, "_instructions")
+            else True
+        )

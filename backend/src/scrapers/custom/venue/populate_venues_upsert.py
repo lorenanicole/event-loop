@@ -4,12 +4,15 @@ Populate and UPDATE neighborhoods and venues - preserves events, updates venue d
 
 import asyncio
 import sys
-sys.path.insert(0, '/Users/lorenamesa/Workspace/python315')
 
+sys.path.insert(0, "/Users/lorenamesa/Workspace/python315")
+
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import select, update
+
 from shared.database.models import Base, NeighborhoodModel, VenueModel
+
 from .chicago_venues_master import CHICAGO_VENUES_MASTER
 
 DATABASE_URL = "sqlite+aiosqlite:////Users/lorenamesa/Workspace/python315/events.db"
@@ -29,6 +32,7 @@ ENTERTAINMENT_LEVELS = {
     "Humboldt Park": "medium",
     "Bridgeport": "medium",
 }
+
 
 async def upsert_database():
     """Populate and UPDATE neighborhoods and venues (non-destructive upsert)."""
@@ -83,8 +87,8 @@ async def upsert_database():
             # Upsert venues
             for venue_data in venues_list:
                 stmt = select(VenueModel).where(
-                    (VenueModel.name == venue_data["name"]) &
-                    (VenueModel.neighborhood_id == neighborhood.id)
+                    (VenueModel.name == venue_data["name"])
+                    & (VenueModel.neighborhood_id == neighborhood.id)
                 )
                 result = await session.execute(stmt)
                 existing_venue = result.scalar_one_or_none()
@@ -98,7 +102,9 @@ async def upsert_database():
                             category=venue_data.get("category", existing_venue.category),
                             address=venue_data.get("address", existing_venue.address),
                             website_url=venue_data.get("website", existing_venue.website_url),
-                            event_page_url=venue_data.get("event_page_url", existing_venue.event_page_url),
+                            event_page_url=venue_data.get(
+                                "event_page_url", existing_venue.event_page_url
+                            ),
                         )
                     )
                     await session.execute(stmt)
@@ -127,6 +133,7 @@ async def upsert_database():
         print(f"✓ Total venues: {sum(len(v) for v in CHICAGO_VENUES_MASTER.values())}")
 
     await engine.dispose()
+
 
 if __name__ == "__main__":
     asyncio.run(upsert_database())

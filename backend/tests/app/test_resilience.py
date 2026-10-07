@@ -3,10 +3,11 @@ Tests for resilience module: circuit breaker, retry logic, error classification.
 """
 
 import pytest
+
 from app.resilience import (
     CircuitBreaker,
-    RetryPolicy,
     ErrorClassifier,
+    RetryPolicy,
     ServiceStatus,
 )
 
@@ -61,6 +62,7 @@ class TestCircuitBreaker:
 
         # After timeout, should attempt recovery
         import time
+
         time.sleep(0.1)
         # Note: This would need actual timeout logic verification
 
@@ -114,11 +116,7 @@ class TestRetryPolicy:
     @pytest.mark.asyncio
     async def test_exponential_backoff(self):
         """Delays increase exponentially."""
-        policy = RetryPolicy(
-            max_retries=3,
-            initial_delay_ms=100,
-            max_delay_ms=500
-        )
+        policy = RetryPolicy(max_retries=3, initial_delay_ms=100, max_delay_ms=500)
         # Delays should be: 100ms, 200ms, 400ms
         assert policy.initial_delay_ms == 100
         assert policy.max_delay_ms == 500

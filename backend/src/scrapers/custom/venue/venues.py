@@ -64,7 +64,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_dated_list_items,
         ),
     ],
-
     "Loop": [
         VenueConfig(
             # A monthly user group rather than a venue: the meeting moves to
@@ -112,7 +111,7 @@ CHICAGO_VENUES = {
             selectors={
                 "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
                 "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
+                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time',
             },
             use_playwright=True,
             extractor_fn=None,
@@ -192,13 +191,12 @@ CHICAGO_VENUES = {
             selectors={
                 "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
                 "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
+                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time',
             },
             use_playwright=True,
             extractor_fn=None,
         ),
     ],
-
     "Wicker Park": [
         VenueConfig(
             name="Subterranean",
@@ -206,7 +204,11 @@ CHICAGO_VENUES = {
             event_page_url="https://subt.net/",
             category="music",
             address="2011 W North Ave",
-            selectors={"event_container": "li.seetickets-list-event-container", "title": "p.event-title a", "date": "p.event-date"}
+            selectors={
+                "event_container": "li.seetickets-list-event-container",
+                "title": "p.event-title a",
+                "date": "p.event-date",
+            },
         ),
         VenueConfig(
             name="Chop Shop",
@@ -224,7 +226,11 @@ CHICAGO_VENUES = {
             event_page_url="https://www.emptybottle.com/",
             category="music",
             address="1035 N Western Ave",
-            selectors={"event_container": ".show-details", "title": "div.title", "date": "div.date"},
+            selectors={
+                "event_container": ".show-details",
+                "title": "div.title",
+                "date": "div.date",
+            },
             use_playwright=True,
         ),
         VenueConfig(
@@ -250,7 +256,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_events_from_json_ld,
         ),
     ],
-
     "Bucktown": [
         VenueConfig(
             name="The Hideout",
@@ -258,7 +263,11 @@ CHICAGO_VENUES = {
             event_page_url="https://www.hideoutchicago.com/shows",
             category="music",
             address="1354 W Wabansia Ave",
-            selectors={"event_container": ".show-collection-item", "title": ".show-name", "date": ".show-start-date"}
+            selectors={
+                "event_container": ".show-collection-item",
+                "title": ".show-name",
+                "date": ".show-start-date",
+            },
         ),
         VenueConfig(
             name="Concord Music Hall",
@@ -291,8 +300,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_outset,
         ),
     ],
-
-
     "Rogers Park": [
         VenueConfig(
             name="Loyola University Performing Arts Center",
@@ -313,7 +320,6 @@ CHICAGO_VENUES = {
             use_playwright=True,
         ),
     ],
-
     "Uptown": [
         VenueConfig(
             name="Green Mill Jazz Club",
@@ -346,7 +352,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_jamusa_events,
         ),
     ],
-
     "Lincoln Park": [
         VenueConfig(
             name="Steppenwolf Theatre Company",
@@ -357,7 +362,7 @@ CHICAGO_VENUES = {
             selectors={
                 "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
                 "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
+                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time',
             },
             use_playwright=True,
             extractor_fn=None,
@@ -371,7 +376,6 @@ CHICAGO_VENUES = {
             selectors={},
             use_playwright=True,
             extractor_fn=extract_lh_st,
-            
         ),
         VenueConfig(
             name="Kingston Mines",
@@ -382,7 +386,7 @@ CHICAGO_VENUES = {
             selectors={
                 "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
                 "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
+                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time',
             },
             use_playwright=True,
             extractor_fn=None,
@@ -408,7 +412,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_jamusa_events,
         ),
     ],
-
     "Edgewater": [
         VenueConfig(
             name="Uncommon Ground",
@@ -421,7 +424,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_squarespace_eventlist,
         ),
     ],
-
     "Lake View": [
         VenueConfig(
             name="Metro Chicago",
@@ -432,7 +434,7 @@ CHICAGO_VENUES = {
             selectors={
                 "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
                 "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
+                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time',
             },
             use_playwright=True,
             extractor_fn=None,
@@ -446,7 +448,7 @@ CHICAGO_VENUES = {
             selectors={
                 "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
                 "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
+                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time',
             },
             use_playwright=True,
             extractor_fn=extract_jamusa_events,
@@ -460,10 +462,8 @@ CHICAGO_VENUES = {
             selectors={},
             use_playwright=True,
             extractor_fn=extract_lh_st,
-            
         ),
     ],
-
     "Lincoln Square": [
         VenueConfig(
             name="Old Town School of Folk Music",
@@ -476,8 +476,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_old_town_school,
         ),
     ],
-
-
     "River North": [
         VenueConfig(
             # A weekly civic-tech meetup. Sessions are currently online, which
@@ -520,13 +518,12 @@ CHICAGO_VENUES = {
             selectors={
                 "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
                 "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
+                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time',
             },
             use_playwright=True,
             extractor_fn=None,
         ),
     ],
-
     "Pilsen": [
         VenueConfig(
             name="Thalia Hall",
@@ -552,7 +549,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_aeg_showtime,
         ),
     ],
-
     "Logan Square": [
         VenueConfig(
             name="The Whistler",
@@ -575,7 +571,7 @@ CHICAGO_VENUES = {
                 "title": "h3.evcard-title",
                 "date": "div.evcard-header",
                 "time": "p.evcard-time",
-                "url": "a.evcard-btn"
+                "url": "a.evcard-btn",
             },
             use_playwright=True,
             extractor_fn=None,
@@ -591,7 +587,6 @@ CHICAGO_VENUES = {
             page_extractor_fn=extract_eventscalendar_widget,
         ),
     ],
-
     "Humboldt Park": [
         VenueConfig(
             name="Martyrs'",
@@ -604,8 +599,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_martyrs,
         ),
     ],
-
-
     "West Loop": [
         VenueConfig(
             name="Green Dolphin Street",
@@ -617,7 +610,6 @@ CHICAGO_VENUES = {
             use_playwright=True,
         ),
     ],
-
     "Near West Side": [
         VenueConfig(
             name="United Center",
@@ -630,7 +622,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_united_center,
         ),
     ],
-
     "Old Town": [
         VenueConfig(
             name="Zanies Comedy Club",
@@ -651,13 +642,12 @@ CHICAGO_VENUES = {
             selectors={
                 "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
                 "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
+                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time',
             },
             use_playwright=True,
             extractor_fn=None,
         ),
     ],
-
     "West Loop": [
         VenueConfig(
             name="City Winery",
@@ -668,7 +658,7 @@ CHICAGO_VENUES = {
             selectors={
                 "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
                 "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
+                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time',
             },
             use_playwright=True,
             extractor_fn=None,
@@ -703,7 +693,6 @@ CHICAGO_VENUES = {
             extractor_fn=None,
         ),
     ],
-
     "Rogers Park": [
         VenueConfig(
             name="Rhapsody Theater",
@@ -729,7 +718,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_dated_list_items,
         ),
     ],
-
     # South Side coverage. Every venue above is North or Central, which left
     # the whole South Side unrepresented in the neighborhood filter even though
     # these venues publish full calendars.
@@ -745,7 +733,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_tribe_events,
         ),
     ],
-
     "Hyde Park": [
         VenueConfig(
             name="Hyde Park Art Center",
@@ -768,7 +755,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_songkick_venue,
         ),
     ],
-
     "Albany Park": [
         VenueConfig(
             # In Mayfair, inside the Albany Park community area. The 658-seat
@@ -783,7 +769,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_dated_list_items,
         ),
     ],
-
     "Jefferson Park": [
         VenueConfig(
             name="Copernicus Center",
@@ -796,7 +781,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_dated_list_items,
         ),
     ],
-
     "Bronzeville": [
         VenueConfig(
             # The oldest Black American art center in the US, 1940.
@@ -830,7 +814,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_songkick_venue,
         ),
     ],
-
     # Tickeri only for Los Globos and V-Live, not Songkick as well: the two
     # sources name the same concert differently ("Rata Blanca" vs "Rata Blanca
     # en concierto en Chicago"), so running both duplicated every show rather
@@ -897,7 +880,6 @@ CHICAGO_VENUES = {
         # Somewhen), so it is Radius under a wrong name and a wrong address -
         # which also put those events in Little Village instead of Pilsen.
     ],
-
     "Bridgeport": [
         VenueConfig(
             name="Ramova Theatre",
@@ -910,7 +892,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_dated_list_items,
         ),
     ],
-
     "Near South Side": [
         VenueConfig(
             # Mostly conventions and trade shows, but the public ones (the auto
@@ -935,7 +916,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_dated_list_items,
         ),
     ],
-
     "Streeterville": [
         VenueConfig(
             name="Navy Pier",
@@ -968,7 +948,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_dated_list_items,
         ),
     ],
-
     "Avondale": [
         VenueConfig(
             # Each listing repeats the stage name ("Sleeping Village") above
@@ -1003,7 +982,6 @@ CHICAGO_VENUES = {
             page_extractor_fn=scrolling(extract_dated_list_items),
         ),
     ],
-
     "Washington Park": [
         VenueConfig(
             name="DuSable Black History Museum",
@@ -1016,9 +994,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_tribe_events,
         ),
     ],
-
-
-
     "South Shore": [
         VenueConfig(
             name="South Shore Cultural Center",
@@ -1041,7 +1016,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_songkick_venue,
         ),
     ],
-
     "Greater Grand Crossing": [
         VenueConfig(
             name="The New Apartment Lounge",
@@ -1054,7 +1028,6 @@ CHICAGO_VENUES = {
             extractor_fn=extract_songkick_venue,
         ),
     ],
-
     "North Center": [
         VenueConfig(
             name="Constellation",
@@ -1068,5 +1041,3 @@ CHICAGO_VENUES = {
         ),
     ],
 }
-
-

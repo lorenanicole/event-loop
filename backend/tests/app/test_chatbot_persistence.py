@@ -11,15 +11,18 @@ from app.ai.chatbot import _looks_like_an_event
 
 
 class TestLooksLikeAnEvent:
-    @pytest.mark.parametrize("title", [
-        "Public Events | Department of Astronomy and Astrophysics",
-        "Events: Talks | Department of Astronomy and Astrophysics",
-        "Events | Chicago Public Library",
-        "Astrophysicist Events in Chicago",
-        "Link in bio Learn about landscaping with native perennials.",
-        "chicago",
-        "",
-    ])
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Public Events | Department of Astronomy and Astrophysics",
+            "Events: Talks | Department of Astronomy and Astrophysics",
+            "Events | Chicago Public Library",
+            "Astrophysicist Events in Chicago",
+            "Link in bio Learn about landscaping with native perennials.",
+            "chicago",
+            "",
+        ],
+    )
     def test_rejects_search_artifacts(self, title):
         assert _looks_like_an_event(title) is False
 
@@ -30,22 +33,26 @@ class TestLooksLikeAnEvent:
         """A real event title carries more than one word."""
         assert _looks_like_an_event("Lollapalooza") is False
 
-    @pytest.mark.parametrize("title", [
-        "Astronomy on Tap - CIERA-Northwestern",
-        "From Quarks to the Cosmos",
-        "Chicago Astronomer Public Observation Schedule",
-        "Open house at Prosser/Hanson Park community garden",
-        "Join us for Flora Festival 2026; a community event",
-        "Learn about foraging wild plants and mushrooms in Chicago",
-    ])
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Astronomy on Tap - CIERA-Northwestern",
+            "From Quarks to the Cosmos",
+            "Chicago Astronomer Public Observation Schedule",
+            "Open house at Prosser/Hanson Park community garden",
+            "Join us for Flora Festival 2026; a community event",
+            "Learn about foraging wild plants and mushrooms in Chicago",
+        ],
+    )
     def test_keeps_real_events(self, title):
         assert _looks_like_an_event(title) is True
 
     def test_keeps_a_title_containing_the_word_search(self):
-        """"Search for Life" is part of this talk's name, not SERP furniture."""
-        assert _looks_like_an_event(
-            "In Conversation with Neil deGrasse Tyson - Search for Life"
-        ) is True
+        """ "Search for Life" is part of this talk's name, not SERP furniture."""
+        assert (
+            _looks_like_an_event("In Conversation with Neil deGrasse Tyson - Search for Life")
+            is True
+        )
 
     def test_rejects_explicit_search_furniture(self):
         assert _looks_like_an_event("jazz tonight - Google Search") is False

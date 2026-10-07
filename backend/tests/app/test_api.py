@@ -4,8 +4,8 @@ API tests: FastAPI endpoints, request/response handling, status codes.
 
 import pytest
 from fastapi.testclient import TestClient
+
 from app.main import app
-from datetime import datetime, timedelta
 
 
 @pytest.fixture
@@ -50,27 +50,18 @@ class TestEventsEndpoints:
 
     def test_search_events(self, client):
         """POST /api/search filters events."""
-        response = client.post(
-            "/api/search",
-            json={"query": "jazz", "limit": 10}
-        )
+        response = client.post("/api/search", json={"query": "jazz", "limit": 10})
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
     def test_search_with_category(self, client):
         """Search respects category filtering."""
-        response = client.post(
-            "/api/search",
-            json={"query": "music concert", "limit": 5}
-        )
+        response = client.post("/api/search", json={"query": "music concert", "limit": 5})
         assert response.status_code == 200
 
     def test_search_this_weekend(self, client):
         """Date range parsing works."""
-        response = client.post(
-            "/api/search",
-            json={"query": "events this weekend", "limit": 10}
-        )
+        response = client.post("/api/search", json={"query": "events this weekend", "limit": 10})
         assert response.status_code == 200
 
     def test_get_categories(self, client):
@@ -96,21 +87,14 @@ class TestChatEndpoints:
     def test_chat_endpoint_exists(self, client):
         """POST /api/chat endpoint exists."""
         # This will likely fail quickly since no LLM, but test endpoint
-        response = client.post(
-            "/api/chat",
-            json={"message": "test"}
-        )
+        response = client.post("/api/chat", json={"message": "test"})
         # Should return 200 (streaming) or error
         assert response.status_code in [200, 422]
 
     def test_chat_with_thread_id(self, client):
         """Chat accepts thread_id for continuity."""
         response = client.post(
-            "/api/chat",
-            json={
-                "message": "test",
-                "thread_id": "test-thread-123"
-            }
+            "/api/chat", json={"message": "test", "thread_id": "test-thread-123"}
         )
         # Should accept the parameter structure
         assert response.status_code in [200, 422]
@@ -122,10 +106,7 @@ class TestChatEndpoints:
 
     def test_chat_headers(self, client):
         """Chat response has correct headers."""
-        response = client.post(
-            "/api/chat",
-            json={"message": "What events?"}
-        )
+        response = client.post("/api/chat", json={"message": "What events?"})
         # If it doesn't error on structure
         if response.status_code == 200:
             assert "text/event-stream" in response.headers.get("content-type", "")
@@ -201,9 +182,7 @@ class TestErrorHandling:
     def test_invalid_json(self, client):
         """Invalid JSON returns error."""
         response = client.post(
-            "/api/chat",
-            data="not json",
-            headers={"Content-Type": "application/json"}
+            "/api/chat", data="not json", headers={"Content-Type": "application/json"}
         )
         assert response.status_code == 422
 
@@ -235,25 +214,16 @@ class TestDataValidation:
     def test_search_limit_range(self, client):
         """Search limit must be in valid range."""
         # Too high
-        response = client.post(
-            "/api/search",
-            json={"query": "test", "limit": 101}
-        )
+        response = client.post("/api/search", json={"query": "test", "limit": 101})
         assert response.status_code == 422
 
         # Too low
-        response = client.post(
-            "/api/search",
-            json={"query": "test", "limit": 0}
-        )
+        response = client.post("/api/search", json={"query": "test", "limit": 0})
         assert response.status_code == 422
 
     def test_chat_message_not_empty(self, client):
         """Chat message can't be empty."""
-        response = client.post(
-            "/api/chat",
-            json={"message": ""}
-        )
+        response = client.post("/api/chat", json={"message": ""})
         # Depending on validation, might be 422 or 200
         assert response.status_code in [200, 422]
 
@@ -275,11 +245,6 @@ class TestResponseFormats:
         assert response.status_code == 200
         data = response.json()
 
-        required_fields = [
-            "total_events",
-            "unique_categories",
-            "earliest_event",
-            "latest_event"
-        ]
+        required_fields = ["total_events", "unique_categories", "earliest_event", "latest_event"]
         for field in required_fields:
             assert field in data

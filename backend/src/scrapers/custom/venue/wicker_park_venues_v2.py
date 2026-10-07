@@ -3,11 +3,13 @@ Wicker Park venues - flexible config-driven scraping.
 Uses VenueScraper framework for extensibility.
 """
 
-import httpx
 import logging
-from .venue_scraper import VenueScraper, VenueConfig, VenueEvent
-from bs4 import BeautifulSoup
 import re
+
+import httpx
+from bs4 import BeautifulSoup
+
+from .venue_scraper import VenueConfig, VenueEvent, VenueScraper
 
 logger = logging.getLogger(__name__)
 
@@ -38,17 +40,23 @@ def extract_chop_shop(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEve
                 ticket_link = article.find("a", href=lambda x: x and "link.dice.fm" in x)
                 if not ticket_link:
                     ticket_link = title_link
-                ticket_url = ticket_link.get("href", config.website_url) if ticket_link else config.website_url
+                ticket_url = (
+                    ticket_link.get("href", config.website_url)
+                    if ticket_link
+                    else config.website_url
+                )
 
-                events.append(VenueEvent(
-                    name=event_name,
-                    date=None,
-                    time=None,
-                    location=f"{config.name}, {config.address}",
-                    url=ticket_url,
-                    venue_name=config.name,
-                    category=config.category
-                ))
+                events.append(
+                    VenueEvent(
+                        name=event_name,
+                        date=None,
+                        time=None,
+                        location=f"{config.name}, {config.address}",
+                        url=ticket_url,
+                        venue_name=config.name,
+                        category=config.category,
+                    )
+                )
             except Exception as e:
                 logger.debug(f"Chop Shop: failed to parse article: {e}")
 
@@ -69,7 +77,7 @@ def extract_rosas_lounge(soup: BeautifulSoup, config: VenueConfig) -> list[Venue
 
         for container in containers:
             text = container.get_text()
-            lines = [line.strip() for line in text.split('\n') if line.strip()]
+            lines = [line.strip() for line in text.split("\n") if line.strip()]
 
             if not lines:
                 continue
@@ -78,25 +86,30 @@ def extract_rosas_lounge(soup: BeautifulSoup, config: VenueConfig) -> list[Venue
             event_date = None
 
             for line in lines:
-                if len(line) > 3 and not any(x in line for x in ['ticket', 'door', 'age']):
+                if len(line) > 3 and not any(x in line for x in ["ticket", "door", "age"]):
                     event_name = line
                     break
 
             for line in lines:
-                if re.search(r'\d{1,2}/\d{1,2}|January|February|March|April|May|June|July|August|September|October|November|December', line):
+                if re.search(
+                    r"\d{1,2}/\d{1,2}|January|February|March|April|May|June|July|August|September|October|November|December",
+                    line,
+                ):
                     event_date = line
                     break
 
             if event_name and len(event_name) > 3:
-                events.append(VenueEvent(
-                    name=event_name,
-                    date=event_date,
-                    time=None,
-                    location=f"{config.name}, {config.address}",
-                    url=config.website_url,
-                    venue_name=config.name,
-                    category=config.category
-                ))
+                events.append(
+                    VenueEvent(
+                        name=event_name,
+                        date=event_date,
+                        time=None,
+                        location=f"{config.name}, {config.address}",
+                        url=config.website_url,
+                        venue_name=config.name,
+                        category=config.category,
+                    )
+                )
 
         logger.info(f"Rosa's Lounge: extracted {len(events)} events")
 
@@ -119,7 +132,7 @@ WICKER_PARK_VENUES = [
             "title": "p.event-title a",
             "date": "p.event-date",
             "time": "span.event-time",
-        }
+        },
     ),
     VenueConfig(
         name="Chop Shop",
@@ -174,7 +187,7 @@ WICKER_PARK_VENUES = [
 async def scrape_wicker_park_venues() -> list[VenueEvent]:
     """Scrape all Wicker Park venues using flexible framework."""
     all_events = []
-    
+
     async with httpx.AsyncClient(timeout=15) as client:
         for config in WICKER_PARK_VENUES:
             try:

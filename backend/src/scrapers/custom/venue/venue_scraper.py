@@ -3,12 +3,13 @@ Flexible venue scraper framework using Playwright + CSS selectors.
 Each venue has a config with URL + CSS selectors. Uses Playwright for JS rendering.
 """
 
-import httpx
 import logging
 import re
-from bs4 import BeautifulSoup
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Optional, Callable
+
+import httpx
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -16,19 +17,20 @@ logger = logging.getLogger(__name__)
 @dataclass
 class VenueEvent:
     """Event discovered from venue."""
+
     name: str
-    date: Optional[str]
-    time: Optional[str]
+    date: str | None
+    time: str | None
     location: str
     url: str
     venue_name: str
     category: str
-    date_end: Optional[str] = None  # For multi-day events
-    time_end: Optional[str] = None  # End time for events with duration
-    cost: Optional[str] = None  # "Free", "$25", "From $64" - shown in result tiles
+    date_end: str | None = None  # For multi-day events
+    time_end: str | None = None  # End time for events with duration
+    cost: str | None = None  # "Free", "$25", "From $64" - shown in result tiles
 
 
-def parse_cost(text: Optional[str]) -> Optional[str]:
+def parse_cost(text: str | None) -> str | None:
     """Pull a human-readable price out of event card text.
 
     Venues write prices a dozen ways ("$25", "$20-$25", "Starting at $64",
@@ -42,7 +44,7 @@ def parse_cost(text: Optional[str]) -> Optional[str]:
     # Strip strings that look like prices but aren't: "21+", "2 for 1", times.
     cleaned = re.sub(r"\d{1,2}:\d{2}\s*[APap]\.?[Mm]\.?", " ", text)
 
-    if re.search(r"\bno cover\b|\bfree\b(?!\s*(?:parking|wifi))", cleaned, re.I):
+    if re.search(r"\bno cover\b|\bfree\b(?!\s*(?:parking|wifi))", cleaned, re.IGNORECASE):
         return "Free"
 
     # Ranges first, so "$20-$25" doesn't truncate to "$20".
@@ -54,12 +56,14 @@ def parse_cost(text: Optional[str]) -> Optional[str]:
 
     one = re.search(r"\$\s?(\d{1,4})(?:\.(\d{2}))?", cleaned)
     if one:
-        amount = f"${int(one.group(1))}" + (f".{one.group(2)}" if one.group(2) and one.group(2) != "00" else "")
-        if re.search(r"\b(?:starting at|starts at|from|tickets from)\b", cleaned, re.I):
+        amount = f"${int(one.group(1))}" + (
+            f".{one.group(2)}" if one.group(2) and one.group(2) != "00" else ""
+        )
+        if re.search(r"\b(?:starting at|starts at|from|tickets from)\b", cleaned, re.IGNORECASE):
             return f"From {amount}"
         return amount
 
-    if re.search(r"\bdonation\b|\bpay what you (?:can|wish)\b", cleaned, re.I):
+    if re.search(r"\bdonation\b|\bpay what you (?:can|wish)\b", cleaned, re.IGNORECASE):
         return "Donation"
 
     return None
@@ -68,6 +72,7 @@ def parse_cost(text: Optional[str]) -> Optional[str]:
 @dataclass
 class VenueConfig:
     """Configuration for scraping a venue."""
+
     name: str
     website_url: str
     event_page_url: str
@@ -75,11 +80,11 @@ class VenueConfig:
     address: str
     selectors: dict
     use_playwright: bool = False
-    extractor_fn: Optional[Callable] = None
+    extractor_fn: Callable | None = None
     playwright_wait_until: str = "domcontentloaded"
     # Async extractor receiving the live Playwright page instead of soup.
     # Use for venues that render event cards from JS after load (Salt Shed).
-    page_extractor_fn: Optional[Callable] = None
+    page_extractor_fn: Callable | None = None
 
 
 class VenueScraper:
@@ -123,9 +128,9 @@ class VenueScraper:
                 browser = await p.chromium.launch(
                     headless=True,
                     args=[
-                        '--disable-blink-features=AutomationControlled',
-                        '--disable-dev-shm-usage',
-                    ]
+                        "--disable-blink-features=AutomationControlled",
+                        "--disable-dev-shm-usage",
+                    ],
                 )
                 # A truncated user agent with no locale, timezone or
                 # Accept-Language is enough for Cloudflare to challenge the
@@ -150,7 +155,11 @@ class VenueScraper:
                 """)
 
                 try:
-                    await page.goto(self.config.event_page_url, timeout=15000, wait_until=self.config.playwright_wait_until)
+                    await page.goto(
+                        self.config.event_page_url,
+                        timeout=15000,
+                        wait_until=self.config.playwright_wait_until,
+                    )
                     await page.wait_for_timeout(2000)
 
                     # Page-based extractors need the live DOM (JS-rendered cards,
@@ -176,10 +185,11 @@ class VenueScraper:
                     soup = BeautifulSoup(html, "html.parser")
                     if iframe_content:
                         # Append iframe content as hidden text node for extractor to find
-                        body = soup.find('body')
+                        body = soup.find("body")
                         if body:
                             iframe_text = " ".join(iframe_content)
                             import html as html_module
+
                             body.append(soup.new_string(f"\n{html_module.escape(iframe_text)}\n"))
 
                     events = self._extract_events(soup)
@@ -224,7 +234,7 @@ class VenueScraper:
 
         return events
 
-    def _extract_single_event(self, container) -> Optional[VenueEvent]:
+    def _extract_single_event(self, container) -> VenueEvent | None:
         """Extract a single event from a container element."""
         selectors = self.config.selectors
 
@@ -255,7 +265,11 @@ class VenueScraper:
         url_selector = selectors.get("url")
         if url_selector:
             url_elem = container.select_one(url_selector)
-            url = url_elem.get("href", self.config.website_url) if url_elem else self.config.website_url
+            url = (
+                url_elem.get("href", self.config.website_url)
+                if url_elem
+                else self.config.website_url
+            )
             if not url.startswith("http"):
                 url = f"{self.config.website_url}{url}"
         else:

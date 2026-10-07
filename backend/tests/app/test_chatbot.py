@@ -2,14 +2,15 @@
 Tests for chatbot utilities: keyword extraction, category detection, date parsing.
 """
 
-import pytest
 from datetime import datetime, timedelta
+
 from app.ai.chatbot import (
-    _extract_keywords,
     _extract_date_range,
-    _score_event_relevance,
+    _extract_keywords,
     _filter_top_results,
+    _score_event_relevance,
 )
+
 # Category matching is shared with the API's search endpoint, so it lives in
 # shared.categories rather than being duplicated in both.
 from shared.categories import extract_category_concepts as _extract_categories
@@ -128,44 +129,50 @@ class TestEventScoring:
 
     def test_scores_keyword_match(self):
         """Score higher for keyword matches."""
-        from shared.database.models import EventModel
 
         # Mock event
-        event = type('Event', (), {
-            'name': 'Jazz Night at Blue Note',
-            'category': 'music',
-            'date': datetime.now() + timedelta(days=2)
-        })()
+        event = type(
+            "Event",
+            (),
+            {
+                "name": "Jazz Night at Blue Note",
+                "category": "music",
+                "date": datetime.now() + timedelta(days=2),
+            },
+        )()
 
         score = _score_event_relevance(event, ["jazz", "concert"], ["music"])
         assert score > 0.3  # Should have decent score
 
     def test_scores_category_match(self):
         """Score higher for category match."""
-        from shared.database.models import EventModel
 
-        event = type('Event', (), {
-            'name': 'Comedy Show',
-            'category': 'comedy',
-            'date': datetime.now() + timedelta(days=2)
-        })()
+        event = type(
+            "Event",
+            (),
+            {
+                "name": "Comedy Show",
+                "category": "comedy",
+                "date": datetime.now() + timedelta(days=2),
+            },
+        )()
 
         score = _score_event_relevance(event, ["stand", "up", "comedy"], ["comedy"])
         assert score > 0.4  # Should have good score with category match
 
     def test_scores_recent_events_higher(self):
         """Score recent events higher than far future."""
-        event_soon = type('Event', (), {
-            'name': 'Concert',
-            'category': 'music',
-            'date': datetime.now() + timedelta(days=1)
-        })()
+        event_soon = type(
+            "Event",
+            (),
+            {"name": "Concert", "category": "music", "date": datetime.now() + timedelta(days=1)},
+        )()
 
-        event_far = type('Event', (), {
-            'name': 'Concert',
-            'category': 'music',
-            'date': datetime.now() + timedelta(days=60)
-        })()
+        event_far = type(
+            "Event",
+            (),
+            {"name": "Concert", "category": "music", "date": datetime.now() + timedelta(days=60)},
+        )()
 
         score_soon = _score_event_relevance(event_soon, ["concert"], ["music"])
         score_far = _score_event_relevance(event_far, ["concert"], ["music"])
@@ -174,11 +181,15 @@ class TestEventScoring:
 
     def test_scores_range_0_to_1(self):
         """Scores should be between 0.0 and 1.0."""
-        event = type('Event', (), {
-            'name': 'Random Event',
-            'category': 'other',
-            'date': datetime.now() + timedelta(days=100)
-        })()
+        event = type(
+            "Event",
+            (),
+            {
+                "name": "Random Event",
+                "category": "other",
+                "date": datetime.now() + timedelta(days=100),
+            },
+        )()
 
         score = _score_event_relevance(event, ["query"], [])
         assert 0.0 <= score <= 1.0
@@ -189,17 +200,20 @@ class TestResultFiltering:
 
     def test_filters_to_top_n(self):
         """Filter results to top N items."""
-        from shared.database.models import EventModel
 
         events = [
-            type('Event', (), {
-                'name': f'Event {i}',
-                'category': 'music',
-                'date': datetime.now() + timedelta(days=i),
-                'origination_url': f'http://example.com/{i}',
-                'source': 'test',
-                'details': f'A great event with music and fun times'
-            })()
+            type(
+                "Event",
+                (),
+                {
+                    "name": f"Event {i}",
+                    "category": "music",
+                    "date": datetime.now() + timedelta(days=i),
+                    "origination_url": f"http://example.com/{i}",
+                    "source": "test",
+                    "details": "A great event with music and fun times",
+                },
+            )()
             for i in range(10)
         ]
 
@@ -208,25 +222,32 @@ class TestResultFiltering:
 
     def test_ranks_by_confidence(self):
         """Rank results by confidence score."""
-        from shared.database.models import EventModel
 
         events = [
-            type('Event', (), {
-                'name': 'Jazz Night',
-                'category': 'music',
-                'date': datetime.now() + timedelta(days=1),
-                'origination_url': 'http://example.com/1',
-                'source': 'test',
-                'details': 'Live jazz performance with local musicians'
-            })(),
-            type('Event', (), {
-                'name': 'Random Event',
-                'category': 'other',
-                'date': datetime.now() + timedelta(days=50),
-                'origination_url': 'http://example.com/2',
-                'source': 'test',
-                'details': 'Some random event happening later'
-            })(),
+            type(
+                "Event",
+                (),
+                {
+                    "name": "Jazz Night",
+                    "category": "music",
+                    "date": datetime.now() + timedelta(days=1),
+                    "origination_url": "http://example.com/1",
+                    "source": "test",
+                    "details": "Live jazz performance with local musicians",
+                },
+            )(),
+            type(
+                "Event",
+                (),
+                {
+                    "name": "Random Event",
+                    "category": "other",
+                    "date": datetime.now() + timedelta(days=50),
+                    "origination_url": "http://example.com/2",
+                    "source": "test",
+                    "details": "Some random event happening later",
+                },
+            )(),
         ]
 
         results = _filter_top_results(events, "jazz", ["jazz"], ["music"], limit=10)
@@ -340,8 +361,7 @@ class TestEventEnrichment:
         from app.ai.event_enrichment import extract_from_event_text
 
         cost, age = extract_from_event_text(
-            event_name="Free Comedy Show",
-            details="$10 donation - 18+ only - Adult humor"
+            event_name="Free Comedy Show", details="$10 donation - 18+ only - Adult humor"
         )
         # Should prioritize details for better extraction
         assert cost in ["Free", "$10", "Donation"]
@@ -362,7 +382,7 @@ class TestEventEnrichment:
         event = {
             "name": "Free All-Ages Concert",
             "details": "Family friendly music event",
-            "category": "Music"
+            "category": "Music",
         }
 
         updated = extract_and_update_event(event)
@@ -373,10 +393,7 @@ class TestEventEnrichment:
         """Extract and update only available fields."""
         from app.ai.event_enrichment import extract_and_update_event
 
-        event = {
-            "name": "Concert - $25",
-            "category": "Music"
-        }
+        event = {"name": "Concert - $25", "category": "Music"}
 
         updated = extract_and_update_event(event)
         assert updated.get("cost") == "$25"
@@ -385,7 +402,7 @@ class TestEventEnrichment:
 
     def test_case_insensitive_extraction(self):
         """Extraction should work regardless of case."""
-        from app.ai.event_enrichment import extract_cost, extract_age_range
+        from app.ai.event_enrichment import extract_age_range, extract_cost
 
         cost = extract_cost("FREE Concert")
         assert cost == "Free"

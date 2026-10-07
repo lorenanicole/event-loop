@@ -1,13 +1,14 @@
 import logging
 from datetime import datetime
-from typing import Optional, Union
-from sqlalchemy.orm import Session
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+
 import httpx
-from shared.models import EventCreate
-from shared.database.models import EventModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
+
 from app.ai.event_enrichment import extract_from_event_text
+from shared.database.models import EventModel
+from shared.models import EventCreate
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,6 @@ logger = logging.getLogger(__name__)
 # Raising busy_timeout to 30s did not help: no wait beats a transaction held
 # that long. Committing in batches does, by letting go between them.
 WRITE_BATCH = 50
-
 
 
 class YourChicagoGuideScraper:
@@ -83,7 +83,7 @@ class YourChicagoGuideScraper:
             logger.error(f"Error fetching Your Chicago Guide events: {e}")
             return []
 
-    def _parse_post(self, post: dict) -> Optional[EventCreate]:
+    def _parse_post(self, post: dict) -> EventCreate | None:
         """Parse a WordPress post into an event"""
         try:
             title = post.get("title", {})
@@ -102,7 +102,7 @@ class YourChicagoGuideScraper:
 
             try:
                 event_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 return None
 
             # Extract event details from content/excerpt
@@ -151,7 +151,7 @@ class YourChicagoGuideScraper:
             logger.debug(f"Parse error: {e}")
             return None
 
-    async def scrape_and_save(self, db: Union[Session, AsyncSession], days_ahead: int = 30) -> int:
+    async def scrape_and_save(self, db: Session | AsyncSession, days_ahead: int = 30) -> int:
         """Fetch events and save new ones to database (sync or async)"""
         try:
             events = await self.fetch_events(days_ahead=days_ahead)
@@ -177,9 +177,7 @@ class YourChicagoGuideScraper:
 
                 if is_async:
                     # Async query
-                    result = await db.execute(
-                        select(EventModel).filter_by(origination_url=url)
-                    )
+                    result = await db.execute(select(EventModel).filter_by(origination_url=url))
                     existing = result.scalar_one_or_none()
                 else:
                     # Sync query

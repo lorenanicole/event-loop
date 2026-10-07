@@ -5,15 +5,13 @@ Uses TF-IDF + cosine similarity to find semantically similar events.
 
 from __future__ import annotations
 
-import logging
-from typing import Optional
 import nltk
+import numpy as np
 from nltk.corpus import stopwords, wordnet
-from nltk.tokenize import word_tokenize
 from nltk.stem import WordNetLemmatizer
+from nltk.tokenize import word_tokenize
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
 
 from app.logging import get_logger
 
@@ -21,12 +19,12 @@ logger = get_logger(__name__)
 
 # Download required NLTK data (run once)
 try:
-    nltk.data.find('tokenizers/punkt')
+    nltk.data.find("tokenizers/punkt")
 except LookupError:
-    nltk.download('punkt')
-    nltk.download('stopwords')
-    nltk.download('wordnet')
-    nltk.download('averaged_perceptron_tagger')
+    nltk.download("punkt")
+    nltk.download("stopwords")
+    nltk.download("wordnet")
+    nltk.download("averaged_perceptron_tagger")
 
 
 class SmartSearchTool:
@@ -37,11 +35,11 @@ class SmartSearchTool:
 
     def __init__(self):
         self.lemmatizer = WordNetLemmatizer()
-        self.stop_words = set(stopwords.words('english'))
+        self.stop_words = set(stopwords.words("english"))
         self.vectorizer = TfidfVectorizer(
-            analyzer='word',
+            analyzer="word",
             lowercase=True,
-            stop_words='english',
+            stop_words="english",
             max_features=1000,
         )
 
@@ -187,10 +185,7 @@ class SmartSearchTool:
         return []
 
         # Prepare documents for TF-IDF
-        documents = [
-            f"{event.name} {event.category or ''}"
-            for event in all_events
-        ]
+        documents = [f"{event.name} {event.category or ''}" for event in all_events]
         target_doc = f"{target.name} {target.category or ''}"
 
         try:
@@ -207,14 +202,16 @@ class SmartSearchTool:
             for idx in top_indices:
                 if similarities[idx] > 0.1:  # Minimum similarity threshold
                     event = all_events[idx]
-                    similar_events.append({
-                        "id": event.id,
-                        "name": event.name,
-                        "date": event.date.isoformat(),
-                        "category": event.category,
-                        "similarity_score": float(similarities[idx]),
-                        "url": event.origination_url,
-                    })
+                    similar_events.append(
+                        {
+                            "id": event.id,
+                            "name": event.name,
+                            "date": event.date.isoformat(),
+                            "category": event.category,
+                            "similarity_score": float(similarities[idx]),
+                            "url": event.origination_url,
+                        }
+                    )
 
             return similar_events
 
@@ -225,7 +222,7 @@ class SmartSearchTool:
     async def query_expansion_and_search(
         self,
         user_query: str,
-        category_filter: Optional[str] = None,
+        category_filter: str | None = None,
     ) -> dict[str, any]:
         """
         Full pipeline: expand query → extract intent → return enhanced search context.
@@ -249,7 +246,7 @@ class SmartSearchTool:
 
 
 # Singleton instance for use in chatbot
-_smart_search_instance: Optional[SmartSearchTool] = None
+_smart_search_instance: SmartSearchTool | None = None
 
 
 def get_smart_search_tool() -> SmartSearchTool:

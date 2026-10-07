@@ -6,7 +6,6 @@ get-or-create lives here rather than in either scraper.
 """
 
 import logging
-from typing import Optional
 
 from sqlalchemy import select
 
@@ -41,7 +40,7 @@ NEIGHBORHOOD_ALIASES = {
 }
 
 
-def canonical_neighborhood(name: Optional[str]) -> Optional[str]:
+def canonical_neighborhood(name: str | None) -> str | None:
     """Normalize a neighborhood name to the single spelling we store."""
     if not name or not name.strip():
         return None
@@ -66,12 +65,12 @@ async def load_boundaries(session) -> dict:
     for name, raw in result.all():
         try:
             boundaries[name] = json.loads(raw)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             logger.warning(f"Neighborhood {name!r} has an unreadable boundary")
     return boundaries
 
 
-async def neighborhood_for_point(session, latitude, longitude) -> Optional[str]:
+async def neighborhood_for_point(session, latitude, longitude) -> str | None:
     """Neighborhood containing a coordinate, using boundaries stored in the DB."""
     if latitude is None or longitude is None:
         return None
@@ -80,15 +79,13 @@ async def neighborhood_for_point(session, latitude, longitude) -> Optional[str]:
     return chicago_neighborhoods.locate_in(latitude, longitude, await load_boundaries(session))
 
 
-async def resolve_neighborhood_id(session, name: Optional[str]) -> Optional[int]:
+async def resolve_neighborhood_id(session, name: str | None) -> int | None:
     """Neighborhood row id for this name, creating the row if it is new."""
     name = canonical_neighborhood(name)
     if not name:
         return None
 
-    result = await session.execute(
-        select(NeighborhoodModel).where(NeighborhoodModel.name == name)
-    )
+    result = await session.execute(select(NeighborhoodModel).where(NeighborhoodModel.name == name))
     row = result.scalars().first()
     if row:
         return row.id
@@ -101,7 +98,7 @@ async def resolve_neighborhood_id(session, name: Optional[str]) -> Optional[int]
     return row.id
 
 
-def resolve_neighborhood_id_sync(session, name: Optional[str]) -> Optional[int]:
+def resolve_neighborhood_id_sync(session, name: str | None) -> int | None:
     """Synchronous counterpart, for scrapers given a plain Session."""
     name = canonical_neighborhood(name)
     if not name:

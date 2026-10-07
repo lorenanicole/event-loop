@@ -2,11 +2,19 @@
 Database tests: Models, queries, constraints, data integrity.
 """
 
-import pytest
 from datetime import datetime, timedelta
+
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from shared.database.models import Base, EventModel, ChatThreadModel, ChatMessageModel, AuditLogModel
+
+from shared.database.models import (
+    AuditLogModel,
+    Base,
+    ChatMessageModel,
+    ChatThreadModel,
+    EventModel,
+)
 
 
 @pytest.fixture
@@ -63,20 +71,24 @@ class TestEventModel:
 
     def test_query_by_category(self, test_db):
         """Query events by category."""
-        test_db.add(EventModel(
-            name="Jazz",
-            date=datetime.now(),
-            category="music",
-            origination_url="http://example.com/1",
-            source="test",
-        ))
-        test_db.add(EventModel(
-            name="Comedy",
-            date=datetime.now(),
-            category="comedy",
-            origination_url="http://example.com/2",
-            source="test",
-        ))
+        test_db.add(
+            EventModel(
+                name="Jazz",
+                date=datetime.now(),
+                category="music",
+                origination_url="http://example.com/1",
+                source="test",
+            )
+        )
+        test_db.add(
+            EventModel(
+                name="Comedy",
+                date=datetime.now(),
+                category="comedy",
+                origination_url="http://example.com/2",
+                source="test",
+            )
+        )
         test_db.commit()
 
         music_events = test_db.query(EventModel).filter_by(category="music").all()
@@ -86,51 +98,60 @@ class TestEventModel:
     def test_query_by_date_range(self, test_db):
         """Query events within date range."""
         now = datetime.now()
-        test_db.add(EventModel(
-            name="Today",
-            date=now,
-            origination_url="http://example.com/1",
-            source="test",
-        ))
-        test_db.add(EventModel(
-            name="Next week",
-            date=now + timedelta(days=7),
-            origination_url="http://example.com/2",
-            source="test",
-        ))
-        test_db.add(EventModel(
-            name="Next month",
-            date=now + timedelta(days=30),
-            origination_url="http://example.com/3",
-            source="test",
-        ))
+        test_db.add(
+            EventModel(
+                name="Today",
+                date=now,
+                origination_url="http://example.com/1",
+                source="test",
+            )
+        )
+        test_db.add(
+            EventModel(
+                name="Next week",
+                date=now + timedelta(days=7),
+                origination_url="http://example.com/2",
+                source="test",
+            )
+        )
+        test_db.add(
+            EventModel(
+                name="Next month",
+                date=now + timedelta(days=30),
+                origination_url="http://example.com/3",
+                source="test",
+            )
+        )
         test_db.commit()
 
-        week_events = test_db.query(EventModel).filter(
-            EventModel.date >= now,
-            EventModel.date <= now + timedelta(days=7)
-        ).all()
+        week_events = (
+            test_db.query(EventModel)
+            .filter(EventModel.date >= now, EventModel.date <= now + timedelta(days=7))
+            .all()
+        )
         assert len(week_events) == 2
 
     def test_text_search(self, test_db):
         """Text search in event names."""
-        test_db.add(EventModel(
-            name="Jazz Night at Blue Note",
-            date=datetime.now(),
-            origination_url="http://example.com/1",
-            source="test",
-        ))
-        test_db.add(EventModel(
-            name="Rock Concert",
-            date=datetime.now(),
-            origination_url="http://example.com/2",
-            source="test",
-        ))
+        test_db.add(
+            EventModel(
+                name="Jazz Night at Blue Note",
+                date=datetime.now(),
+                origination_url="http://example.com/1",
+                source="test",
+            )
+        )
+        test_db.add(
+            EventModel(
+                name="Rock Concert",
+                date=datetime.now(),
+                origination_url="http://example.com/2",
+                source="test",
+            )
+        )
         test_db.commit()
 
-        jazz_events = test_db.query(EventModel).filter(
-            EventModel.name.ilike("%jazz%")
-        ).all()
+        jazz_events = test_db.query(EventModel).filter(EventModel.name.ilike("%jazz%")).all()
         assert len(jazz_events) == 1
 
 
@@ -281,26 +302,30 @@ class TestAuditLogModel:
 
     def test_query_audit_logs(self, test_db):
         """Query audit logs by operation."""
-        test_db.add(AuditLogModel(
-            operation="chat_created",
-            status="success",
-            thread_id="1",
-        ))
-        test_db.add(AuditLogModel(
-            operation="question_asked",
-            status="success",
-            thread_id="1",
-        ))
-        test_db.add(AuditLogModel(
-            operation="security_blocked",
-            status="blocked",
-            thread_id="2",
-        ))
+        test_db.add(
+            AuditLogModel(
+                operation="chat_created",
+                status="success",
+                thread_id="1",
+            )
+        )
+        test_db.add(
+            AuditLogModel(
+                operation="question_asked",
+                status="success",
+                thread_id="1",
+            )
+        )
+        test_db.add(
+            AuditLogModel(
+                operation="security_blocked",
+                status="blocked",
+                thread_id="2",
+            )
+        )
         test_db.commit()
 
-        security_logs = test_db.query(AuditLogModel).filter_by(
-            operation="security_blocked"
-        ).all()
+        security_logs = test_db.query(AuditLogModel).filter_by(operation="security_blocked").all()
         assert len(security_logs) == 1
 
 

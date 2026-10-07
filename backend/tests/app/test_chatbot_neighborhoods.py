@@ -30,11 +30,26 @@ class FakeDB:
     """Stands in for a session, returning a fixed neighborhood list."""
 
     NAMES = [
-        "Loop", "West Loop", "Pullman", "West Pullman", "Lake View", "Pilsen",
-        "Logan Square", "Humboldt Park", "Wicker Park", "Bucktown", "Uptown",
-        "Hyde Park", "Bronzeville", "Little Village", "East Village",
-        "Ukrainian Village", "Greater Grand Crossing", "Near South Side",
-        "Chicago Lawn", "South Chicago",
+        "Loop",
+        "West Loop",
+        "Pullman",
+        "West Pullman",
+        "Lake View",
+        "Pilsen",
+        "Logan Square",
+        "Humboldt Park",
+        "Wicker Park",
+        "Bucktown",
+        "Uptown",
+        "Hyde Park",
+        "Bronzeville",
+        "Little Village",
+        "East Village",
+        "Ukrainian Village",
+        "Greater Grand Crossing",
+        "Near South Side",
+        "Chicago Lawn",
+        "South Chicago",
     ]
 
     async def execute(self, _stmt):
@@ -60,9 +75,7 @@ class TestExtractNeighborhoods:
         assert await _extract_neighborhoods(db, "comedy in pilsen") == ["Pilsen"]
 
     async def test_several_neighborhoods(self, db):
-        found = await _extract_neighborhoods(
-            db, "plant workshops in logan square, humboldt park"
-        )
+        found = await _extract_neighborhoods(db, "plant workshops in logan square, humboldt park")
         assert sorted(found) == ["Humboldt Park", "Logan Square"]
 
     async def test_three_joined_by_and(self, db):
@@ -70,14 +83,14 @@ class TestExtractNeighborhoods:
         assert sorted(found) == ["Pilsen", "Uptown", "Wicker Park"]
 
     async def test_chicago_is_not_a_neighborhood(self, db):
-        """"in Chicago" means the whole city, not a filter."""
+        """ "in Chicago" means the whole city, not a filter."""
         assert await _extract_neighborhoods(db, "plant workshops in chicago") == []
 
     async def test_no_place_named(self, db):
         assert await _extract_neighborhoods(db, "plant workshops this weekend") == []
 
     async def test_longer_name_wins_over_nested_one(self, db):
-        """"West Loop" must not also register as "Loop"."""
+        """ "West Loop" must not also register as "Loop"."""
         assert await _extract_neighborhoods(db, "shows in west loop tonight") == ["West Loop"]
 
     async def test_other_nested_pair(self, db):
@@ -94,7 +107,7 @@ class TestExtractNeighborhoods:
         assert await _extract_neighborhoods(db, "shows in wrigleyville") == ["Lake View"]
 
     async def test_a_word_inside_another_word_does_not_match(self, db):
-        """"uptown" inside "uptowner" is not a neighborhood reference."""
+        """ "uptown" inside "uptowner" is not a neighborhood reference."""
         assert await _extract_neighborhoods(db, "the uptowner bar") == []
 
     async def test_no_duplicate_when_name_appears_twice(self, db):
@@ -117,7 +130,7 @@ class TestStripNeighborhoods:
         assert _strip_neighborhoods(["plant", "workshops"], []) == ["plant", "workshops"]
 
     def test_does_not_strip_a_word_that_is_also_a_subject(self):
-        """"park" belongs to the name here, but "music" never does."""
+        """ "park" belongs to the name here, but "music" never does."""
         assert "music" in _strip_neighborhoods(["music", "park"], ["Humboldt Park"])
 
 

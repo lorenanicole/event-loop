@@ -16,7 +16,6 @@ confident invention would be taken as seriously as the listing.
 
 import random
 import re
-from typing import Optional
 
 # One constant, because the name appears in the prompt, the greeting, the API
 # docs and three places in the UI. Changing it should be this line.
@@ -143,10 +142,8 @@ GENERAL_FACTS: list[str] = [
     "and is now a national monument.",
     "The first sustained nuclear chain reaction happened on 2 December 1942, "
     "under the stands of the old football field at the University of Chicago.",
-    "Sue, at the Field Museum, is the most complete Tyrannosaurus rex "
-    "skeleton ever found.",
-    "Route 66 begins at Adams Street and Michigan Avenue, outside the Art "
-    "Institute.",
+    "Sue, at the Field Museum, is the most complete Tyrannosaurus rex skeleton ever found.",
+    "Route 66 begins at Adams Street and Michigan Avenue, outside the Art Institute.",
     "The brownie is credited to the Palmer House kitchen, made in 1893 as "
     "something ladies could eat from a boxed lunch at the World's Fair.",
     "The Twinkie was invented in 1930 by a bakery manager in River Forest, "
@@ -166,12 +163,11 @@ GENERAL_FACTS: list[str] = [
 ]
 
 
-def fact_for(category: Optional[str] = None, rng: Optional[random.Random] = None) -> str:
+def fact_for(category: str | None = None, rng: random.Random | None = None) -> str:
     """A Chicago fact, matched to a category where one exists."""
     picker = rng or random
     pool = CHICAGO_FACTS.get(category or "", []) or GENERAL_FACTS
     return picker.choice(pool)
-
 
 
 # Who the guide is, as a person rather than a list of adjectives.
@@ -384,24 +380,28 @@ def reads_like_a_title(name: str) -> bool:
     name = (name or "").strip()
     if not (4 <= len(name) <= 44):
         return False
-    if name[0] in "$(&\"'":                       # a price or a fragment
+    if name[0] in "$(&\"'":  # a price or a fragment
         return False
-    if len(name.split()) < 2:                     # "Closed", "Cancelled"
+    if len(name.split()) < 2:  # "Closed", "Cancelled"
         return False
     if not (name[0].isalpha() or name[0].isdigit()):
         return False
     # Starts mid-sentence: a real title does not begin with a verb participle
     # or a conjunction.
-    if re.match(r"^(and|but|or|doing|featuring|with|plus|see|click)\b", name, re.I):
+    if re.match(r"^(and|but|or|doing|featuring|with|plus|see|click)\b", name, re.IGNORECASE):
         return False
-    if re.search(r"\b(closed|cancelled|canceled|sold out|tba|tbd|multiple days"
-                 r"|coming soon|more info)\b", name, re.I):
+    if re.search(
+        r"\b(closed|cancelled|canceled|sold out|tba|tbd|multiple days"
+        r"|coming soon|more info)\b",
+        name,
+        re.IGNORECASE,
+    ):
         return False
     return True
 
 
 async def whats_on_tonight(
-    session, limit: int = 3, rng: Optional[random.Random] = None
+    session, limit: int = 3, rng: random.Random | None = None
 ) -> list[tuple[str, str]]:
     """A few real things happening soon, phrased for the greeting.
 
@@ -415,15 +415,17 @@ async def whats_on_tonight(
     from shared.database.filters import feed_order, upcoming_events_filter
     from shared.database.models import EventModel, NeighborhoodModel
 
-    rows = (await session.execute(
-        select(EventModel.name, EventModel.category, NeighborhoodModel.name)
-        .outerjoin(NeighborhoodModel, EventModel.neighborhood_id == NeighborhoodModel.id)
-        .filter(upcoming_events_filter())
-        # A title that is a price or a sentence reads badly in a greeting.
-        .filter(EventModel.name.isnot(None))
-        .order_by(*feed_order())
-        .limit(60)
-    )).all()
+    rows = (
+        await session.execute(
+            select(EventModel.name, EventModel.category, NeighborhoodModel.name)
+            .outerjoin(NeighborhoodModel, EventModel.neighborhood_id == NeighborhoodModel.id)
+            .filter(upcoming_events_filter())
+            # A title that is a price or a sentence reads badly in a greeting.
+            .filter(EventModel.name.isnot(None))
+            .order_by(*feed_order())
+            .limit(60)
+        )
+    ).all()
 
     # How to pitch each kind of evening, and the order to offer them in.
     # A bare list of three titles ("Coming up: X; Y; Z") told you what was on
@@ -467,9 +469,9 @@ async def whats_on_tonight(
 
 
 def greeting(
-    rng: Optional[random.Random] = None,
-    tonight: Optional[list[tuple[str, str]]] = None,
-    extra_facts: Optional[list[str]] = None,
+    rng: random.Random | None = None,
+    tonight: list[tuple[str, str]] | None = None,
+    extra_facts: list[str] | None = None,
 ) -> str:
     """The first message in a new chat.
 
@@ -496,8 +498,7 @@ def greeting(
     if tonight:
         offers = " ".join(f"{pitch} **{event}**." for pitch, event in tonight)
         opener = (
-            "They call this the City of Big Shoulders, and there's always "
-            f"something on. {offers}"
+            f"They call this the City of Big Shoulders, and there's always something on. {offers}"
         )
     else:
         opener = (
@@ -521,7 +522,7 @@ def greeting(
 ⚙️ **Under the hood:** {UNDER_THE_HOOD}"""
 
 
-def farewell(reason: str = "turns", rng: Optional[random.Random] = None) -> str:
+def farewell(reason: str = "turns", rng: random.Random | None = None) -> str:
     """What to say when the conversation's budget runs out.
 
     There was nothing here, and it showed: the chat simply stopped accepting
@@ -539,12 +540,13 @@ def farewell(reason: str = "turns", rng: Optional[random.Random] = None) -> str:
     }.get(reason, "that's my limit for one conversation")
 
     return (
-        f"\U0001F44B **Well, that's all the time I've got** - {why}. "
+        f"\U0001f44b **Well, that's all the time I've got** - {why}. "
         "I keep conversations short so everyone gets a turn.\n\n"
         "Still need the 311 on Chicago? Hit **New Chat** and we'll pick it up "
         "fresh - though you'll have to catch me up, since I won't remember "
         "this one.\n\n" + sign_off(rng)
     )
+
 
 # The four six-pointed stars of the Chicago flag, which is also the app's own
 # logo. Drawn in text rather than shipped as an image so it survives anywhere
@@ -555,7 +557,7 @@ FLAG_STARS = "\u2736 \u2736 \u2736 \u2736"
 # the North/South rivalry is real and a farewell is the wrong place to take a
 # side.
 SIGN_OFFS = [
-    "Doors closing.",                       # the CTA announcement, verbatim
+    "Doors closing.",  # the CTA announcement, verbatim
     "See you on the L.",
     "Keep it between the lake and the expressway.",
     "Stay warm out there.",
@@ -564,25 +566,29 @@ SIGN_OFFS = [
 ]
 
 
-def sign_off(rng: Optional[random.Random] = None) -> str:
+def sign_off(rng: random.Random | None = None) -> str:
     """A small visual goodbye: the flag's four stars and a local line."""
     picker = rng or random
     return f"{FLAG_STARS}\n\n*{picker.choice(SIGN_OFFS)}*"
+
 
 # The wording for signing off. Whether a message IS a sign-off is decided by
 # the intent classifier, which already runs on every turn - this was a regex
 # first, and it needed "I'm done" added after missing one of the most obvious
 # ways to say it. A list of phrases is never finished.
-def goodbye_reply(rng: Optional[random.Random] = None) -> str:
+def goodbye_reply(rng: random.Random | None = None) -> str:
     """A warm sign-off when somebody says they are done."""
     picker = rng or random
-    opener = picker.choice([
-        "Anytime - have a good one out there.",
-        "Enjoy it. That's what the city is for.",
-        "Go enjoy yourself. You've got good options.",
-        "Have fun out there.",
-    ])
+    opener = picker.choice(
+        [
+            "Anytime - have a good one out there.",
+            "Enjoy it. That's what the city is for.",
+            "Go enjoy yourself. You've got good options.",
+            "Have fun out there.",
+        ]
+    )
     return f"{opener}\n\n{sign_off(picker)}"
+
 
 async def data_facts(session) -> list[str]:
     """Facts computed from our own listings, so they are fresh and true.
@@ -596,7 +602,7 @@ async def data_facts(session) -> list[str]:
     does, which makes them the only facts here that are different next
     Tuesday, and they cannot be wrong unless the data is.
     """
-    from sqlalchemy import String, cast, func, select
+    from sqlalchemy import func, select
 
     from shared.database.filters import upcoming_events_filter
     from shared.database.models import EventModel, NeighborhoodModel
@@ -611,12 +617,11 @@ async def data_facts(session) -> list[str]:
 
     upcoming = upcoming_events_filter()
 
-    total = await scalar(
-        select(func.count()).select_from(EventModel).where(upcoming)
-    )
+    total = await scalar(select(func.count()).select_from(EventModel).where(upcoming))
     venues = await scalar(
-        select(func.count(func.distinct(EventModel.source)))
-        .where(upcoming, EventModel.source.like("chicago_venue_%"))
+        select(func.count(func.distinct(EventModel.source))).where(
+            upcoming, EventModel.source.like("chicago_venue_%")
+        )
     )
     if total and venues:
         facts.append(
@@ -625,8 +630,7 @@ async def data_facts(session) -> list[str]:
         )
 
     free = await scalar(
-        select(func.count()).select_from(EventModel)
-        .where(upcoming, EventModel.cost.ilike("free"))
+        select(func.count()).select_from(EventModel).where(upcoming, EventModel.cost.ilike("free"))
     )
     if free and total:
         facts.append(
@@ -634,14 +638,16 @@ async def data_facts(session) -> list[str]:
             f"one in {max(2, round(total / free))}."
         )
 
-    hood = (await session.execute(
-        select(NeighborhoodModel.name, func.count(EventModel.id))
-        .join(EventModel, EventModel.neighborhood_id == NeighborhoodModel.id)
-        .where(upcoming)
-        .group_by(NeighborhoodModel.name)
-        .order_by(func.count(EventModel.id).desc())
-        .limit(1)
-    )).first()
+    hood = (
+        await session.execute(
+            select(NeighborhoodModel.name, func.count(EventModel.id))
+            .join(EventModel, EventModel.neighborhood_id == NeighborhoodModel.id)
+            .where(upcoming)
+            .group_by(NeighborhoodModel.name)
+            .order_by(func.count(EventModel.id).desc())
+            .limit(1)
+        )
+    ).first()
     if hood:
         facts.append(
             f"{hood[0]} has more going on than anywhere else at the moment - "
@@ -649,8 +655,9 @@ async def data_facts(session) -> list[str]:
         )
 
     hoods = await scalar(
-        select(func.count(func.distinct(EventModel.neighborhood_id)))
-        .where(upcoming, EventModel.neighborhood_id.isnot(None))
+        select(func.count(func.distinct(EventModel.neighborhood_id))).where(
+            upcoming, EventModel.neighborhood_id.isnot(None)
+        )
     )
     if hoods:
         facts.append(
@@ -658,21 +665,22 @@ async def data_facts(session) -> list[str]:
             "which is more of the city than most listings sites bother with."
         )
 
-    busiest = (await session.execute(
-        select(func.date(EventModel.date), func.count(EventModel.id))
-        .where(upcoming)
-        .group_by(func.date(EventModel.date))
-        .order_by(func.count(EventModel.id).desc())
-        .limit(1)
-    )).first()
+    busiest = (
+        await session.execute(
+            select(func.date(EventModel.date), func.count(EventModel.id))
+            .where(upcoming)
+            .group_by(func.date(EventModel.date))
+            .order_by(func.count(EventModel.id).desc())
+            .limit(1)
+        )
+    ).first()
     if busiest and busiest[1] > 1:
         from datetime import datetime
+
         try:
             day = datetime.fromisoformat(str(busiest[0])).strftime("%A %B %-d")
-            facts.append(f"The busiest day on my calendar is {day}, with "
-                         f"{busiest[1]} things on.")
-        except (ValueError, TypeError):
+            facts.append(f"The busiest day on my calendar is {day}, with {busiest[1]} things on.")
+        except ValueError, TypeError:
             pass
 
     return facts
-

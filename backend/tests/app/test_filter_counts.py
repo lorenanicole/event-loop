@@ -82,21 +82,26 @@ class TestFilterCounts:
 
     async def test_the_count_matches_what_a_search_returns(self, client):
         """A tile's number has to equal the result of clicking it."""
-        counts = (await client.get(
-            ENDPOINT, params={"category": "Theater", "timeframe": "this weekend"}
-        )).json()
+        counts = (
+            await client.get(ENDPOINT, params={"category": "Theater", "timeframe": "this weekend"})
+        ).json()
         if not counts["neighborhoods"]:
             pytest.skip("no theater this weekend to compare against")
         top = counts["neighborhoods"][0]
-        found = (await client.post("/api/search", json={
-            "query": "events this weekend",
-            "limit": 100,
-            "neighborhood": top["name"],
-            "category": "Theater",
-        })).json()
+        found = (
+            await client.post(
+                "/api/search",
+                json={
+                    "query": "events this weekend",
+                    "limit": 100,
+                    "neighborhood": top["name"],
+                    "category": "Theater",
+                },
+            )
+        ).json()
         assert len(found) == top["event_count"]
 
     async def test_does_not_collide_with_the_event_id_route(self, client):
-        """"filter-counts" must not be read as an event id."""
+        """ "filter-counts" must not be read as an event id."""
         response = await client.get(ENDPOINT)
         assert response.status_code == 200

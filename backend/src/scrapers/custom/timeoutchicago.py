@@ -1,15 +1,16 @@
 import logging
 import re
-import httpx
 from datetime import datetime
-from typing import Optional, Union
+
+import httpx
 from bs4 import BeautifulSoup
-from sqlalchemy.orm import Session
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from shared.models import EventCreate
-from shared.database.models import EventModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
+
 from app.ai.event_enrichment import extract_from_event_text
+from shared.database.models import EventModel
+from shared.models import EventCreate
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +34,14 @@ class TimeoutChicagoScraper:
             events = []
             seen_urls = set()
 
-            async with httpx.AsyncClient(timeout=self.REQUEST_TIMEOUT, follow_redirects=True) as client:
+            async with httpx.AsyncClient(
+                timeout=self.REQUEST_TIMEOUT, follow_redirects=True
+            ) as client:
                 for month in months:
                     try:
-                        calendar_url = f"{self.CHICAGO_BASE}/events-calendar/{month}-events-calendar"
+                        calendar_url = (
+                            f"{self.CHICAGO_BASE}/events-calendar/{month}-events-calendar"
+                        )
                         logger.info(f"Fetching {month} events from {calendar_url}")
 
                         response = await client.get(
@@ -84,7 +89,7 @@ class TimeoutChicagoScraper:
 
         return events
 
-    def _parse_event_card(self, card, month: str) -> Optional[EventCreate]:
+    def _parse_event_card(self, card, month: str) -> EventCreate | None:
         """Parse a single event card from HTML"""
         try:
             title_elem = card.find("h3")
@@ -114,7 +119,7 @@ class TimeoutChicagoScraper:
 
             try:
                 event_date = self._parse_date(date_text, month)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 logger.debug(f"Could not parse date: {date_text}")
                 return None
 
@@ -145,7 +150,7 @@ class TimeoutChicagoScraper:
             logger.debug(f"Error parsing event card: {e}")
             return None
 
-    def _extract_date_text(self, card) -> Optional[str]:
+    def _extract_date_text(self, card) -> str | None:
         """Extract date text from event card"""
         elem = card.find("time")
         if elem:
@@ -162,7 +167,22 @@ class TimeoutChicagoScraper:
 
         for text_node in card.stripped_strings:
             if any(
-                x in text_node.lower() for x in ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec", "-"]
+                x in text_node.lower()
+                for x in [
+                    "jan",
+                    "feb",
+                    "mar",
+                    "apr",
+                    "may",
+                    "jun",
+                    "jul",
+                    "aug",
+                    "sep",
+                    "oct",
+                    "nov",
+                    "dec",
+                    "-",
+                ]
             ):
                 return text_node
 
@@ -178,7 +198,7 @@ class TimeoutChicagoScraper:
     )
 
     @classmethod
-    def _plausible_category(cls, text: Optional[str]) -> Optional[str]:
+    def _plausible_category(cls, text: str | None) -> str | None:
         """Accept a candidate only if it reads like a category label."""
         if not text:
             return None
@@ -218,7 +238,7 @@ class TimeoutChicagoScraper:
 
         return "Events"
 
-    def _extract_venue(self, card) -> Optional[str]:
+    def _extract_venue(self, card) -> str | None:
         """Extract venue/location from event card"""
         for div in card.find_all("div"):
             div_class = div.get("class", [])
@@ -246,12 +266,22 @@ class TimeoutChicagoScraper:
         try:
             parsed = datetime.fromisoformat(date_text.replace("Z", "+00:00"))
             return parsed
-        except (ValueError, AttributeError):
+        except ValueError, AttributeError:
             pass
 
         month_map = {
-            "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
-            "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12
+            "january": 1,
+            "february": 2,
+            "march": 3,
+            "april": 4,
+            "may": 5,
+            "june": 6,
+            "july": 7,
+            "august": 8,
+            "september": 9,
+            "october": 10,
+            "november": 11,
+            "december": 12,
         }
         month_num = month_map.get(month.lower(), now.month)
 
@@ -283,12 +313,14 @@ class TimeoutChicagoScraper:
                 day = int(parts[0])
                 parsed = datetime(current_year, month_num, day)
                 return parsed
-        except (ValueError, IndexError):
+        except ValueError, IndexError:
             pass
 
         raise ValueError(f"Could not parse date: {date_text}")
 
-    async def scrape_and_save(self, db: Union[Session, AsyncSession], days_ahead: int = 30, months: list[str] | None = None) -> int:
+    async def scrape_and_save(
+        self, db: Session | AsyncSession, days_ahead: int = 30, months: list[str] | None = None
+    ) -> int:
         """Fetch events and save new ones to database (sync or async)"""
         try:
             events = await self.fetch_events(months=months)
@@ -305,9 +337,7 @@ class TimeoutChicagoScraper:
 
                 if is_async:
                     # Async query
-                    result = await db.execute(
-                        select(EventModel).filter_by(origination_url=url)
-                    )
+                    result = await db.execute(select(EventModel).filter_by(origination_url=url))
                     existing = result.scalar_one_or_none()
                 else:
                     # Sync query

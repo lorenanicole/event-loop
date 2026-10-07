@@ -3,10 +3,9 @@ Intent classifier: Quickly determine if user is asking about Chicago events.
 Rejects out-of-scope questions early before running expensive REACT agent.
 """
 
-import os
-from enum import Enum
 import logging
-from typing import Optional
+from enum import Enum
+
 from pydantic_ai.models.anthropic import AnthropicModel
 
 logger = logging.getLogger(__name__)
@@ -14,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 class Intent(Enum):
     """User intent classification."""
+
     CHICAGO_EVENTS = "chicago_events"  # "Show me concerts this weekend"
     CHICAGO_INFO = "chicago_info"  # "What's the best neighborhood?"
     EVENTS_GENERAL = "events_general"  # "Events" but not Chicago-specific
@@ -118,7 +118,7 @@ Return ONLY raw JSON object (no markdown, no code fences):
         return agent
 
     async def classify(
-        self, user_message: str, recent: Optional[list[str]] = None
+        self, user_message: str, recent: list[str] | None = None
     ) -> tuple[Intent, float, str]:
         """Classify user intent, in the context of the conversation so far.
 
@@ -149,19 +149,19 @@ Return ONLY raw JSON object (no markdown, no code fences):
             result = await self.classifier_agent.run(prompt)
 
             # AgentRunResult has .output attribute with the model's response
-            if hasattr(result, 'output'):
+            if hasattr(result, "output"):
                 result_text = str(result.output).strip()
-            elif hasattr(result, 'data'):
+            elif hasattr(result, "data"):
                 result_text = str(result.data).strip()
             else:
                 result_text = str(result).strip()
 
             # Strip markdown code fences if present (agent returns ```json {...}```)
-            if result_text.startswith('```'):
-                result_text = result_text.split('```')[1]
+            if result_text.startswith("```"):
+                result_text = result_text.split("```")[1]
                 # Remove language identifier if present (e.g., "json")
-                if result_text.startswith(('json', 'python', 'yaml')):
-                    result_text = result_text.split('\n', 1)[1]
+                if result_text.startswith(("json", "python", "yaml")):
+                    result_text = result_text.split("\n", 1)[1]
 
             result_text = result_text.strip()
 
@@ -172,7 +172,7 @@ Return ONLY raw JSON object (no markdown, no code fences):
             # Parse JSON response
             data = json.loads(result_text)
 
-            intent_str = data.get('intent', 'out_of_scope').lower()
+            intent_str = data.get("intent", "out_of_scope").lower()
             # Built from the enum rather than written out. The hand-written
             # map was missing "farewell" after it was added, so the model
             # returned it correctly and this quietly turned it into
@@ -182,18 +182,16 @@ Return ONLY raw JSON object (no markdown, no code fences):
             intent_map = {member.value: member for member in Intent}
 
             intent = intent_map.get(intent_str, Intent.OUT_OF_SCOPE)
-            confidence = float(data.get('confidence', 0.5))
-            reasoning = str(data.get('reasoning', ''))
+            confidence = float(data.get("confidence", 0.5))
+            reasoning = str(data.get("reasoning", ""))
 
-            logger.info(
-                f"Intent: {intent.value} (confidence: {confidence:.2f}) - {reasoning[:60]}"
-            )
+            logger.info(f"Intent: {intent.value} (confidence: {confidence:.2f}) - {reasoning[:60]}")
             return intent, confidence, reasoning
 
         except Exception as e:
             logger.error(f"Intent classification error: {e}", exc_info=True)
             # Default to chicago_events on error (fail open for events)
-            return Intent.CHICAGO_EVENTS, 0.5, f"Classification error: {str(e)}"
+            return Intent.CHICAGO_EVENTS, 0.5, f"Classification error: {e!s}"
 
 
 # Singleton instance
@@ -213,26 +211,24 @@ async def get_intent_response(intent: Intent, reasoning: str) -> str:
 
     responses = {
         Intent.OUT_OF_SCOPE: (
-            f"🎭 Interesting question! But I'm specifically built to help find Chicago events. "
-            f"Try asking me about concerts, theater, sports, food events, or things to do this weekend!\n\n"
-            f"💡 **Examples I can help with:**\n"
-            f"• \"What's happening this weekend?\"\n"
-            f"• \"Show me free events in Chicago\"\n"
-            f"• \"Jazz concerts this month\"\n"
-            f"• \"Family-friendly activities\""
+            "🎭 Interesting question! But I'm specifically built to help find Chicago events. "
+            "Try asking me about concerts, theater, sports, food events, or things to do this weekend!\n\n"
+            "💡 **Examples I can help with:**\n"
+            '• "What\'s happening this weekend?"\n'
+            '• "Show me free events in Chicago"\n'
+            '• "Jazz concerts this month"\n'
+            '• "Family-friendly activities"'
         ),
         Intent.EVENTS_GENERAL: (
-            f"🎯 Great question, but I'm specifically designed for **Chicago events**. "
-            f"Try asking me what's happening in the city this weekend!"
+            "🎯 Great question, but I'm specifically designed for **Chicago events**. "
+            "Try asking me what's happening in the city this weekend!"
         ),
         Intent.CHICAGO_INFO: (
-            f"📍 I'd love to help with that, but I'm specifically built for finding **Chicago events**. "
-            f"For neighborhood tips or general Chicago info, try a search engine. "
-            f"But ask me about events and I'm your bot! 🎪"
+            "📍 I'd love to help with that, but I'm specifically built for finding **Chicago events**. "
+            "For neighborhood tips or general Chicago info, try a search engine. "
+            "But ask me about events and I'm your bot! 🎪"
         ),
-        Intent.CHICAGO_EVENTS: (
-            f"🎉 Found it! I'm ready to help you discover Chicago events."
-        ),
+        Intent.CHICAGO_EVENTS: ("🎉 Found it! I'm ready to help you discover Chicago events."),
     }
 
     return responses.get(

@@ -6,34 +6,33 @@ Allows testing chat widget without hitting the backend.
 import json
 from datetime import datetime
 
-
 # Intent classifier responses (from system prompt spec)
 INTENT_CLASSIFIER_RESPONSES = {
     "chicago_events": {
         "intent": "chicago_events",
         "confidence": 0.95,
-        "reasoning": "User is asking for events in Chicago. Direct event search request."
+        "reasoning": "User is asking for events in Chicago. Direct event search request.",
     },
     "chicago_events_free": {
         "intent": "chicago_events",
         "confidence": 0.85,
-        "reasoning": "The user is asking for free events happening tonight, which is a request for event listings."
+        "reasoning": "The user is asking for free events happening tonight, which is a request for event listings.",
     },
     "chicago_info": {
         "intent": "chicago_info",
         "confidence": 0.9,
-        "reasoning": "User asking about Chicago but not specifically about events."
+        "reasoning": "User asking about Chicago but not specifically about events.",
     },
     "events_general": {
         "intent": "events_general",
         "confidence": 0.8,
-        "reasoning": "User asking about events but not Chicago-specific."
+        "reasoning": "User asking about events but not Chicago-specific.",
     },
     "out_of_scope": {
         "intent": "out_of_scope",
         "confidence": 0.99,
-        "reasoning": "User request is unrelated to Chicago events."
-    }
+        "reasoning": "User request is unrelated to Chicago events.",
+    },
 }
 
 
@@ -45,8 +44,8 @@ MOCK_CHAT_RESPONSES = {
             "event": "thinking",
             "data": {"status": "Analyzing your question..."},
             "timestamp": datetime.now().isoformat(),
-            "status": "Analyzing your question..."
-        }
+            "status": "Analyzing your question...",
+        },
     },
     "chat_started": {
         "event": "chat_started",
@@ -54,8 +53,8 @@ MOCK_CHAT_RESPONSES = {
             "event": "chat_started",
             "data": {"thread_id": "9f2b691b-3898-4de7-b6f8-4ebde07c21ef"},
             "timestamp": datetime.now().isoformat(),
-            "thread_id": "9f2b691b-3898-4de7-b6f8-4ebde07c21ef"
-        }
+            "thread_id": "9f2b691b-3898-4de7-b6f8-4ebde07c21ef",
+        },
     },
     "thinking_analyze": {
         "event": "thinking",
@@ -63,34 +62,28 @@ MOCK_CHAT_RESPONSES = {
             "event": "thinking",
             "data": {"status": "Analyzing your request..."},
             "timestamp": datetime.now().isoformat(),
-            "status": "Analyzing your request..."
-        }
+            "status": "Analyzing your request...",
+        },
     },
     "tool_call_search": {
         "event": "tool_call",
         "data": {
             "event": "tool_call",
-            "data": {
-                "tool": "search_local_db",
-                "args": {"query": "free events tonight"}
-            },
+            "data": {"tool": "search_local_db", "args": {"query": "free events tonight"}},
             "timestamp": datetime.now().isoformat(),
             "tool": "search_local_db",
-            "args": {"query": "free events tonight"}
-        }
+            "args": {"query": "free events tonight"},
+        },
     },
     "tool_result_events": {
         "event": "tool_result",
         "data": {
             "event": "tool_result",
-            "data": {
-                "result_count": 3,
-                "snippet": "Found concerts and theater"
-            },
+            "data": {"result_count": 3, "snippet": "Found concerts and theater"},
             "timestamp": datetime.now().isoformat(),
             "result_count": 3,
-            "snippet": "Found concerts and theater"
-        }
+            "snippet": "Found concerts and theater",
+        },
     },
     "response_success": {
         "event": "response",
@@ -99,12 +92,12 @@ MOCK_CHAT_RESPONSES = {
             "data": {
                 "message": "🎉 Found **3 great matches** for free events tonight!\n\n1. **Underground Madness** 🎸\n   📅 Oct 3, 11:00 PM\n   📌 Reggies Rock Club\n\n2. **Jazz Night** 🎷\n   📅 Oct 3, 9:00 PM\n   📌 Green Mill\n\n3. **Comedy Showcase** 😂\n   📅 Oct 3, 8:30 PM\n   📌 Second City",
                 "tokens": 156,
-                "tool_calls": 1
+                "tool_calls": 1,
             },
             "timestamp": datetime.now().isoformat(),
             "message": "🎉 Found **3 great matches** for free events tonight!",
-            "tokens": 156
-        }
+            "tokens": 156,
+        },
     },
     "response_no_results": {
         "event": "response",
@@ -113,12 +106,12 @@ MOCK_CHAT_RESPONSES = {
             "data": {
                 "message": "❌ Something went wrong. Please try again.",
                 "tokens": 20,
-                "tool_calls": 0
+                "tool_calls": 0,
             },
             "timestamp": datetime.now().isoformat(),
             "message": "❌ Something went wrong. Please try again.",
-            "tokens": 20
-        }
+            "tokens": 20,
+        },
     },
     "complete_success": {
         "event": "complete",
@@ -129,15 +122,15 @@ MOCK_CHAT_RESPONSES = {
                 "tokens_used": 176,
                 "tool_calls": 1,
                 "remaining_tokens": 3824,
-                "remaining_turns": 4
+                "remaining_turns": 4,
             },
             "timestamp": datetime.now().isoformat(),
             "thread_id": "9f2b691b-3898-4de7-b6f8-4ebde07c21ef",
             "tokens_used": 176,
             "tool_calls": 1,
             "remaining_tokens": 3824,
-            "remaining_turns": 4
-        }
+            "remaining_turns": 4,
+        },
     },
     "complete_no_results": {
         "event": "complete",
@@ -148,16 +141,16 @@ MOCK_CHAT_RESPONSES = {
                 "tokens_used": 20,
                 "tool_calls": 0,
                 "remaining_tokens": 3980,
-                "remaining_turns": 4
+                "remaining_turns": 4,
             },
             "timestamp": datetime.now().isoformat(),
             "thread_id": "9f2b691b-3898-4de7-b6f8-4ebde07c21ef",
             "tokens_used": 20,
             "tool_calls": 0,
             "remaining_tokens": 3980,
-            "remaining_turns": 4
-        }
-    }
+            "remaining_turns": 4,
+        },
+    },
 }
 
 
@@ -205,7 +198,9 @@ def test_sse_response_format():
     # Should have event/data pairs
     event_count = sum(1 for line in lines if line.startswith("event: "))
     data_count = sum(1 for line in lines if line.startswith("data: "))
-    assert event_count == data_count, f"Event/data mismatch: {event_count} events, {data_count} data"
+    assert event_count == data_count, (
+        f"Event/data mismatch: {event_count} events, {data_count} data"
+    )
 
     # All data lines should be valid JSON
     for line in lines:

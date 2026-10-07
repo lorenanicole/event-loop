@@ -75,7 +75,7 @@ class TestSweep:
             tid = await make_thread(session, age_hours=0)
             await sweep_stale_threads(session)
             assert await status_of(session, tid) == ACTIVE
-            await close_thread(session, tid)   # tidy up
+            await close_thread(session, tid)  # tidy up
 
     async def test_a_thread_with_no_turns_is_abandoned_whatever_its_age(self):
         """Opened and never used - usually an off-topic question that never

@@ -12,7 +12,6 @@ against the neighborhood boundaries already in the database - no geocoding.
 import logging
 import re
 from datetime import datetime
-from typing import Optional, Union
 
 from bs4 import BeautifulSoup
 from sqlalchemy import select
@@ -33,7 +32,6 @@ logger = logging.getLogger(__name__)
 # Raising busy_timeout to 30s did not help: no wait beats a transaction held
 # that long. Committing in batches does, by letting go between them.
 WRITE_BATCH = 50
-
 
 
 class ChicagoParkDistrictScraper:
@@ -128,8 +126,11 @@ class ChicagoParkDistrictScraper:
 
             if not start:
                 stamps = sorted(
-                    d for d in (self._parse_iso(t.get("datetime"))
-                                for t in card.select("time[datetime]")) if d
+                    d
+                    for d in (
+                        self._parse_iso(t.get("datetime")) for t in card.select("time[datetime]")
+                    )
+                    if d
                 )
                 if not stamps:
                     continue
@@ -146,16 +147,18 @@ class ChicagoParkDistrictScraper:
 
             clock = re.search(r"\b(\d{1,2}(?::\d{2})?\s*[apAP]\.?[mM]\.?)", duration_text)
 
-            events.append(EventCreate(
-                name=title[:200],
-                date=start,
-                date_end=end,
-                time=clock.group(1).upper().replace(".", "") if clock else None,
-                category="community",
-                origination_url=url,
-                venue_name=self._venue_from_title(title),
-                address=address,
-            ))
+            events.append(
+                EventCreate(
+                    name=title[:200],
+                    date=start,
+                    date_end=end,
+                    time=clock.group(1).upper().replace(".", "") if clock else None,
+                    category="community",
+                    origination_url=url,
+                    venue_name=self._venue_from_title(title),
+                    address=address,
+                )
+            )
 
         return events
 
@@ -163,7 +166,7 @@ class ChicagoParkDistrictScraper:
     _FULL_DATE_RE = re.compile(r"([A-Z][a-z]{2,8})\.?\s+(\d{1,2}),\s*(\d{4})")
 
     @classmethod
-    def _dates_from_text(cls, text: str) -> tuple[Optional[datetime], Optional[datetime]]:
+    def _dates_from_text(cls, text: str) -> tuple[datetime | None, datetime | None]:
         """Read the start and, for a run, the end out of the printed duration."""
         found = []
         for match in cls._FULL_DATE_RE.finditer(text or ""):
@@ -188,8 +191,8 @@ class ChicagoParkDistrictScraper:
 
     @classmethod
     def _dates_from_short(
-        cls, text: str, today: Optional[datetime] = None
-    ) -> tuple[Optional[datetime], Optional[datetime]]:
+        cls, text: str, today: datetime | None = None
+    ) -> tuple[datetime | None, datetime | None]:
         """Read yearless dates, inferring the year.
 
         The listing only shows current and upcoming events, so a month earlier
@@ -199,14 +202,13 @@ class ChicagoParkDistrictScraper:
         parts = []
         for match in cls._SHORT_DATE_RE.finditer(text or ""):
             try:
-                parts.append((datetime.strptime(match.group(1), "%b").month,
-                              int(match.group(2))))
+                parts.append((datetime.strptime(match.group(1), "%b").month, int(match.group(2))))
             except ValueError:
                 continue
         if not parts:
             return None, None
 
-        def build(month: int, day: int, year: int) -> Optional[datetime]:
+        def build(month: int, day: int, year: int) -> datetime | None:
             try:
                 return datetime(year, month, day)
             except ValueError:
@@ -225,22 +227,22 @@ class ChicagoParkDistrictScraper:
         return build(start_month, start_day, start_year), build(end_month, end_day, end_year)
 
     @staticmethod
-    def _parse_iso(value: Optional[str]) -> Optional[datetime]:
+    def _parse_iso(value: str | None) -> datetime | None:
         if not value:
             return None
         try:
             # "2026-10-31T18:00:00Z"; stored naive to match the other sources.
             return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
-        except (ValueError, AttributeError):
+        except ValueError, AttributeError:
             return None
 
     @staticmethod
-    def _venue_from_title(title: str) -> Optional[str]:
+    def _venue_from_title(title: str) -> str | None:
         """Park names are written into the title, as "... at Austin TH"."""
         match = re.search(r"\bat\s+([A-Z][\w'.\-]*(?:\s+[A-Z][\w'.\-]*){0,4})\s*$", title)
         return match.group(1).strip() if match else None
 
-    async def scrape_and_save(self, db: Union[Session, AsyncSession]) -> int:
+    async def scrape_and_save(self, db: Session | AsyncSession) -> int:
         """Fetch and save events, placing each one by its street address."""
         try:
             events = await self.fetch_events()
@@ -248,7 +250,7 @@ class ChicagoParkDistrictScraper:
             is_async = isinstance(db, AsyncSession)
 
             boundaries = await load_boundaries(db) if is_async else {}
-            neighborhood_ids: dict[str, Optional[int]] = {}
+            neighborhood_ids: dict[str, int | None] = {}
 
             processed = 0
             for event_data in events:
@@ -291,9 +293,7 @@ class ChicagoParkDistrictScraper:
                         neighborhood_id = neighborhood_ids[name]
 
                 if not existing:
-                    event = EventModel(
-                        **event_data.model_dump(), source="chicago_park_district"
-                    )
+                    event = EventModel(**event_data.model_dump(), source="chicago_park_district")
                     event.neighborhood_id = neighborhood_id
                     db.add(event)
                     saved_count += 1

@@ -211,7 +211,7 @@ class TestExtractDatedListItems:
         assert events[0].date_end == "Dec 12, 2026"
 
     def test_run_crossing_new_year_starts_the_previous_year(self):
-        """"OCT 27-MAR 20, 2027" runs from 2026 into 2027."""
+        """ "OCT 27-MAR 20, 2027" runs from 2026 into 2027."""
         html = """
         <div class="event"><div class="wrap">
           <h2>80 Minutes Around the World</h2>
@@ -302,12 +302,12 @@ class TestParkDistrictDates:
 
     def short(self, text):
         start, end = ChicagoParkDistrictScraper._dates_from_short(text, self.TODAY)
-        fmt = lambda d: d.strftime("%Y-%m-%d") if d else None  # noqa: E731
+        fmt = lambda d: d.strftime("%Y-%m-%d") if d else None
         return fmt(start), fmt(end)
 
     def full(self, text):
         start, end = ChicagoParkDistrictScraper._dates_from_text(text)
-        fmt = lambda d: d.strftime("%Y-%m-%d") if d else None  # noqa: E731
+        fmt = lambda d: d.strftime("%Y-%m-%d") if d else None
         return fmt(start), fmt(end)
 
     def test_full_run_with_years(self):
@@ -327,7 +327,7 @@ class TestParkDistrictDates:
         assert self.short("Feb 3") == ("2027-02-03", None)
 
     def test_yearless_run_is_anchored_on_its_end(self):
-        """"Apr 25 - Oct 31" read in October is under way, not starting next April."""
+        """ "Apr 25 - Oct 31" read in October is under way, not starting next April."""
         assert self.short("Apr 25 - Oct 31") == ("2026-04-25", "2026-10-31")
 
     def test_yearless_run_crossing_new_year(self):
@@ -467,7 +467,7 @@ class TestExtractTickeriVenue:
         assert event.time == "8:00 PM"
 
     def test_a_floor_price_is_labelled_as_one(self):
-        """"min" alone is a starting price, not the whole price."""
+        """ "min" alone is a starting price, not the whole price."""
         assert self.extracted()[0].cost == "From $70"
 
     def test_a_real_range_is_shown_as_a_range(self):
@@ -501,9 +501,7 @@ class TestNamedSelectors:
     def newberry(self):
         config_ = config(name="Newberry Library", address="60 W Walton St")
         config_.selectors = {"event_container": "div.col-12.col-md-6", "title": "h4"}
-        return extract_dated_list_items(
-            BeautifulSoup(self.NEWBERRY_HTML, "html.parser"), config_
-        )
+        return extract_dated_list_items(BeautifulSoup(self.NEWBERRY_HTML, "html.parser"), config_)
 
     def test_named_title_beats_the_kicker_label(self):
         """Without the selector this came out as "Event—Exhibition"."""
@@ -580,7 +578,7 @@ class TestLabelledMeeting:
         assert "200 N. LaSalle Street" in event.location
 
     def test_the_next_label_stops_the_address(self):
-        """"Directions:" must not be swallowed into the address."""
+        """ "Directions:" must not be swallowed into the address."""
         assert "Building entry" not in self.extracted()[0].location
 
     def test_no_when_block_yields_nothing(self):
