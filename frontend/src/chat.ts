@@ -211,35 +211,44 @@ class ChatWidget {
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      // Keep last incomplete line in buffer
-      buffer = lines.pop() || "";
 
-      let i = 0;
-      while (i < lines.length) {
-        const line = lines[i];
+      // Split on the blank line that ends an SSE frame, not on single lines.
+      //
+      // The previous version read "event:" and took lines[i + 1] as its data,
+      // which assumes the two arrive in the same network chunk. They often do
+      // not: when a chunk boundary fell between them, lines[i + 1] was
+      // undefined, the event line was dropped, and the orphaned data line was
+      // skipped on the next read because it did not start with "event:". The
+      // whole reply vanished and the user got "No response received from AI" -
+      // more often on long replies, which is the worst possible bias.
+      //
+      // A frame is the unit the protocol actually defines, so split on that
+      // and keep any trailing partial frame for the next chunk.
+      const frames = buffer.split(/\r?\n\r?\n/);
+      buffer = frames.pop() ?? "";
 
-        if (line.startsWith("event: ")) {
-          const eventType = line.slice(7);
-          const dataLine = lines[i + 1];
-          console.log("Chat: Event type:", eventType);
+      for (const frame of frames) {
+        let eventType = "message";
+        const dataLines: string[] = [];
 
-          if (dataLine?.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(dataLine.slice(6));
-              console.log("Chat: Event data:", data);
-              await this.handleStreamEvent(eventType, data, (msg) => {
-                currentAssistantMessage += msg;
-              });
-            } catch (e) {
-              console.error("Chat: Failed to parse event data:", e);
-            }
-            i += 2; // Skip event and data lines
-          } else {
-            i += 1;
+        for (const line of frame.split(/\r?\n/)) {
+          if (line.startsWith(":")) continue;           // comment / keep-alive
+          if (line.startsWith("event:")) {
+            eventType = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
+            // A frame may carry several data lines; the spec joins them.
+            dataLines.push(line.slice(5).replace(/^ /, ""));
           }
-        } else {
-          i += 1;
+        }
+
+        if (!dataLines.length) continue;
+        try {
+          const data = JSON.parse(dataLines.join("\n"));
+          await this.handleStreamEvent(eventType, data, (msg) => {
+            currentAssistantMessage += msg;
+          });
+        } catch (e) {
+          console.error("Chat: failed to parse SSE frame:", frame, e);
         }
       }
     }
@@ -381,8 +390,18 @@ class ChatWidget {
   private parseMarkdownAndEvents(text: string): string {
     // Convert markdown links to HTML FIRST (before processing newlines)
     let html = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+
+    // Headings, before newlines become <br>. The model writes "## From our
+    // database", which was rendering with the hashes visible - the one piece
+    // of markdown it uses most and the only one not handled here. Rendered as
+    // bold rather than real <h2>, because a heading's margins are wrong
+    // inside a chat bubble.
+    html = html.replace(/^\s{0,3}#{1,4}\s+(.+)$/gm, '<strong class="chat-heading">$1</strong>');
+
     // Convert markdown bold to HTML
     html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    // Italic, for the Chicago fact in the greeting.
+    html = html.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
     // Convert backtick code to HTML
     html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
     // Convert newlines last

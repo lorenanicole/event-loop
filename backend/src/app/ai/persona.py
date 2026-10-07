@@ -15,6 +15,7 @@ confident invention would be taken as seriously as the listing.
 """
 
 import random
+import re
 from typing import Optional
 
 # One constant, because the name appears in the prompt, the greeting, the API
@@ -172,28 +173,132 @@ UNDER_THE_HOOD = (
 )
 
 
-def greeting(rng: Optional[random.Random] = None) -> str:
+def reads_like_a_title(name: str) -> bool:
+    """Whether a stored name is worth putting in a greeting.
+
+    Stricter than `_looks_like_an_event`, which decides whether to store a row
+    at all. This decides whether to lead with it, so a scrape artefact that is
+    harmless in a list is disqualifying here: the first draft opened with
+    "Closed in Lincoln Park" and "doing our literal speed in Woodlawn", which
+    are a venue status and a sentence fragment.
+
+    Wants a short title of at least two words that starts like a title and is
+    not obviously a price, a fragment or a status.
+    """
+    name = (name or "").strip()
+    if not (4 <= len(name) <= 44):
+        return False
+    if name[0] in "$(&\"'":                       # a price or a fragment
+        return False
+    if len(name.split()) < 2:                     # "Closed", "Cancelled"
+        return False
+    if not (name[0].isalpha() or name[0].isdigit()):
+        return False
+    # Starts mid-sentence: a real title does not begin with a verb participle
+    # or a conjunction.
+    if re.match(r"^(and|but|or|doing|featuring|with|plus|see|click)\b", name, re.I):
+        return False
+    if re.search(r"\b(closed|cancelled|canceled|sold out|tba|tbd|multiple days"
+                 r"|coming soon|more info)\b", name, re.I):
+        return False
+    return True
+
+
+async def whats_on_tonight(
+    session, limit: int = 3, rng: Optional[random.Random] = None
+) -> list[str]:
+    """A few real things happening soon, phrased for the greeting.
+
+    Pulled from the database rather than written down, because the invented
+    version ("a blues set on the South Side, a play in a room with sixty
+    seats") was describing a city rather than this city tonight - and the
+    whole point of the app is that it knows.
+    """
+    from sqlalchemy import select
+
+    from shared.database.filters import feed_order, upcoming_events_filter
+    from shared.database.models import EventModel, NeighborhoodModel
+
+    rows = (await session.execute(
+        select(EventModel.name, EventModel.category, NeighborhoodModel.name)
+        .outerjoin(NeighborhoodModel, EventModel.neighborhood_id == NeighborhoodModel.id)
+        .filter(upcoming_events_filter())
+        # A title that is a price or a sentence reads badly in a greeting.
+        .filter(EventModel.name.isnot(None))
+        .order_by(*feed_order())
+        .limit(60)
+    )).all()
+
+    # Categories that sound like a night out. A greeting that opens with
+    # "ACEP Annual Scientific Assembly 2026" is accurate and sells nothing -
+    # conferences and civic meetings are real events but they are not the
+    # hook. Ordered by how well they read cold.
+    APPEALING = ("Music", "Theater", "Comedy", "Holiday & Seasonal", "Film",
+                 "Arts", "Food & Drink", "Festival")
+
+    candidates: dict[str, list[str]] = {}
+    for name, category, hood in rows:
+        name = (name or "").strip()
+        if category not in APPEALING:
+            continue
+        if not reads_like_a_title(name):
+            continue
+        label = name + (f" in {hood}" if hood else "")
+        candidates.setdefault(category, []).append(label)
+
+    # One per category so three picks are three different kinds of evening,
+    # and shuffled so reopening the chat does not show the same three.
+    picker = rng or random
+    picks = []
+    for category in APPEALING:
+        options = candidates.get(category)
+        if options:
+            picks.append(picker.choice(options))
+        if len(picks) >= limit:
+            break
+    return picks
+
+
+def greeting(
+    rng: Optional[random.Random] = None,
+    tonight: Optional[list[str]] = None,
+) -> str:
     """The first message in a new chat.
 
-    Short on purpose. The first draft opened with "I'll tell you what I
-    actually know, and say so when I don't", which read like terms of service;
-    the second ran 25 lines, said "77 community areas" in the body and then
-    again in the fact two lines down, and asked what you wanted twice. A
-    greeting is a hello, not a homepage.
+    Short, and written the way somebody here would say it. Earlier drafts
+    opened with a disclaimer, then ran 25 lines, repeated "77 community areas"
+    two lines apart and asked what you wanted twice.
 
-    Sandburg earns his place - "City of the Big Shoulders" sets a register no
-    amount of "I'm your AI assistant" can - and the three concrete things
-    happening tonight do more than any adjective would.
+    Two things fixed after seeing it rendered in a narrow panel: the prose is
+    no longer hard-wrapped, because those line breaks survived into the chat
+    bubble and broke mid-sentence at the wrong width; and Sandburg is no
+    longer named, because "the City of Big Shoulders" is the part people know
+    and attributing it just adds a stranger to the first sentence.
+
+    `tonight` is real events from the database. Falling back to nothing rather
+    than to invented examples: this is an app that knows what is on, so the
+    greeting should not make something up when the lookup fails.
     """
     picker = rng or random
     fact = picker.choice(GENERAL_FACTS)
+
+    if tonight:
+        listed = "; ".join(tonight)
+        opener = (
+            f"They call this the City of Big Shoulders. Coming up: {listed}. "
+            "And a few hundred more."
+        )
+    else:
+        opener = (
+            "They call this the City of Big Shoulders, and it books like it - "
+            "a few thousand things on across the city in the next few weeks."
+        )
+
     return f"""🏙️ **I'm {ASSISTANT_NAME}**, your guide to what's on in Chicago. Named {NAME_MEANING}.
 
-Sandburg called this the City of the Big Shoulders. Somewhere tonight there's
-a blues set on the South Side, a play in a room with sixty seats, and a street
-fest nobody told you about. Ask me and I'll find it.
+{opener}
 
-💡 **Try:**
+💡 **What are you after?** Ask me like you'd ask a friend:
 • "blues tonight on the South Side"
 • "free things to do in Pilsen this weekend"
 • "jazz at the Green Mill this month"
@@ -201,6 +306,4 @@ fest nobody told you about. Ask me and I'll find it.
 
 🗺️ *{fact}*
 
-⚙️ **Under the hood:** {UNDER_THE_HOOD}
-
-So - what are we doing tonight? ⚡"""
+⚙️ **Under the hood:** {UNDER_THE_HOOD}"""

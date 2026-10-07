@@ -762,10 +762,18 @@ class ChatStreamRequest(BaseModel):
         }
     },
 )
-async def chat_greeting():
-    from app.ai.persona import ASSISTANT_NAME, greeting
+async def chat_greeting(db: AsyncSession = Depends(get_db)):
+    from app.ai.persona import ASSISTANT_NAME, greeting, whats_on_tonight
 
-    return {"name": ASSISTANT_NAME, "greeting": greeting()}
+    # Real events, so the opener names things that are actually on rather than
+    # describing a generic city. A failure here loses the examples, not the
+    # greeting - the chat still has to open.
+    try:
+        tonight = await whats_on_tonight(db)
+    except Exception:
+        tonight = None
+
+    return {"name": ASSISTANT_NAME, "greeting": greeting(tonight=tonight)}
 
 
 @router.post(
