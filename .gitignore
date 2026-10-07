@@ -46,3 +46,11 @@ backend/data/backups/
 # meaningless without the database file they belong to.
 *.db-wal
 *.db-shm
+
+# Runtime artifacts under backend/data: the scrape lock, its log, and the
+# database snapshots taken before destructive migrations. All reproducible,
+# none meaningful to anyone else, and the snapshots are 3.4MB each.
+backend/data/.scrape.lock
+backend/data/*.log
+backend/data/*.db.backup
+backend/data/*.before_*
