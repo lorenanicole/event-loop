@@ -155,6 +155,7 @@ class EventSearch(BaseModel):
                     "neighborhood": "Logan Square",
                 },
                 {"query": "comedy", "limit": 5, "category": "Comedy"},
+                {"query": "events", "limit": 20, "skip": 40},
             ]
         }
     )
@@ -167,6 +168,13 @@ class EventSearch(BaseModel):
         "category set still works as a plain filter.",
     )
     limit: int = Field(default=20, ge=1, le=100, description="Maximum results to return")
+    skip: int = Field(
+        default=0,
+        ge=0,
+        description="How many results to skip, for paging. Results are ordered "
+        "by date, so paging is stable as long as the query is unchanged. Paging "
+        "past the end returns an empty array rather than an error.",
+    )
     neighborhood: Optional[str] = Field(
         default=None,
         description="Restrict results to one Chicago neighborhood, e.g. 'Wicker Park'. "

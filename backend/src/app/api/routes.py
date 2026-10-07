@@ -545,7 +545,14 @@ async def search_events(
             )
         )
 
-    db_query = db_query.order_by(EventModel.date.asc()).limit(limit)
+    # Ordered by date then id: date alone is not unique - dozens of events
+    # share a day - so without the tiebreak a row could appear on two
+    # consecutive pages or on neither.
+    db_query = (
+        db_query.order_by(EventModel.date.asc(), EventModel.id.asc())
+        .offset(search.skip)
+        .limit(limit)
+    )
     result = await db.execute(db_query)
     results = result.scalars().all()
     return results

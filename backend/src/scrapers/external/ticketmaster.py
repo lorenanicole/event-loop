@@ -6,6 +6,7 @@ from typing import Optional, Union
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from shared.localtime import to_chicago_naive
 from shared.models import EventCreate
 from shared.database.models import EventModel
 from shared.database.neighborhoods import load_boundaries, resolve_neighborhood_id
@@ -101,14 +102,27 @@ class TicketmasterScraper:
                 return None
 
             dates = data.get("dates", {})
-            start_date = dates.get("start", {}).get("dateTime")
+            start = dates.get("start", {})
 
-            if not start_date:
-                return None
-
-            try:
-                event_date = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
-            except (ValueError, TypeError):
+            # `dateTime` is UTC. Storing it as-is moved every evening show
+            # forward a day - an 8pm gig became 01:00 tomorrow - so prefer the
+            # localDate/localTime the API gives alongside it, and fall back to
+            # converting the UTC instant rather than trusting its wall clock.
+            event_date = None
+            if start.get("localDate"):
+                stamp = f"{start['localDate']}T{start.get('localTime') or '00:00:00'}"
+                try:
+                    event_date = datetime.fromisoformat(stamp)
+                except (ValueError, TypeError):
+                    event_date = None
+            if event_date is None and start.get("dateTime"):
+                try:
+                    event_date = to_chicago_naive(
+                        datetime.fromisoformat(start["dateTime"].replace("Z", "+00:00"))
+                    )
+                except (ValueError, TypeError):
+                    event_date = None
+            if event_date is None:
                 return None
 
             category = "Other"

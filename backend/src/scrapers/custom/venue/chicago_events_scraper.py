@@ -18,6 +18,7 @@ from sqlalchemy import select
 from shared.database.models import EventModel, VenueModel, NeighborhoodModel, Base
 from shared.database.neighborhoods import canonical_neighborhood, resolve_neighborhood_id
 from shared.categories import classify_all, infer_category, normalize_category
+from shared.localtime import to_chicago_naive
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -221,19 +222,21 @@ def extract_events_from_json_ld(soup: BeautifulSoup, config: VenueConfig) -> lis
 
                             if 'startDate' in event_data:
                                 try:
-                                    dt = datetime.fromisoformat(
-                                        event_data['startDate'].replace('Z', '+00:00')
+                                    start_date = to_chicago_naive(
+                                        datetime.fromisoformat(
+                                            event_data['startDate'].replace('Z', '+00:00')
+                                        )
                                     )
-                                    start_date = dt
                                 except (ValueError, AttributeError):
                                     pass
 
                             if 'endDate' in event_data:
                                 try:
-                                    dt = datetime.fromisoformat(
-                                        event_data['endDate'].replace('Z', '+00:00')
+                                    end_date = to_chicago_naive(
+                                        datetime.fromisoformat(
+                                            event_data['endDate'].replace('Z', '+00:00')
+                                        )
                                     )
-                                    end_date = dt
                                 except (ValueError, AttributeError):
                                     pass
 
@@ -264,19 +267,21 @@ def extract_events_from_json_ld(soup: BeautifulSoup, config: VenueConfig) -> lis
 
                     if 'startDate' in event_data:
                         try:
-                            dt = datetime.fromisoformat(
-                                event_data['startDate'].replace('Z', '+00:00')
+                            start_date = to_chicago_naive(
+                                datetime.fromisoformat(
+                                    event_data['startDate'].replace('Z', '+00:00')
+                                )
                             )
-                            start_date = dt
                         except (ValueError, AttributeError):
                             pass
 
                     if 'endDate' in event_data:
                         try:
-                            dt = datetime.fromisoformat(
-                                event_data['endDate'].replace('Z', '+00:00')
+                            end_date = to_chicago_naive(
+                                datetime.fromisoformat(
+                                    event_data['endDate'].replace('Z', '+00:00')
+                                )
                             )
-                            end_date = dt
                         except (ValueError, AttributeError):
                             pass
 
@@ -2113,9 +2118,16 @@ def extract_dice_widget(soup: BeautifulSoup, config: VenueConfig) -> list[VenueE
         )
         seen = set()
 
-        for link in soup.select('a[href*="dice.fm"]'):
+        # Only ticket links. Matching every dice.fm link also caught the
+        # widget's own footer - "https://dice.fm" and
+        # "https://dice.fm/privacy_policy.html" - and because the climb below
+        # looks upward for a date, each of those reached the nearest card and
+        # was stored as a third copy of that event.
+        for link in soup.select('a[href*="link.dice.fm/"]'):
             href = link.get('href', '')
             if not href or href in seen:
+                continue
+            if re.search(r"/(privacy|terms|cookie|about|app|help)", href, re.I):
                 continue
 
             # Climb until an ancestor carries the date line - that block is the card.
@@ -3596,16 +3608,10 @@ CHICAGO_VENUES = {
             use_playwright=True,
             extractor_fn=extract_songkick_venue,
         ),
-        VenueConfig(
-            name="Cermak Hall",
-            website_url="https://www.songkick.com",
-            event_page_url="https://www.songkick.com/venues/4378690-cermak-hall",
-            category="music",
-            address="2701 W Cermak Rd",
-            selectors={},
-            use_playwright=True,
-            extractor_fn=extract_songkick_venue,
-        ),
+        # Songkick's "Cermak Hall" was removed: 3 of its 4 events are the same
+        # shows as Radius Chicago on the same nights (Jan Blomqvist, Maddix,
+        # Somewhen), so it is Radius under a wrong name and a wrong address -
+        # which also put those events in Little Village instead of Pilsen.
     ],
 
     "Bridgeport": [

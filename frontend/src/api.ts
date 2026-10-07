@@ -48,11 +48,13 @@ export async function searchEvents(
   limit: number = 20,
   neighborhood: string | null = null,
   category: string | null = null,
+  skip: number = 0,
 ): Promise<Event[]> {
   try {
     const response = await client.post('/search', {
       query,
       limit,
+      skip,
       // Sent as structured filters, not words in the query string: matching
       // them as text meant a tile only worked if its name appeared in the
       // event's title.

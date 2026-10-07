@@ -96,7 +96,7 @@ eventloop/
   once, rate limited, and cached permanently in `geocode_cache`
 
 ### **Data at Scale**
-- 📊 **2,900+ upcoming events** - 7 external sources plus 75 venue scrapers
+- 📊 **2,900+ upcoming events** - 7 external sources plus 76 venue scrapers
 - 💵 **Prices where venues publish them** - one `parse_cost()` normalizes "$25",
   "$20-$25", "Starting at $64", "No cover" and "Donation", and rejects the
   near-misses ("21+", "Show 9:30PM")
@@ -117,7 +117,7 @@ eventloop/
 - ⏳ **Exponential Backoff** - Retry transient failures smartly
 - 📊 **OpenTelemetry** - Counters, histograms, audit trails
 - 🔐 **Prompt Injection Defense** - Pattern detection, rate limiting, output validation
-- 🧪 **384 Tests** - Security, resilience, database, API, scraper coverage
+- 🧪 **392 Tests** - Security, resilience, database, API, scraper coverage
 
 ### **Production-Ready**
 - 🛡️ **Security** - Blocks prompt injections, validates outputs, sanitizes inputs
@@ -214,6 +214,11 @@ python link_health.py --source chicago_venue_den_theatre
 # confirmed twice before anything is deleted.
 python prune_dead_links.py --dry-run
 python prune_dead_links.py
+
+# One-off repairs. Ticketmaster publishes UTC and Rosa'"'"'s publishes an offset;
+# both were stored as if local, which moved every evening show forward a day.
+python repair_event_times.py --dry-run
+python repair_event_times.py
 
 # Place Park District events without geocoding: the city's open data portal
 # publishes all 617 parks with boundary polygons, so one request replaces

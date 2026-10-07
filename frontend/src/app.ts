@@ -7,6 +7,12 @@ export class SearchApp {
   private categories: Neighborhood[] = []
   private neighborhoods: Neighborhood[] = []
   private isLoading = false
+  // Paging state. The page used to show the first 20 of 3,000+ events with no
+  // way to reach the rest.
+  private static readonly PAGE_SIZE = 20
+  private isLoadingMore = false
+  private hasMore = true
+  private scrollObserver: IntersectionObserver | null = null
   // All three start empty: the page opens on everything that is coming up and
   // the sentence narrows it, rather than putting words in anyone's mouth.
   private selectedKeyword: string | null = null
@@ -458,8 +464,14 @@ export class SearchApp {
           }${this.selectedNeighborhood ? ` in ${this.escapeHtml(this.selectedNeighborhood)}` : ''}
         </h2>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div id="events-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           ${events.map(event => this.renderEventCard(event)).join('')}
+        </div>
+        <!-- Watched by an IntersectionObserver: scrolling it into view loads
+             the next page. A button would work too, but the list is for
+             browsing and stopping to click breaks that. -->
+        <div id="events-sentinel" class="h-12 flex items-center justify-center">
+          ${this.hasMore ? '<span id="events-loading-more" class="hidden text-gray-400 text-sm">Looping in more…</span>' : ''}
         </div>
       </div>
     `
@@ -959,8 +971,15 @@ export class SearchApp {
     }
 
     try {
-      this.events = await searchEvents(query, 20, this.selectedNeighborhood, this.selectedKeyword)
+      // A new search starts a new list, so paging resets with it.
+      this.events = await searchEvents(
+        query, SearchApp.PAGE_SIZE, this.selectedNeighborhood, this.selectedKeyword, 0,
+      )
+      // A short page means there is nothing after it, which saves a request
+      // that would come back empty.
+      this.hasMore = this.events.length === SearchApp.PAGE_SIZE
       this.renderEventsList(this.events)
+      this.watchForScroll()
     } catch (error) {
       if (container) {
         container.innerHTML = '<div class="flex items-center justify-center min-h-screen text-red-600"><p>Oops! Something went wrong. Try again?</p></div>'
@@ -979,6 +998,77 @@ export class SearchApp {
    * facet is computed with the other filters applied but not its own, so the
    * numbers stay comparable to each other.
    */
+  /**
+   * Load the next page and append it, rather than replacing the list.
+   *
+   * Guarded against overlapping calls: the observer can fire several times
+   * while a request is in flight, and each would ask for the same offset.
+   */
+  private async loadMore() {
+    if (this.isLoadingMore || !this.hasMore || this.isLoading) return
+    this.isLoadingMore = true
+    document.getElementById('events-loading-more')?.classList.remove('hidden')
+
+    const query = this.selectedTimeframe ? `events ${this.selectedTimeframe}` : 'events'
+    try {
+      const next = await searchEvents(
+        query,
+        SearchApp.PAGE_SIZE,
+        this.selectedNeighborhood,
+        this.selectedKeyword,
+        this.events.length,
+      )
+      if (next.length === 0) {
+        this.hasMore = false
+      } else {
+        // Appended as markup rather than re-rendering the list, so the page
+        // does not jump back to the top under the reader.
+        const grid = document.getElementById('events-grid')
+        if (grid) grid.insertAdjacentHTML('beforeend', next.map(e => this.renderEventCard(e)).join(''))
+        this.events = this.events.concat(next)
+        this.hasMore = next.length === SearchApp.PAGE_SIZE
+        this.updateResultCount()
+      }
+    } catch (error) {
+      // Leave hasMore alone: a failed request is not the end of the list, and
+      // scrolling again should retry.
+      console.error('Error loading more events:', error)
+    } finally {
+      this.isLoadingMore = false
+      document.getElementById('events-loading-more')?.classList.add('hidden')
+      if (!this.hasMore) {
+        const sentinel = document.getElementById('events-sentinel')
+        if (sentinel) sentinel.innerHTML = ''
+      }
+    }
+  }
+
+  /** Keep the heading's count in step with what has actually been loaded. */
+  private updateResultCount() {
+    const heading = document.querySelector('#events-container h2')
+    if (!heading) return
+    const shown = this.events.length
+    heading.textContent = heading.textContent!.replace(
+      /^\s*\d+/, String(shown),
+    )
+  }
+
+  /** Load the next page when the bottom of the list comes into view. */
+  private watchForScroll() {
+    this.scrollObserver?.disconnect()
+    const sentinel = document.getElementById('events-sentinel')
+    if (!sentinel) return
+    this.scrollObserver = new IntersectionObserver(
+      entries => {
+        if (entries.some(e => e.isIntersecting)) this.loadMore()
+      },
+      // Start fetching a little before the sentinel is actually visible, so
+      // the next cards are usually there by the time the reader arrives.
+      { rootMargin: '400px' },
+    )
+    this.scrollObserver.observe(sentinel)
+  }
+
   private async loadFilterCounts() {
     const counts = await getFilterCounts(
       this.selectedKeyword,
