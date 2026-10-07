@@ -228,7 +228,24 @@ class ChatExecutor:
                 )
 
                 classifier = get_intent_classifier()
-                intent, confidence, reasoning = await classifier.classify(message)
+                # The conversation so far, so a follow-up is not judged on
+                # its own words alone. "What recommendations for food do we
+                # have in Wicker?" was rejected as off-topic mid-way through
+                # planning an evening in Wicker Park.
+                recent_text = []
+                if thread.turn_count:
+                    rows = (await db.execute(
+                        select(ChatMessageModel)
+                        .where(ChatMessageModel.thread_id == thread_id)
+                        .order_by(ChatMessageModel.created_at.desc())
+                        .limit(4)
+                    )).scalars().all()
+                    recent_text = [
+                        f"{r.role}: {(r.content or '')[:300]}" for r in reversed(rows)
+                    ]
+                intent, confidence, reasoning = await classifier.classify(
+                    message, recent=recent_text
+                )
 
                 # Reject out-of-scope questions early
                 if intent != Intent.CHICAGO_EVENTS and confidence > 0.7:

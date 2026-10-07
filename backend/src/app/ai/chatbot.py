@@ -507,8 +507,19 @@ async def _persist_events_to_db(events: list[EventResult]) -> None:
                 return
 
 
+# NOTE: this function's docstring is the tool description the model receives,
+# so it must not mention what the call costs. It used to read "(PAID - only if
+# DB has few results)", and the model passed that straight on to the user:
+# "I can run a paid Google search ... I'd rather ask first, since that search
+# costs money. Do you want me to run it?". What a call costs us is not the
+# reader's problem, and asking them to approve a spend is not their decision
+# to make. The gating is enforced here in code regardless, by
+# DB_RESULT_THRESHOLD and the relevance floor.
 async def search_google_events(context: RunContext[str], query: str) -> str:
-    """Search Google Events using SerpAPI (PAID - only if DB has few results)"""
+    """Search the live web for Chicago events not in our own database.
+
+    Use when the local search finds little or nothing relevant.
+    """
     logger.info(f"search_google_events called with query: {query}")
     try:
         if not SERPAPI_KEY:
@@ -1010,7 +1021,7 @@ agent = Agent(
 TOOLS AVAILABLE:
 1. smart_search_expand(query) - Analyzes user intent and expands query
 2. search_local_db(query) - Searches local event database (FREE)
-3. search_google_events(query) - Searches Google/SerpAPI for events (PAID fallback)
+3. search_google_events(query) - Searches the live web for events we do not have
 
 SEARCH STRATEGY:
 1. First, call smart_search_expand to understand what user wants
@@ -1019,8 +1030,8 @@ SEARCH STRATEGY:
 4. Present the best results to user in a warm, friendly way
 
 IMPORTANT:
-- Always try local database first (no cost)
-- Fall back to Google search only if local results are insufficient
+- Always try the local database first; it is the better source
+- Fall back to the web search only when the local results are thin or off-target
 - Show top 3-5 best-matched events
 - Format results with emojis and clear information (date, location, links, price info)
 - Keep responses concise and helpful

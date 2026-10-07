@@ -6,6 +6,7 @@ Rejects out-of-scope questions early before running expensive REACT agent.
 import os
 from enum import Enum
 import logging
+from typing import Optional
 from pydantic_ai.models.anthropic import AnthropicModel
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,10 @@ Classify the user's message into ONE of these categories:
      (Implicit = context suggests Chicago events, even if Chicago not mentioned)
    - Confidence: 0.95+ if explicit, 0.85+ if implicit context is clear
 
+   - FOLLOW-UP: a short question continuing an events conversation is still
+     chicago_events, even when its own words look like something else.
+     "what about food?" after a list of venues means food events nearby, not
+     restaurant reviews. When a conversation is given, weigh it heavily.
 2. **chicago_info**: User asking about Chicago itself (NOT events)
    - Examples: "Best neighborhoods?", "Where's the best pizza?", "Tell me about Chicago"
    - Confidence: 0.90+
@@ -73,16 +78,36 @@ Return ONLY raw JSON object (no markdown, no code fences):
         )
         return agent
 
-    async def classify(self, user_message: str) -> tuple[Intent, float, str]:
-        """
-        Classify user intent.
+    async def classify(
+        self, user_message: str, recent: Optional[list[str]] = None
+    ) -> tuple[Intent, float, str]:
+        """Classify user intent, in the context of the conversation so far.
+
+        `recent` is the last few messages. Without them a follow-up is judged
+        on its own words and gets this wrong: mid-way through planning an
+        evening, "what recommendations for food do we have in Wicker?" was
+        classified as a restaurant question and answered with "I'm
+        specifically built for finding Chicago events" - in a conversation
+        that was already about Chicago events, and when the database has
+        Food & Drink listings for that very neighborhood.
+
         Returns: (intent, confidence, reasoning)
         """
         try:
             import json
 
+            prompt = user_message
+            if recent:
+                # The conversation is what makes "what about food?" an events
+                # question rather than a restaurant one.
+                context = "\n".join(recent[-4:])
+                prompt = (
+                    f"Conversation so far:\n{context}\n\n"
+                    f"Classify ONLY this latest message: {user_message}"
+                )
+
             # Run agent - it returns JSON text per system prompt
-            result = await self.classifier_agent.run(user_message)
+            result = await self.classifier_agent.run(prompt)
 
             # AgentRunResult has .output attribute with the model's response
             if hasattr(result, 'output'):
