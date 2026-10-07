@@ -96,7 +96,7 @@ eventloop/
   once, rate limited, and cached permanently in `geocode_cache`
 
 ### **Data at Scale**
-- 📊 **2,900+ upcoming events** - 7 external sources plus 72 venue scrapers
+- 📊 **2,900+ upcoming events** - 7 external sources plus 75 venue scrapers
 - 💵 **Prices where venues publish them** - one `parse_cost()` normalizes "$25",
   "$20-$25", "Starting at $64", "No cover" and "Donation", and rejects the
   near-misses ("21+", "Show 9:30PM")
@@ -117,7 +117,7 @@ eventloop/
 - ⏳ **Exponential Backoff** - Retry transient failures smartly
 - 📊 **OpenTelemetry** - Counters, histograms, audit trails
 - 🔐 **Prompt Injection Defense** - Pattern detection, rate limiting, output validation
-- 🧪 **340 Tests** - Security, resilience, database, API, scraper coverage
+- 🧪 **350 Tests** - Security, resilience, database, API, scraper coverage
 
 ### **Production-Ready**
 - 🛡️ **Security** - Blocks prompt injections, validates outputs, sanitizes inputs

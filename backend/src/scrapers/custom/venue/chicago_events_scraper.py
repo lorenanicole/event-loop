@@ -1164,6 +1164,69 @@ _WEEKDAY_RE = re.compile(
 )
 
 
+def extract_labelled_meeting(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract a single recurring meeting from a long-form page.
+
+    A user group's homepage is not a calendar: ChiPy publishes its next
+    meeting as prose with labelled fields - "When: Oct. 8, 2026, 6 p.m." and
+    "Where: AlphaSense, 200 N. LaSalle Street" - so there is one event to
+    find, not a list of cards. The card-shaped extractors see nothing here.
+
+    The venue moves monthly (these groups meet at whichever company is
+    hosting), so the address comes off the page rather than from the config.
+    """
+    lines = [l.strip() for l in soup.get_text("\n", strip=True).split("\n") if l.strip()]
+
+    def after(label: str, limit: int = 6) -> list[str]:
+        """The lines following a label, up to the next label or `limit`."""
+        for i, line in enumerate(lines):
+            if line.rstrip(":").strip().lower() == label.lower().rstrip(":"):
+                out = []
+                for nxt in lines[i + 1:i + 1 + limit]:
+                    if nxt.endswith(":") and len(nxt) < 24:
+                        break
+                    out.append(nxt)
+                return out
+        return []
+
+    when = after("When", limit=1)
+    if not when:
+        logger.info(f"{config.name}: no 'When:' block on the page")
+        return []
+
+    # "Oct. 8, 2026, 6 p.m."
+    match = re.search(
+        rf"(?P<m>{_MONTH})\s*(?P<d>\d{{1,2}}),\s*(?P<y>\d{{4}})", when[0], re.I
+    )
+    if not match:
+        logger.info(f"{config.name}: could not read a date from {when[0]!r}")
+        return []
+    clock = re.search(r"(\d{1,2}(?::\d{2})?)\s*([apAP])\.?[mM]\.?", when[0])
+
+    where = after("Where", limit=5)
+    venue = where[0] if where else config.name
+    street = " ".join(where[1:]) if len(where) > 1 else config.address
+
+    # "NEXT EVENT CHIPY __MAIN__ MEETING" - drop the kicker.
+    heading = next(
+        (h.get_text(" ", strip=True) for h in soup.find_all(["h1", "h2", "h3"])
+         if "meeting" in h.get_text(" ", strip=True).lower()),
+        config.name,
+    )
+    title = re.sub(r"^\s*(next event|upcoming event)\s*", "", heading, flags=re.I).strip()
+
+    return [VenueEvent(
+        name=(title or config.name)[:200],
+        date=f"{match.group('m')[:3].title()} {int(match.group('d'))}, {match.group('y')}",
+        time=(f"{clock.group(1)} {clock.group(2).upper()}M" if clock else None),
+        # The host venue, which changes month to month.
+        location=f"{venue}, {street}".strip(", "),
+        url=config.event_page_url,
+        venue_name=venue,
+        category=config.category,
+    )]
+
+
 def extract_aeg_showtime(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from an AEG "Showtime"/carbonhouse venue site.
 
@@ -1447,6 +1510,58 @@ def _title_from(lines: list[str], skip: Optional[str] = None) -> Optional[str]:
     return None
 
 
+def _dates_from_text(text: str) -> tuple[Optional[str], Optional[str]]:
+    """Read a single date or a run out of a card's text.
+
+    Returns ("Oct 7, 2026", None) or ("Sep 10, 2026", "Dec 30, 2026").
+    """
+    run = _RUN_RE.search(text or "")
+    if run:
+        start_month = run.group("m1")[:3].title()
+        end_month = (run.group("m2") or run.group("m1"))[:3].title()
+        crosses = _MONTHS.get(end_month, 0) < _MONTHS.get(start_month, 0)
+        if run.group("y"):
+            end_year = int(run.group("y"))
+            start_year = end_year - 1 if crosses else end_year
+        else:
+            start_year = infer_event_year(start_month)
+            end_year = start_year + 1 if crosses else start_year
+        return (f"{start_month} {int(run.group('d1'))}, {start_year}",
+                f"{end_month} {int(run.group('d2'))}, {end_year}")
+
+    one = _ONE_RE.search(text or "")
+    if not one:
+        return None, None
+    year = one.group("y") or infer_event_year(one.group("m"))
+    return f"{one.group('m')[:3].title()} {int(one.group('d'))}, {year}", None
+
+
+def _dates_from_text(text: str) -> tuple[Optional[str], Optional[str]]:
+    """Read a single date or a run out of a card's text.
+
+    Returns ("Oct 7, 2026", None) or ("Sep 10, 2026", "Dec 30, 2026").
+    """
+    run = _RUN_RE.search(text or "")
+    if run:
+        start_month = run.group("m1")[:3].title()
+        end_month = (run.group("m2") or run.group("m1"))[:3].title()
+        crosses = _MONTHS.get(end_month, 0) < _MONTHS.get(start_month, 0)
+        if run.group("y"):
+            end_year = int(run.group("y"))
+            start_year = end_year - 1 if crosses else end_year
+        else:
+            start_year = infer_event_year(start_month)
+            end_year = start_year + 1 if crosses else start_year
+        return (f"{start_month} {int(run.group('d1'))}, {start_year}",
+                f"{end_month} {int(run.group('d2'))}, {end_year}")
+
+    one = _ONE_RE.search(text or "")
+    if not one:
+        return None, None
+    year = one.group("y") or infer_event_year(one.group("m"))
+    return f"{one.group('m')[:3].title()} {int(one.group('d'))}, {year}", None
+
+
 def extract_dated_list_items(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from a list where each item is "<date> <title> <CTA>".
 
@@ -1459,6 +1574,108 @@ def extract_dated_list_items(soup: BeautifulSoup, config: VenueConfig) -> list[V
     Only the innermost matching element is kept, so the surrounding list
     container doesn't get reported as one giant event.
     """
+    # Where a venue's markup is semantic, name the elements instead of
+    # guessing. The heuristic reads the first plausible line as the title,
+    # which on these sites is a kicker label ("EVENT-EXHIBITION") or a photo
+    # credit ("THEMBA HADEBE / AP") sitting above the real one.
+    container_selector = config.selectors.get("event_container")
+    title_selector = config.selectors.get("title")
+    date_selector = config.selectors.get("date")
+
+    if container_selector:
+        events = []
+        seen = set()
+        for card in soup.select(container_selector):
+            title_el = card.select_one(title_selector) if title_selector else None
+            title = (title_el.get_text(" ", strip=True) if title_el
+                     else _title_from(_card_lines(card), config.name))
+            if not title:
+                continue
+
+            date_el = card.select_one(date_selector) if date_selector else None
+            date_text = (date_el.get_text(" ", strip=True) if date_el
+                         else card.get_text(" ", strip=True))
+            date_str, date_end_str = _dates_from_text(date_text)
+            if not date_str:
+                continue
+
+            key = (date_str, title.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+
+            clock = re.search(r"\b(\d{1,2}(?::\d{2})?\s*[apAP]\.?[mM]\.?)",
+                              card.get_text(" ", strip=True))
+            link = card.select_one("a[href]")
+            url = link["href"] if link else config.event_page_url
+            if not url.startswith("http"):
+                url = f"{config.website_url.rstrip('/')}{url if url.startswith('/') else '/' + url}"
+
+            events.append(VenueEvent(
+                name=title[:200],
+                date=date_str,
+                date_end=date_end_str,
+                time=clock.group(1).upper().replace(".", "") if clock else None,
+                location=f"{config.name}, {config.address}",
+                url=url,
+                venue_name=config.name,
+                category=config.category,
+                cost=parse_cost(card.get_text(" ", strip=True)),
+            ))
+        logger.info(f"{config.name}: extracted {len(events)} events from named selectors")
+        return events
+
+    # Where a venue's markup is semantic, name the elements instead of
+    # guessing. The heuristic reads the first plausible line as the title,
+    # which on these sites is a kicker label ("EVENT-EXHIBITION") or a photo
+    # credit ("THEMBA HADEBE / AP") sitting above the real one.
+    container_selector = config.selectors.get("event_container")
+    title_selector = config.selectors.get("title")
+    date_selector = config.selectors.get("date")
+
+    if container_selector:
+        events = []
+        seen = set()
+        for card in soup.select(container_selector):
+            title_el = card.select_one(title_selector) if title_selector else None
+            title = (title_el.get_text(" ", strip=True) if title_el
+                     else _title_from(_card_lines(card), config.name))
+            if not title:
+                continue
+
+            date_el = card.select_one(date_selector) if date_selector else None
+            date_text = (date_el.get_text(" ", strip=True) if date_el
+                         else card.get_text(" ", strip=True))
+            date_str, date_end_str = _dates_from_text(date_text)
+            if not date_str:
+                continue
+
+            key = (date_str, title.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+
+            clock = re.search(r"\b(\d{1,2}(?::\d{2})?\s*[apAP]\.?[mM]\.?)",
+                              card.get_text(" ", strip=True))
+            link = card.select_one("a[href]")
+            url = link["href"] if link else config.event_page_url
+            if not url.startswith("http"):
+                url = f"{config.website_url.rstrip('/')}{url if url.startswith('/') else '/' + url}"
+
+            events.append(VenueEvent(
+                name=title[:200],
+                date=date_str,
+                date_end=date_end_str,
+                time=clock.group(1).upper().replace(".", "") if clock else None,
+                location=f"{config.name}, {config.address}",
+                url=url,
+                venue_name=config.name,
+                category=config.category,
+                cost=parse_cost(card.get_text(" ", strip=True)),
+            ))
+        logger.info(f"{config.name}: extracted {len(events)} events from named selectors")
+        return events
+
     # A candidate must carry both a date and a title. Requiring only a date
     # would select the innermost element, which on Wix-style markup is a bare
     # "Thu, Oct 08" div with the title in a sibling.
@@ -2471,7 +2688,53 @@ def extract_squarespace_events(soup: BeautifulSoup, config: VenueConfig) -> list
     return events
 
 CHICAGO_VENUES = {
+    "Rush & Division": [
+        VenueConfig(
+            # Exhibitions and scholarly programming, mostly multi-week runs.
+            name="Newberry Library",
+            website_url="https://www.newberry.org",
+            event_page_url="https://www.newberry.org/calendar",
+            category="Arts & Culture",
+            address="60 W Walton St",
+            selectors={
+                "event_container": "div.col-12.col-md-6",
+                "title": "h4",
+            },
+            use_playwright=True,
+            extractor_fn=extract_dated_list_items,
+        ),
+    ],
+
     "Loop": [
+        VenueConfig(
+            # A monthly user group rather than a venue: the meeting moves to
+            # whichever company is hosting, so the address is read off the page
+            # and this neighborhood is only where it usually lands.
+            name="ChiPy (Chicago Python User Group)",
+            website_url="https://www.chipy.org",
+            event_page_url="https://www.chipy.org/",
+            category="Tech / Educational",
+            address="Varies by month",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_labelled_meeting,
+        ),
+        VenueConfig(
+            # Policy talks and civic programming - a whole category of event
+            # the venue scrapers had none of.
+            name="Chicago Council on Global Affairs",
+            website_url="https://globalaffairs.org",
+            event_page_url="https://globalaffairs.org/upcoming-events",
+            category="Community",
+            address="130 E Randolph St",
+            selectors={
+                "event_container": "div.listing_teaser.future",
+                "title": "h2.listing_teaser_title",
+                "date": ".listing_teaser_content_date",
+            },
+            use_playwright=True,
+            extractor_fn=extract_dated_list_items,
+        ),
         # CIBC Theatre and the James M. Nederlander are programmed by Broadway
         # In Chicago and publish no calendar of their own, so they are covered
         # by scrapers.external.broadway_in_chicago instead of here.
@@ -2849,6 +3112,24 @@ CHICAGO_VENUES = {
 
 
     "River North": [
+        VenueConfig(
+            # Listed under the festival's own address because that is what the
+            # listing gives us; the events themselves run at partner venues
+            # across the city (the Athenaeum, the MCA), so the neighborhood
+            # here is the organiser's rather than each event's.
+            name="Chicago Humanities",
+            website_url="https://www.chicagohumanities.org",
+            event_page_url="https://www.chicagohumanities.org/events/",
+            category="Arts & Culture",
+            address="445 N Franklin St",
+            selectors={
+                "event_container": "article.tile.tile-event",
+                "title": "h3.title",
+                "date": "span.event-date",
+            },
+            use_playwright=True,
+            extractor_fn=extract_dated_list_items,
+        ),
         VenueConfig(
             name="Sound Bar",
             website_url="https://sound-bar.com",

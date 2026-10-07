@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 
 from scrapers.custom.venue.chicago_events_scraper import (
     extract_dated_list_items,
+    extract_labelled_meeting,
     extract_songkick_venue,
     extract_tickeri_venue,
     extract_tribe_events,
@@ -477,3 +478,110 @@ class TestExtractTickeriVenue:
     def test_malformed_json_returns_nothing(self):
         html = '<script id="__NEXT_DATA__">{not json</script>'
         assert extract_tickeri_venue(BeautifulSoup(html, "html.parser"), config()) == []
+
+
+class TestNamedSelectors:
+    """Where markup is semantic, name the elements instead of guessing.
+
+    The heuristic reads the first plausible line as the title, which on these
+    sites is a kicker label or a photo credit sitting above the real one.
+    """
+
+    NEWBERRY_HTML = """
+    <div class="col-12 col-md-6">
+      <p class="tag-label">EVENT&mdash;EXHIBITION</p>
+      <h4>Collecting Stories: New Acquisitions at the Newberry</h4>
+      <p>Sep 10&ndash;Dec 30, 2026</p>
+      <p>At the Newberry &ndash; Hanson Gallery</p>
+      <a href="/calendar/collecting-stories">More</a>
+    </div>
+    """
+
+    def newberry(self):
+        config_ = config(name="Newberry Library", address="60 W Walton St")
+        config_.selectors = {"event_container": "div.col-12.col-md-6", "title": "h4"}
+        return extract_dated_list_items(
+            BeautifulSoup(self.NEWBERRY_HTML, "html.parser"), config_
+        )
+
+    def test_named_title_beats_the_kicker_label(self):
+        """Without the selector this came out as "Event—Exhibition"."""
+        assert self.newberry()[0].name == "Collecting Stories: New Acquisitions at the Newberry"
+
+    def test_run_dates_still_parsed(self):
+        event = self.newberry()[0]
+        assert event.date == "Sep 10, 2026"
+        assert event.date_end == "Dec 30, 2026"
+
+    def test_a_named_date_element_is_used_when_given(self):
+        html = """
+        <div class="listing_teaser future">
+          <h2 class="listing_teaser_title">Africa and the New Global Order</h2>
+          <div class="listing_teaser_media">THEMBA HADEBE / AP</div>
+          <div class="listing_teaser_content_date"><span>Oct</span><span>7</span></div>
+        </div>
+        """
+        config_ = config(name="Chicago Council on Global Affairs", address="130 E Randolph St")
+        config_.selectors = {
+            "event_container": "div.listing_teaser.future",
+            "title": "h2.listing_teaser_title",
+            "date": ".listing_teaser_content_date",
+        }
+        events = extract_dated_list_items(BeautifulSoup(html, "html.parser"), config_)
+        # Without the named title this came out as the photo credit.
+        assert events[0].name == "Africa and the New Global Order"
+        assert events[0].date.startswith("Oct 7,")
+
+    def test_a_card_without_a_date_is_skipped(self):
+        html = '<div class="col-12 col-md-6"><h4>Undated thing</h4></div>'
+        config_ = config()
+        config_.selectors = {"event_container": "div.col-12.col-md-6", "title": "h4"}
+        assert extract_dated_list_items(BeautifulSoup(html, "html.parser"), config_) == []
+
+
+class TestLabelledMeeting:
+    """A user group's homepage is prose, not a calendar."""
+
+    HTML = """
+    <div>
+      <h3>NEXT EVENT CHIPY __MAIN__ MEETING</h3>
+      <p><strong>When:</strong></p>
+      <p>Oct. 8, 2026, 6 p.m.</p>
+      <p><strong>Where:</strong></p>
+      <p>AlphaSense</p>
+      <p>200 N. LaSalle Street.</p>
+      <p>Suite 1100.</p>
+      <p>Chicago, IL 60601</p>
+      <p><strong>Directions:</strong></p>
+      <p>Building entry details that must not be read as an address.</p>
+    </div>
+    """
+
+    def extracted(self):
+        config_ = config(name="ChiPy (Chicago Python User Group)", address="Varies by month")
+        return extract_labelled_meeting(BeautifulSoup(self.HTML, "html.parser"), config_)
+
+    def test_one_event(self):
+        assert len(self.extracted()) == 1
+
+    def test_date_and_time(self):
+        event = self.extracted()[0]
+        assert event.date == "Oct 8, 2026"
+        assert event.time == "6 PM"
+
+    def test_kicker_stripped_from_the_title(self):
+        assert self.extracted()[0].name == "CHIPY __MAIN__ MEETING"
+
+    def test_host_venue_read_from_the_page(self):
+        """The group meets at a different company each month."""
+        event = self.extracted()[0]
+        assert event.venue_name == "AlphaSense"
+        assert "200 N. LaSalle Street" in event.location
+
+    def test_the_next_label_stops_the_address(self):
+        """"Directions:" must not be swallowed into the address."""
+        assert "Building entry" not in self.extracted()[0].location
+
+    def test_no_when_block_yields_nothing(self):
+        html = "<div><h3>Some Meeting</h3><p>No details yet.</p></div>"
+        assert extract_labelled_meeting(BeautifulSoup(html, "html.parser"), config()) == []
