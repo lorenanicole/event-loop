@@ -2,7 +2,13 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from shared.categories import classify_all, infer_category, normalize_category
+from shared.categories import (
+    classify_all,
+    infer_category,
+    informative_subtags,
+    normalize_category,
+    to_parents,
+)
 
 
 class EventCreate(BaseModel):
@@ -23,14 +29,22 @@ class EventCreate(BaseModel):
     time_end: Optional[str] = None
     category: str = Field(
         ...,
-        description="The primary category, shown on a tile and a result card.",
+        description="The primary parent category, shown on a tile and a result "
+        "card. A source may supply its own wording here - Ticketmaster sends "
+        "'Arts & Theatre' - and it is mapped to a parent on the way in.",
     )
     categories: Optional[list[str]] = Field(
         default=None,
-        description="Every applicable category, primary first. One event often "
-        "belongs to several - a drag show at a music venue is both Music and "
-        "LGBTQ - and a category filter matches any of them. Derived from the "
-        "title when not supplied.",
+        description="Every applicable parent category, primary first. One event "
+        "often belongs to several - a drag show at a music venue is both Music "
+        "and LGBTQ - and a category filter matches any of them. Derived from "
+        "the title when not supplied.",
+    )
+    subcategories: Optional[list[str]] = Field(
+        default=None,
+        description="The source's own finer labels, where they say more than "
+        "the parent does: 'Arts & Crafts' under Arts, 'Parties & DJs' under "
+        "Music. Shown on a card, never filtered on.",
     )
     details: Optional[str] = Field(default=None, description="Description, where the source gives one")
     origination_url: str = Field(
@@ -79,15 +93,28 @@ class EventCreate(BaseModel):
         refined = infer_category(self.name, self.category)
         if refined != self.category:
             object.__setattr__(self, "category", refined)
-        # Every applicable label, primary first. A trans pride festival is
-        # both Community and LGBTQ; storing one made it invisible under the
+
+        # The source's own labels first - a trans pride festival is both
+        # Community and LGBTQ, and storing one made it invisible under the
         # other.
-        if not self.categories:
-            object.__setattr__(
-                self,
-                "categories",
-                classify_all(self.name, self.category, hint=self.category_hint),
-            )
+        subtags = self.categories or classify_all(
+            self.name, self.category, hint=self.category_hint
+        )
+
+        # Then the parents those labels roll up to, which is what a filter
+        # matches and what a tile is named after. Done here, at the boundary,
+        # so no scraper has to know the taxonomy and no two of them can
+        # disagree about it.
+        parents = to_parents(subtags)
+        if parents:
+            object.__setattr__(self, "category", parents[0])
+            object.__setattr__(self, "categories", parents)
+
+        # Only the labels that say more than their parent already does.
+        # Keeping "Music" as a subtag of Music would just print it twice.
+        if self.subcategories is None:
+            finer = informative_subtags(subtags, parents)
+            object.__setattr__(self, "subcategories", finer or None)
         return self
 
     @field_validator("category")

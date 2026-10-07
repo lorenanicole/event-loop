@@ -1,24 +1,161 @@
 """Category vocabulary: one copy, shared by the API and the chatbot.
 
-Categories arrive from a dozen sources that each label their own events, so the
-stored vocabulary is genuinely varied: "Music" from one, "Arts & Theatre" from
-another, "Theatre & Performing Arts" from a third. Casing is normalized on the
-way in (see `normalize_category`), but the wording is left alone - collapsing
-"Arts & Crafts" into "Arts & Culture" would throw away a real distinction.
+Categories arrive from a dozen sources that each label their own events in
+their own words. Stored verbatim, that produced 24 distinct categories with
+four ways to say theater ("Theater", "Arts & Theatre", "Theatre & Performing
+Arts") and a do312 bucket called "Activism & Community Events" that filed a
+library's Teen Anime Night under activism.
 
-What that costs is matching: a search for "art" has to reach every Arts* label
-rather than a single exact value. `category_filter` does that by prefix, so one
-concept spans the variants without a hand-maintained list of every spelling.
+So there are two levels, and `CATEGORY_TAXONOMY` below is the map between
+them:
+
+  parent   - a short, fixed list, and the only thing a filter tile shows.
+  subtag   - the source's own label, kept as it was written.
+
+A subtag is never thrown away, because some of them carry a real distinction:
+"Arts & Crafts" is making things and "Arts & Culture" is going to look at
+them, and both sit under Arts. Filtering matches parents, so an event is
+findable under the tile a person would actually click, while the finer label
+survives for display and for anyone who wants it.
+
+The mapping is written by hand, which is a deliberate choice. Mapping the
+labels by embedding similarity was measured first, with the same model2vec
+model the search uses, and it does not work - not because it is imprecise but
+because it ranks the wrong answer above the right one:
+
+    Arts & Theatre <-> Theatre & Performing Arts   0.91   right
+    Arts & Theatre <-> Arts                        0.84   WRONG
+    Theater        <-> Arts & Theatre              0.77   right, ranked below
+    Community      <-> Activism & Community        0.56   right, ranked below
+    Karaoke/Trivia <-> Music                       0.18   noise
+
+No threshold separates those: at 0.80 you merge theater into arts and still
+miss Community, and at 0.55 you catch Community but also swallow the generic
+bucket. The label set is 24, finite and known, so a table is exact, testable
+and reviewable where a similarity score is none of the three. Similarity is
+still useful for noticing a label nobody has mapped yet - see
+`unmapped_labels`.
 """
 
 import re
-from typing import Optional
+from typing import Iterable, Optional
 
 from sqlalchemy import String, cast, or_
 
 # Tokens that are acronyms rather than words, and must not be title-cased into
 # "Lgbtq" or "Tv".
 _ACRONYMS = {"LGBTQ", "TV", "DJ", "DJS", "BYOB", "NYE", "EDM", "RSVP", "ASL"}
+
+
+# Parent -> the source labels that belong under it.
+#
+# A label may appear under two parents, and one does: Ticketmaster's
+# "Arts & Theatre" is a single segment covering both, and it holds 172 events -
+# a quarter of the theater data. Forcing it either way mislabels the other
+# half, so it is listed under both and the event carries both parents. That is
+# what the multi-label column is for.
+#
+# The generic parent is last on purpose: it is where labels that say nothing
+# about what an event is ("Events", "Miscellaneous", "Other") go, so they stop
+# competing with real categories for a filter tile.
+CATEGORY_TAXONOMY: dict[str, list[str]] = {
+    "Music": ["Music", "Parties & DJs"],
+    "Theater": ["Theater", "Theatre", "Theatre & Performing Arts", "Arts & Theatre"],
+    # "Arts & Crafts" stays a distinct subtag under Arts. Making something and
+    # going to look at something are different outings, and collapsing them
+    # outright was the objection to a flat list in the first place.
+    "Arts": ["Arts", "Arts & Culture", "Arts & Crafts", "Poetry & Literary",
+             "Arts & Theatre"],
+    "Comedy": ["Comedy"],
+    "Film": ["Film", "TV & Film"],
+    # "Activism & Community Events" is do312's own bucket, and it is why a
+    # library's Teen Anime Night was filed under activism.
+    "Community": ["Community", "Activism & Community Events", "Charity"],
+    "Tech / Educational": ["Tech / Educational"],
+    # A parent in its own right, not a flavour of Community. 41 events - yoga,
+    # meditation, sound baths - and the drift report is what surfaced it: it
+    # was the one real category missing from the first draft of this table.
+    "Health & Wellness": ["Health & Wellness"],
+    "Food & Drink": ["Food & Drink", "Happy Hour / Specials"],
+    "Sports": ["Sports"],
+    "LGBTQ": ["LGBTQ"],
+    "Karaoke/Trivia/Open Mics": ["Karaoke/Trivia/Open Mics"],
+    "Holiday & Seasonal": ["Holiday & Seasonal"],
+    "Festival": ["Festival"],
+    "Shopping": ["Shopping"],
+    "Other": ["Other", "Events", "Miscellaneous", "Cannabis"],
+}
+
+# The parent every filter tile is drawn from, in the order they are offered.
+PARENT_CATEGORIES: list[str] = list(CATEGORY_TAXONOMY)
+
+# Labels that mean "no category", so they are never kept as a finer subtag.
+_UNINFORMATIVE_LABELS = {"events", "miscellaneous", "other", "uncategorized"}
+
+# subtag (lowercased) -> its parents, primary first. Built once from the table
+# above so the table stays the single place anything is declared.
+_SUBTAG_PARENTS: dict[str, list[str]] = {}
+for _parent, _subtags in CATEGORY_TAXONOMY.items():
+    for _subtag in _subtags:
+        _SUBTAG_PARENTS.setdefault(_subtag.lower(), []).append(_parent)
+
+
+def parents_of(label: Optional[str]) -> list[str]:
+    """The parent categories a source label belongs to, primary first.
+
+    An unmapped label is returned as its own parent rather than dropped or
+    forced into the generic bucket: a new label from a source is a gap in the
+    table, and silently filing it under "Other" is how it would stay a gap.
+    `unmapped_labels` is how they get noticed.
+    """
+    clean = normalize_category(label)
+    if not clean:
+        return []
+    return list(_SUBTAG_PARENTS.get(clean.lower(), [clean]))
+
+
+def to_parents(labels: Iterable[Optional[str]]) -> list[str]:
+    """Every parent for a list of source labels, in order, de-duplicated."""
+    parents: list[str] = []
+    for label in labels:
+        for parent in parents_of(label):
+            if parent not in parents:
+                parents.append(parent)
+    return parents
+
+
+def informative_subtags(labels: Iterable[Optional[str]], parents: list[str]) -> list[str]:
+    """The source labels worth keeping next to their parents.
+
+    A subtag earns its place by saying something the parent does not.
+    "Arts & Crafts" under Arts does. "Events" under Other does not - it is the
+    absence of a category, and printing it on a card as though it were a
+    finer-grained one is worse than printing nothing.
+    """
+    keep = []
+    for label in labels:
+        clean = normalize_category(label)
+        if not clean or clean in parents or clean in keep:
+            continue
+        if clean.lower() in _UNINFORMATIVE_LABELS:
+            continue
+        keep.append(clean)
+    return keep
+
+
+def unmapped_labels(labels: Iterable[Optional[str]]) -> list[str]:
+    """Labels with no entry in the taxonomy, so a gap can be reported.
+
+    This is the job similarity scoring is actually good at: not deciding where
+    a label belongs, but noticing that a source has started emitting one
+    nobody has placed yet.
+    """
+    missing = []
+    for label in labels:
+        clean = normalize_category(label)
+        if clean and clean.lower() not in _SUBTAG_PARENTS and clean not in missing:
+            missing.append(clean)
+    return missing
 
 # A concept -> the words a person might use for it, and the prefixes it should
 # match against stored category values. Prefixes rather than substrings because
@@ -66,7 +203,9 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
     },
     "food": {
         "canonical": "Food & Drink",
-        "words": ["food", "dining", "restaurant", "chef", "cooking", "tasting", "brunch"],
+        "words": ["food", "dining", "restaurant", "chef", "cooking", "tasting",
+                  "brunch", "oktoberfest", "mocktoberfest", "beer garden",
+                  "wine", "cocktail", "whiskey", "brewery"],
         "prefixes": ["food"],
     },
     "sports": {
@@ -82,7 +221,10 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
         # Fixtures are matched by `_TITLE_CATEGORY_RULES` instead, which
         # requires the sport AND a "vs" - the thing that actually distinguishes
         # a game from a gig.
-        "words": ["sports", "sport", "game", "match", "tournament", "athletic"],
+        # "marathon", "5k" and "fun run" are races. Bare "run" is not added:
+        # it matches a show's run, a run of dates, and "run the world".
+        "words": ["sports", "sport", "game", "match", "tournament", "athletic",
+                  "marathon", "triathlon", "5k", "10k", "fun run", "half marathon"],
         "prefixes": ["sport"],
     },
     "community": {
@@ -108,6 +250,41 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
         "canonical": "LGBTQ",
         "words": ["lgbtq", "lgbt", "queer", "pride", "drag"],
         "prefixes": ["lgbtq"],
+    },
+    # Added because the generic bucket was full of them. TimeOut supplies no
+    # category at all, and a third of what it sends in October is seasonal:
+    # "Night of 1,000 Jack-o'-Lanterns", "Haunted Halsted Halloween Fest",
+    # "Lincoln Park Spooktacular", "Nightmare on Clark Street". None of those
+    # is Music, Theater or Community, and filing them under "Other" hid the
+    # single most seasonal thing a Chicago events site should be good at.
+    "holiday": {
+        "canonical": "Holiday & Seasonal",
+        "words": [
+            "halloween", "haunted", "haunt", "spooktacular", "spooky",
+            "pumpkin", "jack-o-lantern", "trick or treat", "day of the dead",
+            "dia de los muertos", "christmas", "holiday", "hanukkah",
+            "kwanzaa", "new year", "nye", "thanksgiving", "easter",
+            "valentine", "lunar new year", "juneteenth",
+            # How Chicago actually titles its October events: "A Nightmare on
+            # Fulton Street", "Ravenswood Costume Crawl", "Creepy Cruise",
+            # "Drunk Dracula", "Terror in the Tropics", "Howl-O-Ween Canine
+            # Cruise". None of them contains the word Halloween.
+            "nightmare", "costume", "creepy", "terror", "dracula", "zombie",
+            "ghost", "howl-o-ween", "all hallows",
+        ],
+        "prefixes": ["holiday"],
+    },
+    # "Manhattan Vintage", "Handmade Market", "Illinois Product Expo" - all
+    # shopping, all previously uncategorized. "Market" is included knowing it
+    # also matches a night market at a music venue, which is a fair reading:
+    # that event is both.
+    "shopping": {
+        "canonical": "Shopping",
+        "words": [
+            "market", "expo", "vintage", "flea", "bazaar", "pop-up",
+            "trunk show", "makers", "handmade", "shopping",
+        ],
+        "prefixes": ["shopping"],
     },
 }
 

@@ -114,6 +114,13 @@ class EventModel(Base):
     # findable under each, while `category` stays single-valued and nothing
     # downstream had to change to display it.
     categories = Column(JSON, nullable=True)
+    # The source's own finer labels, kept as written, for the ones that carry a
+    # distinction the parent does not: "Arts & Crafts" is making something and
+    # "Arts & Culture" is going to look at something, and both are Arts. Shown
+    # on a card, never filtered on - `categories` above holds the parents a
+    # filter matches, so the two levels cannot disagree about what a tile
+    # should return.
+    subcategories = Column(JSON, nullable=True)
     details = Column(Text, nullable=True)
     origination_url = Column(String(500), unique=True)
     date_retrieved = Column(DateTime, default=datetime.utcnow)

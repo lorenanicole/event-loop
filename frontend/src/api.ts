@@ -14,6 +14,10 @@ export interface Event {
   // to show all of them or it turns up under a filter whose name is nowhere
   // on it.
   categories?: string[] | null
+  // The source's own finer labels, where they say more than the parent does:
+  // "Arts & Crafts" under Arts, "Parties & DJs" under Music. Shown on a card,
+  // never filtered on - the tiles are the parents.
+  subcategories?: string[] | null
   details?: string
   origination_url: string
   date_retrieved: string

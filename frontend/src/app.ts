@@ -171,9 +171,14 @@ export class SearchApp {
    * entry of the array.
    */
   private static cardCategories(event: Event): string[] {
-    const all = (event.categories && event.categories.length)
+    const parents = (event.categories && event.categories.length)
       ? event.categories
       : [event.category]
+    // Parents first, because those are the tiles - a card must name the filter
+    // that returned it. Then the source's finer labels, which are the ones
+    // that actually tell you something: "Arts" is the tile, "Arts & Crafts" is
+    // what the afternoon involves.
+    const all = [...parents, ...(event.subcategories || [])]
     const seen = new Set<string>()
     return all.filter(label => {
       if (!label) return false
@@ -612,11 +617,21 @@ export class SearchApp {
           ` : ''}
 
           <div class="flex flex-wrap items-center gap-2 pt-1">
-            ${SearchApp.cardCategories(event).map(label => `
-              <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${categoryColor}">
-                ${this.escapeHtml(SearchApp.displayCategory(label))}
-              </span>
-            `).join('')}
+            ${SearchApp.cardCategories(event).map(label => {
+              // A subtag is drawn outlined rather than filled, so the two
+              // levels read as a hierarchy instead of as a row of equal
+              // claims: "Arts" is the tile this card answers to, "Arts &
+              // Crafts" is the detail underneath it.
+              const isSubtag = (event.subcategories || []).includes(label)
+              const style = isSubtag
+                ? 'border border-gray-300 text-gray-600'
+                : categoryColor
+              return `
+                <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${style}">
+                  ${this.escapeHtml(SearchApp.displayCategory(label))}
+                </span>
+              `
+            }).join('')}
             ${cost ? `
               <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${
                 /free/i.test(cost) ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'
