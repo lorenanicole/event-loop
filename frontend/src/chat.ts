@@ -399,9 +399,11 @@ class ChatWidget {
           exhausted
             // Name the limit actually reached. It said "token limit" either
             // way, while the turn limit is the one that runs out first.
-            ? turnsLeft === 0
-              ? `✶ That's the last question - hit New Chat to keep going`
-              : `✶ Reply budget used up - hit New Chat to keep going`
+            ? data.reason === "goodbye"
+              ? `✶ Chat ended - type "start" for a new one`
+              : turnsLeft === 0
+                ? `✶ That's the last question - type "start" to keep going`
+                : `✶ Reply budget used up - type "start" to keep going`
             : turnsLeft > 0
               ? `✓ ${turnsLeft} question${turnsLeft === 1 ? "" : "s"} left`
               : ``

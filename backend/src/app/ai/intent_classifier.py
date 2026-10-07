@@ -18,6 +18,7 @@ class Intent(Enum):
     CHICAGO_INFO = "chicago_info"  # "What's the best neighborhood?"
     EVENTS_GENERAL = "events_general"  # "Events" but not Chicago-specific
     OUT_OF_SCOPE = "out_of_scope"  # "Tell me a joke", "What's the weather?"
+    FAREWELL = "farewell"  # "Thanks, bye!", "That's it", "I'm done"
 
 
 class IntentClassifier:
@@ -57,11 +58,23 @@ Classify the user's message into ONE of these categories:
    - Examples: "How do I find events?", "Tell me about event planning"
    - Confidence: 0.80+
 
-4. **out_of_scope**: Unrelated to Chicago or events
+4. **farewell**: User is signing off, not asking anything
+   - Examples: "Thanks, bye!", "That's it", "I'm done", "all set",
+     "nothing else", "cool, thanks"
+   - A closing remark with no question in it. Judge the whole message: "I'm
+     done with theater, what about music?" is NOT a farewell, and neither is
+     anything ending in a question.
+   - Confidence: 0.90+ when the message is only a sign-off
+5. **out_of_scope**: Unrelated to Chicago or events
    - Examples: "Tell me a joke", "What's the weather?", "Help with Python"
    - Confidence: 0.99 (should be very certain)
 
-DECISION RULES:
+DECISION RULES, in order. Stop at the first that applies:
+- If the message is a sign-off and asks nothing → farewell. Check this FIRST.
+  "Cool, thanks! Bye!", "I'm done", "k thx", "that's everything I needed" are
+  all farewell, NOT out_of_scope. Someone ending a conversation is not asking
+  an off-topic question, and telling them what this bot is for is a strange
+  reply to "bye".
 - If question is about events AND location is Chicago (explicit or implicit) → chicago_events
 - If question is about Chicago but NOT events → chicago_info
 - If question is about events but NOT Chicago → events_general
@@ -71,7 +84,7 @@ DECISION RULES:
 RESPONSE FORMAT:
 Return ONLY raw JSON object (no markdown, no code fences):
 {
-  "intent": "chicago_events|chicago_info|events_general|out_of_scope",
+  "intent": "chicago_events|chicago_info|events_general|farewell|out_of_scope",
   "confidence": 0.0-1.0,
   "reasoning": "brief explanation"
 }""",
@@ -134,12 +147,13 @@ Return ONLY raw JSON object (no markdown, no code fences):
             data = json.loads(result_text)
 
             intent_str = data.get('intent', 'out_of_scope').lower()
-            intent_map = {
-                "chicago_events": Intent.CHICAGO_EVENTS,
-                "chicago_info": Intent.CHICAGO_INFO,
-                "events_general": Intent.EVENTS_GENERAL,
-                "out_of_scope": Intent.OUT_OF_SCOPE,
-            }
+            # Built from the enum rather than written out. The hand-written
+            # map was missing "farewell" after it was added, so the model
+            # returned it correctly and this quietly turned it into
+            # out_of_scope - which is why "Cool, thanks! Bye!" was still being
+            # told what the bot is for. A list that has to be kept in step
+            # with an enum will eventually not be.
+            intent_map = {member.value: member for member in Intent}
 
             intent = intent_map.get(intent_str, Intent.OUT_OF_SCOPE)
             confidence = float(data.get('confidence', 0.5))

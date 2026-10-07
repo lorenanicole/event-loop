@@ -507,3 +507,18 @@ def sign_off(rng: Optional[random.Random] = None) -> str:
     picker = rng or random
     return f"{FLAG_STARS}\n\n*{picker.choice(SIGN_OFFS)}*"
 
+# The wording for signing off. Whether a message IS a sign-off is decided by
+# the intent classifier, which already runs on every turn - this was a regex
+# first, and it needed "I'm done" added after missing one of the most obvious
+# ways to say it. A list of phrases is never finished.
+def goodbye_reply(rng: Optional[random.Random] = None) -> str:
+    """A warm sign-off when somebody says they are done."""
+    picker = rng or random
+    opener = picker.choice([
+        "Anytime - have a good one out there.",
+        "Enjoy it. That's what the city is for.",
+        "Go enjoy yourself. You've got good options.",
+        "Have fun out there.",
+    ])
+    return f"{opener}\n\n{sign_off(picker)}"
+

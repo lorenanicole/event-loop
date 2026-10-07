@@ -846,6 +846,12 @@ def _filter_top_results(
 
 
 STOP_WORDS = {
+    # Typed without an apostrophe as often as with one, and the stem is only
+    # recovered from the apostrophe form. Without these, "whats good tonight"
+    # searched event names for the string "whats".
+    "whats", "wheres", "whos", "hows", "thats", "dont", "doesnt", "didnt",
+    "cant", "wont", "isnt", "arent", "im", "ive", "ill", "id", "youre",
+    "its", "lets", "theres", "heres", "who", "how",
     "the", "a", "an", "and", "or", "is", "are", "in", "on", "at",
     "this", "that", "these", "those", "what", "when", "where", "why",
     "find", "get", "search", "show", "tell", "give", "all", "want",
@@ -927,6 +933,25 @@ def _strip_neighborhoods(keywords: list[str], neighborhoods: list[str]) -> list[
     return [kw for kw in keywords if kw not in parts]
 
 
+# Contraction endings, stripped before the stopword check.
+#
+# Edge-stripping punctuation never reached an apostrophe in the middle of a
+# word, so "what's" survived as a keyword while "what" was a stopword all
+# along. The effect was severe and quiet: "What's happening this weekend?"
+# reduced to the single keyword "what's", the query then required that string
+# to appear in an event's name, and 221 events that weekend came back as one.
+# It is the most common question anybody asks.
+_CONTRACTIONS = ("'s", "'ll", "'re", "'ve", "'d", "'m", "n't", "'t")
+
+
+def _stem_contraction(word: str) -> str:
+    """"what's" -> "what", so the stopword list can do its job."""
+    for ending in _CONTRACTIONS:
+        if word.endswith(ending) and len(word) > len(ending):
+            return word[: -len(ending)]
+    return word
+
+
 def _extract_keywords(query: str) -> list[str]:
     """Extract search keywords, most meaningful first, with bounded synonyms.
 
@@ -935,7 +960,7 @@ def _extract_keywords(query: str) -> list[str]:
     whole set was built unordered and truncated, which could drop the subject of
     the query ("plant") while keeping a WordNet artifact ("pass", "ilk").
     """
-    words = [w.strip(".,!?;:'\"()") for w in query.lower().split()]
+    words = [_stem_contraction(w.strip(".,!?;:'\"()")) for w in query.lower().split()]
     keywords = [w for w in words if w and w not in STOP_WORDS and len(w) > 2]
 
     if not keywords:

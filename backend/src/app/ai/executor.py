@@ -247,6 +247,47 @@ class ChatExecutor:
                     message, recent=recent_text
                 )
 
+                # Signing off ends the conversation. Judged by the
+                # classifier rather than by matching phrases: the first
+                # version was a regex, which needed "I'm done" added after it
+                # missed one of the most obvious ways to say it, and would
+                # have needed another entry every time somebody phrased it
+                # differently. The classifier already runs on every turn, so
+                # this costs nothing extra and generalises.
+                #
+                # This is also how a conversation is meant to end. The turn
+                # budget is a backstop; people say goodbye.
+                if intent == Intent.FAREWELL:
+                    from app.ai.persona import goodbye_reply
+                    from app.ai.threads import close_thread
+
+                    farewell_text = goodbye_reply()
+                    yield ResponseEvent(
+                        message=farewell_text,
+                        tokens=0,
+                        data={"message": farewell_text, "conversation_ended": True},
+                    )
+                    db.add(ChatMessageModel(
+                        thread_id=thread_id, role="assistant",
+                        content=farewell_text, token_count=0,
+                    ))
+                    await db.commit()
+                    await close_thread(db, thread_id)
+                    yield ConversationStatusEvent(
+                        status="Conversation ended.",
+                        remaining_tokens=0,
+                        remaining_turns=0,
+                        data={"status": "limit_reached", "reason": "goodbye",
+                              "message": farewell_text},
+                    )
+                    yield CompleteEvent(
+                        thread_id=thread_id,
+                        tokens_used=0,
+                        data={"thread_id": thread_id, "tokens_used": 0,
+                              "remaining_tokens": 0, "remaining_turns": 0},
+                    )
+                    return
+
                 # Reject out-of-scope questions early
                 if intent != Intent.CHICAGO_EVENTS and confidence > 0.7:
                     response = await get_intent_response(intent, reasoning)
