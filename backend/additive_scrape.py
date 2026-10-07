@@ -41,15 +41,26 @@ VENUE_TIMEOUT = 150
 async def scrape_one(config, hood, sem, client):
     async with sem:
         started = time.monotonic()
-        try:
-            events = await asyncio.wait_for(
-                VenueScraper(config).scrape(client), timeout=VENUE_TIMEOUT
-            )
-        except asyncio.TimeoutError:
-            return hood, config, [], f"timeout after {VENUE_TIMEOUT}s"
-        except Exception as exc:
-            return hood, config, [], f"{type(exc).__name__}: {exc}"
-        return hood, config, events, f"{time.monotonic() - started:.0f}s"
+        # Retried once on a zero. Under concurrency, sites intermittently serve
+        # an empty page, and because this scrape is additive a transient zero
+        # is silent: the venue's events simply never get added. House of Blues
+        # returned 35 alone and 0 in a parallel run, which is what prompted this.
+        note = ""
+        for attempt in range(2):
+            if attempt:
+                await asyncio.sleep(5)
+            try:
+                events = await asyncio.wait_for(
+                    VenueScraper(config).scrape(client), timeout=VENUE_TIMEOUT
+                )
+                note = f"{time.monotonic() - started:.0f}s" + (" (retry)" if attempt else "")
+            except asyncio.TimeoutError:
+                events, note = [], f"timeout after {VENUE_TIMEOUT}s"
+            except Exception as exc:
+                events, note = [], f"{type(exc).__name__}: {exc}"
+            if events:
+                break
+        return hood, config, events, note
 
 
 async def snapshot(session_maker):

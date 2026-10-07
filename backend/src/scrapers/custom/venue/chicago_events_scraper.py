@@ -1151,6 +1151,7 @@ _SECTION_HEADINGS = {
     "today", "tomorrow", "month", "week", "day", "list", "agenda", "view",
     "next", "prev", "previous", "filter", "filters", "search",
     "clear", "reset", "apply", "submit", "select date", "all", "close",
+    "time", "event details", "details", "venue", "location", "price", "tickets",
     # Calendar legends.
     "multiday event", "multi day event", "single day event", "recurring event",
 }
@@ -1316,6 +1317,25 @@ _WEEKDAY_PREFIXES = (
 )
 
 
+def _card_lines(el) -> list[str]:
+    """Split a card into text lines, even when it has no line breaks.
+
+    Some sites render a whole card into a single text node with no separator
+    between the title and the date: "EPIK HIGH NORTH AMERICAN TOURWed Oct 7,
+    2026Buy Tickets". Splitting that around the date recovers the title.
+    """
+    lines = [l.strip() for l in el.get_text("\n", strip=True).split("\n") if l.strip()]
+    if len(lines) == 1:
+        match = _ONE_RE.search(lines[0])
+        if match:
+            lines = [
+                part.strip() for part in
+                (lines[0][:match.start()], match.group(0), lines[0][match.end():])
+                if part.strip()
+            ]
+    return lines
+
+
 def _title_from(lines: list[str]) -> Optional[str]:
     """Pick the event title out of a card's text lines.
 
@@ -1335,12 +1355,21 @@ def _title_from(lines: list[str]) -> Optional[str]:
         if bare.startswith(("today ", "tomorrow ", "this week", "this month")):
             continue
         remainder = _WEEKDAY_RE.sub("", _RUN_RE.sub("", _ONE_RE.sub("", line)))
+        remainder = re.sub(r"\d{1,2}(?::\d{2})?\s*[apAP]\.?[mM]\.?|\bat\b", "", remainder)
         if len(re.sub(r"[^A-Za-z]", "", remainder)) <= 3:
             continue
         # Some venues run the title straight into the blurb in one text node
         # ("Plim Plim in the Gateway Theater > DATE: October 15 TIME: 6:00pm").
         # Cut at the marker that starts the blurb.
         title = re.split(r"\s*[►▶‣]\s*|\s+DATE:\s*|\s+TIME:\s*", line)[0].strip()
+        # A run-together card leaves the weekday stuck to the title ("...TOURWed").
+        title = re.sub(
+            r"(?:Mon|Tues?|Wed(?:nes)?|Thu(?:rs)?|Fri|Sat(?:ur)?|Sun)(?:day)?\.?$",
+            "", title).strip(" ,-–—")
+        # ...and leaves punctuation and the start time on the front of it
+        # (")7:00 pmSalsa on a School Night").
+        title = re.sub(r"^[^A-Za-z0-9]+", "", title)
+        title = re.sub(r"^\d{1,2}(?::\d{2})?\s*[apAP]\.?[mM]\.?\s*", "", title)
         if len(title) >= 3:
             return title
     return None
@@ -1373,8 +1402,7 @@ def extract_dated_list_items(soup: BeautifulSoup, config: VenueConfig) -> list[V
         # almost never contain an <input> or <select>.
         if el.find(["input", "select", "textarea"]):
             continue
-        lines = [l.strip() for l in text.split("\n") if l.strip()]
-        if _title_from(lines):
+        if _title_from(_card_lines(el)):
             candidates.append(el)
 
     # Of the nested candidates keep the innermost, so the list container isn't
@@ -1389,7 +1417,7 @@ def extract_dated_list_items(soup: BeautifulSoup, config: VenueConfig) -> list[V
     events = []
     seen = set()
     for el in chosen:
-        lines = [l.strip() for l in el.get_text("\n", strip=True).split("\n") if l.strip()]
+        lines = _card_lines(el)
 
         date_str = date_end_str = None
         run = _RUN_RE.search(" ".join(lines))
@@ -2420,18 +2448,16 @@ CHICAGO_VENUES = {
             extractor_fn=extract_tessitura_calendar,
         ),
         VenueConfig(
+            # The venue's own subdomain lists 72 shows; houseofblues.com/chicago
+            # carried none, which is why this was dark.
             name="House of Blues Chicago",
-            website_url="https://www.houseofblues.com/chicago",
-            event_page_url="https://www.houseofblues.com/chicago/events",
+            website_url="https://chicago.houseofblues.com",
+            event_page_url="https://chicago.houseofblues.com/shows",
             category="music",
             address="329 N Dearborn St",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            selectors={},
             use_playwright=True,
-            extractor_fn=None,
+            extractor_fn=extract_dated_list_items,
         ),
         VenueConfig(
             name="Civic Opera House",
@@ -2444,14 +2470,18 @@ CHICAGO_VENUES = {
             page_extractor_fn=extract_ace_calendar,
         ),
         VenueConfig(
+            # An open-air pavilion, so its calendar is empty out of season.
+            # The page currently says "No upcoming events found" in as many
+            # words: zero here is the venue's answer, not a broken extractor.
+            # Left wired so the summer season appears on its own.
             name="Jay Pritzker Pavilion",
             website_url="https://www.millenniumparkpavilion.org",
-            event_page_url="https://www.millenniumparkpavilion.org/events",
+            event_page_url="https://www.millenniumparkpavilion.org/jay-pritzker-pavilion-schedule/",
             category="music",
             address="201 E Randolph St",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_events_from_json_ld,
+            extractor_fn=extract_dated_list_items,
         ),
         VenueConfig(
             name="Buddy Guy's Legends",
@@ -2907,16 +2937,21 @@ CHICAGO_VENUES = {
             extractor_fn=extract_cobra_lounge,
         ),
         VenueConfig(
+            # The homepage does carry the calendar (/art-events does not, which
+            # is why this was dark), and cards render as one run-together
+            # string: "wed07oct(oct 7)7:00 pmSalsa on a School Night".
+            #
+            # Deliberately left unwired: extract_dated_list_items reads that
+            # page as 168 "events", mixing in room names ("Epiphany Hall",
+            # "Cafe Bar") and attaching the wrong dates, because the markup
+            # nests each show's rooms as sibling blocks. Needs a venue-specific
+            # extractor; junk is worse than a gap.
             name="Epiphany Center for the Arts",
             website_url="https://epiphanychi.com",
-            event_page_url="https://epiphanychi.com/art-events",
+            event_page_url="https://epiphanychi.com/",
             category="arts",
             address="311 W Carroll Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            selectors={},
             use_playwright=True,
             extractor_fn=None,
         ),
@@ -2934,14 +2969,17 @@ CHICAGO_VENUES = {
             extractor_fn=extract_rhapsody_theater,
         ),
         VenueConfig(
+            # Publishes a season page, not a calendar: each show is a run of
+            # several weeks, stored with a date_end so it stays visible
+            # throughout. The homepage carried no JSON-LD, hence the blank.
             name="Lifeline Theatre",
             website_url="https://lifelinetheatre.com",
-            event_page_url="https://lifelinetheatre.com",
+            event_page_url="https://lifelinetheatre.com/2026-27-season/",
             category="theater",
-            address="4912 N Clark St",
+            address="6912 N Glenwood Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_events_from_json_ld,
+            extractor_fn=extract_dated_list_items,
         ),
     ],
 
