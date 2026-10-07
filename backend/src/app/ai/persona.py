@@ -206,7 +206,7 @@ def reads_like_a_title(name: str) -> bool:
 
 async def whats_on_tonight(
     session, limit: int = 3, rng: Optional[random.Random] = None
-) -> list[str]:
+) -> list[tuple[str, str]]:
     """A few real things happening soon, phrased for the greeting.
 
     Pulled from the database rather than written down, because the invented
@@ -229,12 +229,23 @@ async def whats_on_tonight(
         .limit(60)
     )).all()
 
-    # Categories that sound like a night out. A greeting that opens with
-    # "ACEP Annual Scientific Assembly 2026" is accurate and sells nothing -
-    # conferences and civic meetings are real events but they are not the
-    # hook. Ordered by how well they read cold.
-    APPEALING = ("Music", "Theater", "Comedy", "Holiday & Seasonal", "Film",
-                 "Arts", "Food & Drink", "Festival")
+    # How to pitch each kind of evening, and the order to offer them in.
+    # A bare list of three titles ("Coming up: X; Y; Z") told you what was on
+    # without telling you why you'd care - these lead with the appetite and
+    # put a real event behind it, which is the thing a listings site cannot
+    # do. Conferences and civic meetings are left out: real events, but not
+    # the hook.
+    PITCHES = [
+        ("Comedy", "Want comedy?"),
+        ("Music", "After live music?"),
+        ("Theater", "In the mood for theater?"),
+        ("Holiday & Seasonal", "Something seasonal?"),
+        ("Arts", "Fancy a gallery?"),
+        ("Film", "Film more your thing?"),
+        ("Food & Drink", "Eating out?"),
+        ("Festival", "Out in the street?"),
+    ]
+    APPEALING = tuple(category for category, _ in PITCHES)
 
     candidates: dict[str, list[str]] = {}
     for name, category, hood in rows:
@@ -250,10 +261,10 @@ async def whats_on_tonight(
     # and shuffled so reopening the chat does not show the same three.
     picker = rng or random
     picks = []
-    for category in APPEALING:
+    for category, pitch in PITCHES:
         options = candidates.get(category)
         if options:
-            picks.append(picker.choice(options))
+            picks.append((pitch, picker.choice(options)))
         if len(picks) >= limit:
             break
     return picks
@@ -261,49 +272,49 @@ async def whats_on_tonight(
 
 def greeting(
     rng: Optional[random.Random] = None,
-    tonight: Optional[list[str]] = None,
+    tonight: Optional[list[tuple[str, str]]] = None,
 ) -> str:
     """The first message in a new chat.
 
-    Short, and written the way somebody here would say it. Earlier drafts
-    opened with a disclaimer, then ran 25 lines, repeated "77 community areas"
-    two lines apart and asked what you wanted twice.
+    Fourth pass, and the earlier ones are worth recording because each was
+    wrong in a different way: it opened with a disclaimer; then ran 25 lines
+    and said "77 community areas" twice; then hard-wrapped its prose so
+    sentences broke mid-clause at panel width; then listed three event titles
+    under "Coming up:", which said what was on without saying why anyone would
+    care.
 
-    Two things fixed after seeing it rendered in a narrow panel: the prose is
-    no longer hard-wrapped, because those line breaks survived into the chat
-    bubble and broke mid-sentence at the wrong width; and Sandburg is no
-    longer named, because "the City of Big Shoulders" is the part people know
-    and attributing it just adds a stranger to the first sentence.
-
-    `tonight` is real events from the database. Falling back to nothing rather
-    than to invented examples: this is an app that knows what is on, so the
-    greeting should not make something up when the lookup fails.
+    It now leads with an appetite and puts a real event behind it - "Want
+    comedy? Best of The Second City in Old Town" - because that is the thing a
+    listings page cannot do. Sandburg is not named: "City of Big Shoulders" is
+    the part people know, and attributing it adds a stranger to the opening
+    sentence.
     """
     picker = rng or random
     fact = picker.choice(GENERAL_FACTS)
 
     if tonight:
-        listed = "; ".join(tonight)
+        offers = " ".join(f"{pitch} **{event}**." for pitch, event in tonight)
         opener = (
-            f"They call this the City of Big Shoulders. Coming up: {listed}. "
-            "And a few hundred more."
+            "They call this the City of Big Shoulders, and there's always "
+            f"something on. {offers}"
         )
     else:
         opener = (
-            "They call this the City of Big Shoulders, and it books like it - "
-            "a few thousand things on across the city in the next few weeks."
+            "They call this the City of Big Shoulders, and there's always "
+            "something on - a few thousand things across the city over the "
+            "next few weeks."
         )
 
     return f"""🏙️ **I'm {ASSISTANT_NAME}**, your guide to what's on in Chicago. Named {NAME_MEANING}.
 
 {opener}
 
-💡 **What are you after?** Ask me like you'd ask a friend:
+💡 **So - what are you after?** Ask me like you'd ask a friend:
 • "blues tonight on the South Side"
 • "free things to do in Pilsen this weekend"
 • "jazz at the Green Mill this month"
 • "something for the kids in Albany Park"
 
-🗺️ *{fact}*
+🗺️ ***Did you know?** {fact}*
 
 ⚙️ **Under the hood:** {UNDER_THE_HOOD}"""

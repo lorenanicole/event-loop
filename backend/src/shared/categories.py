@@ -77,10 +77,13 @@ CATEGORY_TAXONOMY: dict[str, list[str]] = {
     # was the one real category missing from the first draft of this table.
     "Health & Wellness": ["Health & Wellness"],
     "Food & Drink": ["Food & Drink", "Happy Hour / Specials"],
-    "Sports": ["Sports"],
+    # "Sports & Fitness" is do312's label and covers both a 5k and a yoga
+    # class. Filed under Sports, which is where somebody looking for a game
+    # would look; the yoga ones reach Health & Wellness through their titles.
+    "Sports": ["Sports", "Sports & Fitness"],
     "LGBTQ": ["LGBTQ"],
     "Karaoke/Trivia/Open Mics": ["Karaoke/Trivia/Open Mics"],
-    "Holiday & Seasonal": ["Holiday & Seasonal"],
+    "Holiday & Seasonal": ["Holiday & Seasonal", "Halloween"],
     "Festival": ["Festival"],
     "Shopping": ["Shopping"],
     "Other": ["Other", "Events", "Miscellaneous", "Cannabis"],
@@ -327,16 +330,24 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
 #   workshop              - far too broad
 #   taco|pizza|cocktail   - matched band and party names
 _TITLE_CATEGORY_RULES: list[tuple[str, str]] = [
-    # A fixture: a named sport AND a "vs". Both halves are needed. The sport
-    # alone is usually a joke or a band - "Donkey Basketball" is a band, "The
-    # Marathon Show" is comedy - and "vs" alone catches DJ battles and
-    # double bills. Together they are reliable: "DePaul Blue Demons Womens
-    # Volleyball vs. Villanova", "Chicago Fire vs New York City".
+    # A fixture: a sport or a Chicago team AND a "vs". Both halves are
+    # needed. The name alone is usually a joke or a band - "Donkey
+    # Basketball" is a band, "The Marathon Show" is comedy, and "Daikaiju, 95
+    # Bulls, PaSsy" is a bill of three bands - while "vs" alone catches DJ
+    # battles and double bills. Together they are reliable.
+    #
+    # The team names earn their place because the venue cannot: the United
+    # Center is configured as a music venue, which is right for most of its
+    # calendar and filed every Bulls and Blackhawks game under Music. A title
+    # rule outranks the venue default, which is the point of these.
     ("Sports",
-     r"\b(?:volleyball|basketball|soccer|hockey|baseball|football|lacrosse"
-     r"|rugby|softball|tennis|wrestling)\b(?=.*\bvs?\.?\b)"
-     r"|\bvs?\.?\b(?=.*\b(?:volleyball|basketball|soccer|hockey|baseball"
-     r"|football|lacrosse|rugby|softball|tennis|wrestling)\b)"),
+     r"(?:\b(?:volleyball|basketball|soccer|hockey|baseball|football|lacrosse"
+     r"|rugby|softball|tennis|wrestling"
+     r"|bulls|blackhawks|bears|cubs|white sox|sky|fire|red stars|sting)\b"
+     r"(?=.*\bv(?:s\.?)?\b))"
+     r"|(?:\bv(?:s\.?)?\b(?=.*\b(?:volleyball|basketball|soccer|hockey"
+     r"|baseball|football|lacrosse|rugby|softball|tennis|wrestling"
+     r"|bulls|blackhawks|bears|cubs|white sox|sky|fire|red stars|sting)\b))"),
     ("Comedy", r"\bcomedy\b|\bstand[- ]?up\b|\bimprov\b"),
     ("Karaoke/Trivia/Open Mics", r"\b(karaoke|trivia|bingo|open[- ]mic)\b"),
     ("Arts & Crafts", r"\b(sewing|knit|crochet|quilt|pottery|ceramics?|life drawing)\b"),
@@ -451,6 +462,15 @@ def classify_all(
     # entry points disagreed about the same row.
     if primary == GENERIC_CATEGORY:
         primary = classify_from_title(title, fallback, hint=hint)
+
+    # A fixture is only a fixture. When the title rule identified one, the
+    # other concepts in the title are team names colliding with the
+    # vocabulary rather than a second thing to do: "Blackhawks vs. St. Louis
+    # Blues" is not also a blues gig, and "Chicago Fire vs Orlando" is not a
+    # festival. Conditioned on the rule having fired - an event the venue
+    # merely labelled Sports keeps its other labels.
+    if primary == "Sports" and primary != fallback:
+        return [normalize_category(primary)]
 
     labels = [primary]
 
