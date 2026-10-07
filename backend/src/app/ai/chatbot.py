@@ -445,11 +445,29 @@ async def search_google_events(context: RunContext[str], query: str) -> str:
 
             return results_text
 
+    except httpx.TimeoutException as e:
+        # Reported separately from other transport errors because it is not an
+        # error on SerpAPI's side and it is not worth retrying inside the same
+        # turn - the call already waited SERPAPI_TIMEOUT seconds.
+        #
+        # The exception type is logged, not just the message: a ReadTimeout's
+        # message is the empty string, so `f"{e}"` alone logged "SerpAPI
+        # error: " and left no way to tell a timeout from anything else.
+        logger.error(
+            "SerpAPI %s after %ss for %r", type(e).__name__, SERPAPI_TIMEOUT, query
+        )
+        return (
+            f"The online search timed out after {SERPAPI_TIMEOUT}s. "
+            "Say so plainly and offer to try again - do not call this tool "
+            "again in this turn."
+        )
     except httpx.HTTPError as e:
-        logger.error(f"SerpAPI error: {e}")
+        # `str(e) or ...`, not `e or ...`: an exception object is truthy even
+        # when its message is empty, which is exactly the case being handled.
+        logger.error("SerpAPI %s: %s", type(e).__name__, str(e) or "(no message)")
         return "Could not search online (API error)"
     except Exception as e:
-        logger.error(f"Search error: {e}")
+        logger.error("Search error: %s: %s", type(e).__name__, e, exc_info=True)
         return f"Error: {str(e)}"
 
 
