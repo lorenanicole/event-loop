@@ -1133,17 +1133,24 @@ _BOILERPLATE = (
 )
 
 
+_WEEKDAY_RE = re.compile(
+    r"\b(?:Mon|Tue|Tues|Wed|Weds|Thu|Thur|Thurs|Fri|Sat|Sun)(?:day|sday|nesday|rsday|urday)?\b",
+    re.I,
+)
+
+
 def _title_from(lines: list[str]) -> Optional[str]:
     """Pick the event title out of a card's text lines.
 
     The title is the first line that is neither the date nor a call to action.
-    "OCT 7 - WEDNESDAY" has to be rejected too, which is why what's left after
-    removing the date has to contain real words.
+    A line like "OCT 7 - WEDNESDAY" is all date, so the weekday is stripped
+    alongside the date before checking whether real words are left - otherwise
+    the weekday alone passes for a title.
     """
     for line in lines:
         if line.lower().rstrip(":").startswith(_BOILERPLATE):
             continue
-        remainder = _RUN_RE.sub("", _ONE_RE.sub("", line))
+        remainder = _WEEKDAY_RE.sub("", _RUN_RE.sub("", _ONE_RE.sub("", line)))
         if len(re.sub(r"[^A-Za-z]", "", remainder)) <= 3:
             continue
         if len(line) >= 3:
@@ -2172,6 +2179,9 @@ def extract_squarespace_events(soup: BeautifulSoup, config: VenueConfig) -> list
 
 CHICAGO_VENUES = {
     "Loop": [
+        # CIBC Theatre and the James M. Nederlander are programmed by Broadway
+        # In Chicago and publish no calendar of their own, so they are covered
+        # by scrapers.external.broadway_in_chicago instead of here.
         VenueConfig(
             name="Chicago Theatre",
             website_url="https://www.thechicagotheatre.com",
@@ -2205,16 +2215,6 @@ CHICAGO_VENUES = {
             selectors={},
             use_playwright=True,
             extractor_fn=extract_auditorium_theatre,
-        ),
-        VenueConfig(
-            name="CIBC Theatre",
-            website_url="https://www.broadwayinchicago.com",
-            event_page_url="https://www.broadwayinchicago.com/cibc",
-            category="theater",
-            address="18 W Monroe St",
-            selectors={},
-            use_playwright=True,
-            extractor_fn=extract_events_from_json_ld,
         ),
         VenueConfig(
             name="Goodman Theatre",
@@ -2266,20 +2266,6 @@ CHICAGO_VENUES = {
             event_page_url="https://buddyguy.com/",
             category="music",
             address="700 S Wabash Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
-            use_playwright=True,
-            extractor_fn=None,
-        ),
-        VenueConfig(
-            name="James M. Nederlander Theatre",
-            website_url="https://www.broadwayinchicago.com",
-            event_page_url="https://www.broadwayinchicago.com/broadway-shows-in-chicago/",
-            category="theater",
-            address="24 W Randolph St",
             selectors={
                 "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
                 "title": '[class*="title"], [class*="name"], .event-title, h3, h4',

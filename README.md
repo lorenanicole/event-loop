@@ -87,7 +87,7 @@ eventloop/
   browse or type into; selecting is the search, so there is no submit step
 
 ### **Neighborhoods**
-- 🗺️ **Events placed in 46 Chicago neighborhoods** - 93% of upcoming events
+- 🗺️ **Events placed in 33 Chicago neighborhoods** - 95% of upcoming events
 - 📐 **Point-in-polygon, not geocoding** - the city's 98 neighborhood boundaries are
   stored in the database, so placing a venue is a local geometry test: no API calls,
   no rate limits, ~3 ms
@@ -96,11 +96,19 @@ eventloop/
   once, rate limited, and cached permanently in `geocode_cache`
 
 ### **Data at Scale**
-- 📊 **2,000+ upcoming events** - 5 external APIs plus 51 venue scrapers across
-  18 neighborhoods
+- 📊 **2,400+ upcoming events** - 6 external sources plus 51 venue scrapers across
+  22 neighborhoods, North Side to South Side
+- 💵 **Prices where venues publish them** - one `parse_cost()` normalises "$25",
+  "$20-$25", "Starting at $64", "No cover" and "Donation", and rejects the
+  near-misses ("21+", "Show 9:30PM")
+- ♻️ **Reusable extractors over per-venue code** - `extract_tribe_events` covers
+  every venue on The Events Calendar; `extract_dated_list_items` keys off date
+  text rather than class names, so it survives Wix's obfuscated classes
 - 🗄️ **SQLite** - Fully indexed for fast queries
 - 🔄 **Async Scraping** - httpx + BeautifulSoup, per-venue timeouts so one slow site
   cannot stall a run
+- 💾 **Additive refreshes** - `additive_scrape.py` upserts and never deletes, so a
+  venue that fails or gets bot-blocked on a run costs nothing
 - 💾 **Safe rescrapes** - `db_safety.py` snapshots the database and diffs counts by
   source and neighborhood afterwards, flagging any source that *lost* events
 - ⚡ **Real-time SSE** - Server-Sent Events for streaming chat responses
@@ -110,7 +118,7 @@ eventloop/
 - ⏳ **Exponential Backoff** - Retry transient failures smartly
 - 📊 **OpenTelemetry** - Counters, histograms, audit trails
 - 🔐 **Prompt Injection Defense** - Pattern detection, rate limiting, output validation
-- 🧪 **166 Tests** - Security, resilience, database, API, scraper coverage
+- 🧪 **204 Tests** - Security, resilience, database, API, scraper coverage
 
 ### **Production-Ready**
 - 🛡️ **Security** - Blocks prompt injections, validates outputs, sanitizes inputs
@@ -183,9 +191,19 @@ All run from `backend/`.
 # `compare` flags any source that LOST events - a scrape that silently drops a
 # venue looks fine in the logs and obvious here.
 python db_safety.py backup
-python clean_rescrape.py
+
+# Refresh every venue in parallel. Additive: matched events are updated in
+# place, new ones inserted, nothing deleted - so a venue that fails or gets
+# bot-blocked leaves its existing events alone. Prefer this to clean_rescrape.py,
+# which deletes a venue's rows before reinserting them.
+python additive_scrape.py                   # all venues
+python additive_scrape.py Metro Thalia      # only venues matching these names
+
 python db_safety.py compare
 python db_safety.py restore data/backups/events-<stamp>.db   # if needed
+
+# Which venues are actually yielding events, one line each.
+python venue_health.py
 
 # One-time: load Chicago's neighborhood boundaries into the database.
 # After this, placing a coordinate is a local point-in-polygon test.
@@ -225,8 +243,12 @@ inv coverage          # Generate coverage report
 
 ### **Scrapers (scrapers/)**
 - **External APIs**: Ticketmaster, Eventbrite, Bandsintown, DO312, Your Chicago Guide (WordPress)
+- **Multi-venue sources**: Broadway In Chicago, which programmes five Loop-area
+  theatres that publish no calendar of their own
 - **Custom Web Scrapers**: Chicago venue listings, Timeout Chicago, Events.com
-- **Framework**: VenueScraper base class with config-driven extraction
+- **Framework**: VenueScraper base class with config-driven extraction, plus
+  `extractor_fn` for custom parsing and `page_extractor_fn` for venues whose
+  events only exist after JS runs (lazy lists, calendar pagination)
 
 ### **Database (shared/)**
 - **EventModel**: Event records (4,959 total)
