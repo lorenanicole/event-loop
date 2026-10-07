@@ -11,7 +11,7 @@ from .venue_scraper import VenueScraper, VenueConfig, VenueEvent, parse_cost
 import re
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select
@@ -1164,6 +1164,59 @@ _WEEKDAY_RE = re.compile(
 )
 
 
+def extract_dated_links(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events whose date is in the URL, as /events/YYYY/MM/DD/slug.
+
+    Common on Jekyll-built sites - Chi Hack Night publishes one page per
+    meeting that way. Reading the date from the href rather than the page text
+    is both simpler and safer: there is no year to infer and no date-like
+    string in a description to trip over.
+
+    Past meetings stay linked forever on these sites, so anything older than
+    yesterday is dropped rather than filling the database with history.
+    """
+    cutoff = datetime.now() - timedelta(days=1)
+    events = []
+    seen = set()
+
+    for link in soup.select('a[href*="/20"]'):
+        href = link.get("href") or ""
+        match = re.search(r"/(?P<y>20\d{2})/(?P<m>\d{1,2})/(?P<d>\d{1,2})/", href)
+        if not match:
+            continue
+        try:
+            when = datetime(int(match.group("y")), int(match.group("m")), int(match.group("d")))
+        except ValueError:
+            continue
+        if when < cutoff:
+            continue
+
+        title = link.get_text(" ", strip=True)
+        # The same event is linked several times per card (image, title,
+        # "Details"), and only one of those carries the name.
+        if not title or len(title) < 4 or title.lower() in ("details", "more", "read more"):
+            continue
+
+        key = (when.date(), title.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+
+        url = href if href.startswith("http") else f"{config.website_url.rstrip('/')}{href}"
+        events.append(VenueEvent(
+            name=title[:200],
+            date=f"{when.strftime('%b')} {when.day}, {when.year}",
+            time=None,
+            location=f"{config.name}, {config.address}",
+            url=url,
+            venue_name=config.name,
+            category=config.category,
+        ))
+
+    logger.info(f"{config.name}: extracted {len(events)} events from dated links")
+    return events
+
+
 def extract_labelled_meeting(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract a single recurring meeting from a long-form page.
 
@@ -1960,6 +2013,22 @@ async def extract_ace_calendar(page, config: VenueConfig) -> list[VenueEvent]:
         return events
 
 
+def _den_event_url(href: str, config: VenueConfig) -> str:
+    """Absolute Den Theatre event URL, using the site's own path.
+
+    The site exposes an event under both /calendar/<date>/<slug> and
+    /performances/<date>/<slug>, but the slugs differ and the paths are NOT
+    interchangeable: where the calendar slug carries a uniqueness suffix
+    ("...-5ssy7-b4xks") only /calendar/ resolves, and where it does not, only
+    /performances/ does. Rewriting the path therefore 404s for a subset, so
+    the href the page gives us is used as-is - it is by definition the one
+    that works.
+    """
+    if not href:
+        return config.event_page_url
+    return href if href.startswith("http") else f"{config.website_url.rstrip('/')}{href}"
+
+
 def extract_den_theatre(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from the Den Theatre calendar.
 
@@ -2008,7 +2077,7 @@ def extract_den_theatre(soup: BeautifulSoup, config: VenueConfig) -> list[VenueE
                 date=f"{when.strftime('%b')} {when.day}, {when.year}",
                 time=time_str,
                 location=f"{config.name}, {config.address}",
-                url=href if href.startswith('http') else f"{config.website_url}{href}",
+                url=_den_event_url(href, config),
                 venue_name=config.name,
                 category=config.category,
                 cost=parse_cost(item.get_text(" ", strip=True)),
@@ -2864,7 +2933,9 @@ CHICAGO_VENUES = {
         ),
         VenueConfig(
             name="Den Theatre",
-            website_url="https://www.dentheatre.com",
+            # Not www.dentheatre.com, which does not resolve - every event URL
+            # built from it was a dead link.
+            website_url="https://thedentheatre.com",
             event_page_url="https://thedentheatre.com/calendar?view=calendar&month=10-2026",
             category="comedy",
             address="1331 N Milwaukee Ave",
@@ -3112,6 +3183,20 @@ CHICAGO_VENUES = {
 
 
     "River North": [
+        VenueConfig(
+            # A weekly civic-tech meetup. Sessions are currently online, which
+            # the event titles say ("Online: ..."); this neighborhood is its
+            # venue of record at the Merchandise Mart rather than where each
+            # meeting physically happens.
+            name="Chi Hack Night",
+            website_url="https://chihacknight.org",
+            event_page_url="https://chihacknight.org/events/",
+            category="Tech / Educational",
+            address="222 W Merchandise Mart Plaza",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_dated_links,
+        ),
         VenueConfig(
             # Listed under the festival's own address because that is what the
             # listing gives us; the events themselves run at partner venues

@@ -9,6 +9,7 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 
 from scrapers.custom.venue.chicago_events_scraper import (
+    extract_dated_links,
     extract_dated_list_items,
     extract_labelled_meeting,
     extract_songkick_venue,
@@ -585,3 +586,46 @@ class TestLabelledMeeting:
     def test_no_when_block_yields_nothing(self):
         html = "<div><h3>Some Meeting</h3><p>No details yet.</p></div>"
         assert extract_labelled_meeting(BeautifulSoup(html, "html.parser"), config()) == []
+
+
+class TestDatedLinks:
+    """Jekyll-style sites put the date in the URL: /events/YYYY/MM/DD/slug."""
+
+    HTML = """
+    <div>
+      <a href="/events/2099/10/13/cook-county-digital-equity-team">Online: Cook County Digital Equity Team</a>
+      <a href="/events/2099/10/13/cook-county-digital-equity-team">Details</a>
+      <a href="/events/2099/10/20/open-hack">Online: Open Hack #703</a>
+      <a href="/events/2001/09/29/ancient-meeting">Online: Open Hack #1</a>
+      <a href="/blog/2099/02/09/board-member-elections">Board Member Elections</a>
+      <a href="/about">About us</a>
+    </div>
+    """
+
+    def extracted(self):
+        config_ = config(name="Chi Hack Night", address="222 W Merchandise Mart Plaza")
+        config_.website_url = "https://chihacknight.org"
+        return extract_dated_links(BeautifulSoup(self.HTML, "html.parser"), config_)
+
+    def test_reads_the_date_from_the_url(self):
+        """No year to infer and no date in the prose to trip over."""
+        dates = {e.date for e in self.extracted()}
+        assert "Oct 13, 2099" in dates
+
+    def test_past_events_are_dropped(self):
+        """These sites keep every past meeting linked forever - 718 of them."""
+        assert all("2001" not in e.date for e in self.extracted())
+
+    def test_the_same_event_is_not_counted_twice(self):
+        """Each card links the event from its title and from "Details"."""
+        titles = [e.name for e in self.extracted()]
+        assert titles.count("Online: Cook County Digital Equity Team") == 1
+
+    def test_a_details_link_is_not_a_title(self):
+        assert "Details" not in [e.name for e in self.extracted()]
+
+    def test_undated_links_are_ignored(self):
+        assert "About us" not in [e.name for e in self.extracted()]
+
+    def test_relative_urls_are_made_absolute(self):
+        assert all(e.url.startswith("https://chihacknight.org/") for e in self.extracted())
