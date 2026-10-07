@@ -66,8 +66,21 @@ class TestPaging:
             for e in page.json()
         )
 
-    async def test_results_stay_in_date_order_across_pages(self, client):
+    async def test_results_stay_in_name_order_across_pages(self, client):
+        """Ordered by name so the sequence is the same on every request."""
         first = await client.post(SEARCH, json={"query": "events", "limit": 20, "skip": 0})
         second = await client.post(SEARCH, json={"query": "events", "limit": 20, "skip": 20})
-        dates = [e["date"] for e in first.json()] + [e["date"] for e in second.json()]
-        assert dates == sorted(dates)
+        names = [e["name"] for e in first.json()] + [e["name"] for e in second.json()]
+        # Case-insensitively, matching the collation the query uses.
+        lowered = [n.lower() for n in names]
+        assert lowered == sorted(lowered)
+
+    async def test_a_repeated_name_is_newest_first(self, client):
+        """Within one name, date descending."""
+        page = await client.post(SEARCH, json={"query": "events", "limit": 100})
+        by_name: dict[str, list[str]] = {}
+        for event in page.json():
+            by_name.setdefault(event["name"], []).append(event["date"])
+        repeated = {n: d for n, d in by_name.items() if len(d) > 1}
+        for dates in repeated.values():
+            assert dates == sorted(dates, reverse=True)

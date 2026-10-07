@@ -545,11 +545,20 @@ async def search_events(
             )
         )
 
-    # Ordered by date then id: date alone is not unique - dozens of events
-    # share a day - so without the tiebreak a row could appear on two
-    # consecutive pages or on neither.
+    # Name ascending, then date descending, then id. The id is not decoration:
+    # name and date together are not unique - a residency plays the same room
+    # on the same night twice - and without a final tiebreak a row could appear
+    # on two consecutive pages or on neither, which is the whole point of
+    # ordering a paged list deterministically.
     db_query = (
-        db_query.order_by(EventModel.date.asc(), EventModel.id.asc())
+        db_query.order_by(
+            # Lowercased, because SQLite's default collation sorts every
+            # capital before every lowercase letter: "$10 Cover" would come
+            # before "$10 cover" and the two would not sit together.
+            func.lower(EventModel.name).asc(),
+            EventModel.date.desc(),
+            EventModel.id.asc(),
+        )
         .offset(search.skip)
         .limit(limit)
     )

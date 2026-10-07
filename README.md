@@ -117,7 +117,7 @@ eventloop/
 - ⏳ **Exponential Backoff** - Retry transient failures smartly
 - 📊 **OpenTelemetry** - Counters, histograms, audit trails
 - 🔐 **Prompt Injection Defense** - Pattern detection, rate limiting, output validation
-- 🧪 **392 Tests** - Security, resilience, database, API, scraper coverage
+- 🧪 **393 Tests** - Security, resilience, database, API, scraper coverage
 
 ### **Production-Ready**
 - 🛡️ **Security** - Blocks prompt injections, validates outputs, sanitizes inputs
@@ -219,6 +219,12 @@ python prune_dead_links.py
 # both were stored as if local, which moved every evening show forward a day.
 python repair_event_times.py --dry-run
 python repair_event_times.py
+
+# Collapse rows that are the same event stored twice. Identity is source +
+# name + date + time; undated rows are skipped because nothing distinguishes
+# them, and cross-source overlaps are reported rather than merged.
+python dedupe_events.py --dry-run
+python dedupe_events.py
 
 # Place Park District events without geocoding: the city's open data portal
 # publishes all 617 parks with boundary polygons, so one request replaces

@@ -3929,6 +3929,31 @@ async def save_events_to_db(
             # given a deterministic unique variant instead of raising - an IntegrityError
             # here rolls back every event for the venue, not just the colliding one.
             used_urls = set()
+            # An extractor that yields the same event twice used to produce two
+            # rows, because the collision handling below invents a unique URL
+            # for the second one and so preserves the duplicate rather than
+            # recognising it. Kingston Mines stored every show twice this way,
+            # every night. Collapse identical events before saving instead:
+            # identity is name + date + time, so two genuinely different sets
+            # on one night still count separately.
+            deduped = []
+            seen_identity = set()
+            for event in events:
+                identity = (
+                    (event.name or "").strip().lower(),
+                    (event.date or "").strip(),
+                    (event.time or "").strip().lower(),
+                )
+                if identity in seen_identity:
+                    continue
+                seen_identity.add(identity)
+                deduped.append(event)
+            if len(deduped) != len(events):
+                logger.info(
+                    f"{config.name}: {len(events) - len(deduped)} duplicate events "
+                    f"collapsed before saving"
+                )
+            events = deduped
 
             # Add or update events
             for i, event in enumerate(events):
