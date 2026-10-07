@@ -108,3 +108,36 @@ export async function getAllEvents(skip: number = 0, limit: number = 20): Promis
     return []
   }
 }
+
+/** Counts for the filter tiles, honouring whatever is already selected. */
+export interface FilterCounts {
+  categories: Neighborhood[]
+  neighborhoods: Neighborhood[]
+}
+
+/**
+ * Faceted counts, so a tile's number matches what clicking it returns.
+ *
+ * Each list applies the other filters but not its own, which is why the
+ * selected neighborhood is still sent: it narrows the category counts while
+ * leaving the neighborhood counts comparable to each other.
+ */
+export async function getFilterCounts(
+  category: string | null = null,
+  neighborhood: string | null = null,
+  timeframe: string | null = null,
+): Promise<FilterCounts> {
+  try {
+    const response = await client.get('/events/filter-counts', {
+      params: {
+        ...(category ? { category } : {}),
+        ...(neighborhood ? { neighborhood } : {}),
+        ...(timeframe ? { timeframe } : {}),
+      },
+    })
+    return response.data
+  } catch (error) {
+    console.error('Error fetching filter counts:', error)
+    return { categories: [], neighborhoods: [] }
+  }
+}

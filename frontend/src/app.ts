@@ -1,10 +1,10 @@
-import { searchEvents, getStats, getNeighborhoods, Event, Stats, Neighborhood } from './api'
+import { searchEvents, getStats, getFilterCounts, Event, Stats, Neighborhood } from './api'
 
 export class SearchApp {
   private container: HTMLElement
   private stats: Stats | null = null
   private events: Event[] = []
-  private categories: string[] = []
+  private categories: Neighborhood[] = []
   private neighborhoods: Neighborhood[] = []
   private isLoading = false
   // All three start empty: the page opens on everything that is coming up and
@@ -18,8 +18,7 @@ export class SearchApp {
   }
 
   async render() {
-    await this.loadCategories()
-    await this.loadNeighborhoods()
+    await this.loadFilterCounts()
     await this.loadStats()
     this.container.innerHTML = `
       <div class="min-h-screen bg-white flex flex-col">
@@ -177,6 +176,7 @@ export class SearchApp {
     const categories = this.categories.length > 0
       ? this.categories
       : ['Music', 'Comedy', 'Theater', 'Sports', 'Arts', 'Food & Drink', 'Film', 'Community']
+          .map(name => ({ name, event_count: 0 }))
     return [
       {
         key: 'what',
@@ -185,7 +185,13 @@ export class SearchApp {
         // The value sent to the API is the stored category, untouched; only
         // the label is capitalized. The backend normalizes case on the way in,
         // so this is a safety net for anything older or from a new source.
-        options: categories.map(c => ({ value: c, label: SearchApp.displayCategory(c) })),
+        // A count of 0 means the fallback list is in use (the request failed),
+        // so no number is shown rather than a misleading zero.
+        options: categories.map(c => ({
+          value: c.name,
+          label: SearchApp.displayCategory(c.name),
+          ...(c.event_count ? { count: c.event_count } : {}),
+        })),
         clearable: true,
       },
       {
@@ -884,6 +890,21 @@ export class SearchApp {
     this.closeCombos()
     // Picking an option is the search - there is no separate submit step.
     this.performSearch()
+    // The tile counts describe the new selection, so they have to be redrawn
+    // with it. Not awaited: the results matter more than the numbers, and
+    // blocking on this would delay them.
+    this.refreshFilterCounts()
+  }
+
+  /** Refetch the tile counts and redraw the tiles, leaving results alone. */
+  private async refreshFilterCounts() {
+    await this.loadFilterCounts()
+    const browseOpen = !this.container
+      .querySelector('#browse-panel')
+      ?.classList.contains('hidden')
+    const section = this.container.querySelector('section')
+    if (section) section.outerHTML = this.renderMainInterface()
+    if (browseOpen) this.setBrowseOpen(true)
   }
 
   private toggleBrowse() {
@@ -930,23 +951,25 @@ export class SearchApp {
     }
   }
 
-  private async loadCategories() {
-    try {
-      const response = await fetch('/api/events/categories')
-      if (response.ok) {
-        this.categories = await response.json()
-      }
-    } catch (error) {
-      console.error('Error loading categories:', error)
-      // Fall back to hardcoded categories on error
-      this.categories = ['music', 'comedy', 'theater', 'sports', 'art', 'food', 'film', 'dance']
+  /**
+   * Refresh the tile counts for the current selection.
+   *
+   * Called on every change, not just at startup: the counts used to be
+   * lifetime totals fetched once, so with "Arts & Crafts tonight" chosen the
+   * Lake View tile still read 204 while the search returned nothing. Each
+   * facet is computed with the other filters applied but not its own, so the
+   * numbers stay comparable to each other.
+   */
+  private async loadFilterCounts() {
+    const counts = await getFilterCounts(
+      this.selectedKeyword,
+      this.selectedNeighborhood,
+      this.selectedTimeframe,
+    )
+    if (counts.categories.length > 0 || counts.neighborhoods.length > 0) {
+      this.categories = counts.categories
+      this.neighborhoods = counts.neighborhoods
     }
-  }
-
-  private async loadNeighborhoods() {
-    // Driven entirely by the database: only neighborhoods that currently have
-    // upcoming events are offered, so a tile never leads to an empty result.
-    this.neighborhoods = await getNeighborhoods()
   }
 
   private async loadStats() {

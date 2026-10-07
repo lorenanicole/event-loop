@@ -264,6 +264,95 @@ async def get_event_neighborhoods(
 
 
 @router.get(
+    "/events/filter-counts",
+    summary="Counts for the filter tiles, honouring the current selection",
+    description=(
+        "Event counts per category and per neighborhood, for drawing the filter "
+        "tiles with numbers that match what clicking one actually returns.\n\n"
+        "Faceted: each list applies the *other* filters but not its own. Asking "
+        "with `neighborhood=Avondale` returns neighborhood counts computed "
+        "without that constraint - otherwise every other neighborhood would "
+        "read zero and the grid would become unusable - while the category "
+        "counts are narrowed to Avondale. The same holds the other way round.\n\n"
+        "A category or neighborhood with no matching events is omitted rather "
+        "than returned as zero, so a tile never leads to an empty result. With "
+        "no parameters this is every upcoming event, which is the page's "
+        "opening state.\n\n"
+        "`timeframe` takes the same words the sentence offers - 'tonight', "
+        "'this weekend', 'next week' - and is parsed exactly as the search "
+        "query is. An unrecognised value applies no date window rather than "
+        "failing."
+    ),
+    tags=["Events"],
+    responses=_ok({"categories": [{"name": "Music", "event_count": 1912},
+                                  {"name": "Theater", "event_count": 209}],
+                   "neighborhoods": [{"name": "Loop", "event_count": 379},
+                                     {"name": "Lincoln Park", "event_count": 295}]},
+                  "Counts for each facet, busiest first"),
+)
+async def get_filter_counts(
+    category: Optional[str] = Query(
+        None, description="Restrict the neighborhood counts to this category"
+    ),
+    neighborhood: Optional[str] = Query(
+        None, description="Restrict the category counts to this neighborhood"
+    ),
+    timeframe: Optional[str] = Query(
+        None, description="Restrict both, e.g. 'tonight' or 'this weekend'"
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Counts for the filter tiles, so the numbers match the results."""
+    date_range = _extract_date_range(f"events {timeframe}") if timeframe else None
+
+    def constrain(stmt, *, with_category: bool, with_neighborhood: bool):
+        stmt = stmt.where(upcoming_events_filter())
+        if date_range:
+            start, end = date_range
+            window_start = start_of_day(start)
+            stmt = stmt.where(
+                and_(
+                    EventModel.date <= end,
+                    or_(
+                        EventModel.date_end >= window_start,
+                        and_(EventModel.date_end.is_(None),
+                             EventModel.date >= window_start),
+                    ),
+                )
+            )
+        if with_category and category:
+            stmt = stmt.where(func.trim(EventModel.category).ilike(category.strip()))
+        if with_neighborhood and neighborhood:
+            stmt = stmt.where(NeighborhoodModel.name == neighborhood)
+        return stmt
+
+    # Categories: narrowed by neighborhood and timeframe, not by category.
+    category_stmt = constrain(
+        select(EventModel.category, func.count(EventModel.id).label("n"))
+        .outerjoin(NeighborhoodModel, EventModel.neighborhood_id == NeighborhoodModel.id)
+        .where(EventModel.category.isnot(None)),
+        with_category=False,
+        with_neighborhood=True,
+    ).group_by(EventModel.category).order_by(func.count(EventModel.id).desc())
+
+    # Neighborhoods: narrowed by category and timeframe, not by neighborhood.
+    neighborhood_stmt = constrain(
+        select(NeighborhoodModel.name, func.count(EventModel.id).label("n"))
+        .join(EventModel, EventModel.neighborhood_id == NeighborhoodModel.id),
+        with_category=True,
+        with_neighborhood=False,
+    ).group_by(NeighborhoodModel.name).order_by(func.count(EventModel.id).desc())
+
+    categories = (await db.execute(category_stmt)).all()
+    neighborhoods = (await db.execute(neighborhood_stmt)).all()
+    return {
+        "categories": [{"name": name, "event_count": n} for name, n in categories],
+        "neighborhoods": [{"name": name, "event_count": n} for name, n in neighborhoods],
+    }
+
+
+
+@router.get(
     "/events/{event_id}",
     response_model=Event,
     summary="Get event by ID",
