@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, Path, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import ConfigDict, BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_, or_, func, select
 
@@ -17,16 +17,78 @@ from app.security import rate_limiter
 from app.logging import get_logger
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/api", tags=["events"])
-analytics_router = APIRouter(prefix="", tags=["analytics"])
+# No router-level tags: each endpoint declares its own, and a tag here
+# would be added on top, listing every operation twice in /docs.
+router = APIRouter(prefix="/api")
+analytics_router = APIRouter(prefix="")
+
+
+# Reusable OpenAPI response blocks. FastAPI generates a schema-shaped example
+# by default ("string", 0), which tells a reader nothing about what an event
+# actually looks like, so every endpoint supplies a real one. Error codes are
+# only declared where the handler can genuinely return them.
+_EVENT_EXAMPLE = {
+    "id": 1247,
+    "name": "Comedy Open Mic",
+    "date": "2026-10-07T00:00:00",
+    "date_end": None,
+    "time": "Show: 8 pm",
+    "category": "music",
+    "origination_url": "https://colesbarchicago.com/shows/comedy-open-mic-october-07-2026-717984",
+    "cost": "Free",
+    "address": "Cole's Bar, 2338 N Milwaukee Ave",
+    "venue_name": "Cole's Bar",
+    "date_retrieved": "2026-10-07T03:42:44.521539",
+}
+_RUN_EXAMPLE = {
+    "id": 2990,
+    "name": "The Winter's Tale",
+    "date": "2026-10-13T00:00:00",
+    "date_end": "2026-12-12T00:00:00",
+    "time": None,
+    "category": "theater",
+    "origination_url": "https://www.chicagoshakes.com/plays-and-events/winters-tale",
+    "cost": None,
+    "address": "Chicago Shakespeare Theater, 800 E Grand Ave",
+    "venue_name": "Chicago Shakespeare Theater",
+    "date_retrieved": "2026-10-07T03:42:44.521539",
+}
+
+
+def _ok(example, description="Successful response"):
+    """One 200 block carrying a concrete example."""
+    return {200: {"description": description,
+                  "content": {"application/json": {"example": example}}}}
+
+
+_VALIDATION_ERROR = {
+    422: {
+        "description": "A query or body value failed validation - for instance "
+                       "`limit` outside 1-100, or a missing `query`.",
+        "content": {"application/json": {"example": {
+            "detail": [{"loc": ["query", "limit"], "msg":
+                        "Input should be less than or equal to 100",
+                        "type": "less_than_equal"}]
+        }}},
+    }
+}
 
 
 @router.get(
     "/events",
     response_model=list[Event],
     summary="List upcoming events",
-    description="Retrieve paginated list of Chicago events happening today or later, soonest first",
+    description=(
+        "Chicago events happening today or later, soonest first. A multi-day "
+        "event stays in the list until its end date passes, so a festival that "
+        "opened last week still appears. Events with neither a start nor an end "
+        "date are never returned, because there is no way to tell whether they "
+        "have happened. Paging past the end returns an empty array, not a 404."
+    ),
     tags=["Events"],
+    responses={**_ok([_EVENT_EXAMPLE, _RUN_EXAMPLE],
+                     "Events, soonest first. Empty array if `skip` is past the end."),
+               **_VALIDATION_ERROR},
 )
 async def list_events(
     skip: int = Query(0, ge=0, description="Number of events to skip"),
@@ -73,8 +135,19 @@ async def list_events(
     "/events/categories",
     response_model=list[str],
     summary="Get event categories",
-    description="Retrieve distinct event categories currently in the database",
+    description=(
+        "Distinct categories that currently have at least one upcoming event, so "
+        "a category tile in the UI never leads to an empty page. Categories whose "
+        "events have all passed are left out, which means this list changes over "
+        "time. Values are the raw stored slugs and are mixed in style - 'music' "
+        "alongside 'Health & Wellness' - because they come from different sources."
+    ),
     tags=["Events"],
+    responses=_ok(["Arts & Culture", "Comedy", "Food & Drink", "Health & Wellness",
+                   "Music", "Theatre & Performing Arts", "comedy", "music", "theater"],
+                  "Categories with upcoming events. Casing and wording are "
+                  "inconsistent because each source labels its own events; "
+                  "'Music' and 'music' are different sources, not duplicates."),
 )
 async def get_event_categories(db: AsyncSession = Depends(get_db)):
     """
@@ -133,8 +206,23 @@ async def get_event_categories(db: AsyncSession = Depends(get_db)):
 @router.get(
     "/events/neighborhoods",
     summary="Get neighborhoods with upcoming events",
-    description="Chicago neighborhoods that currently have events, with counts, busiest first",
+    description=(
+        "Chicago neighborhoods that currently have events, with counts, busiest "
+        "first. Only neighborhoods with events are returned, so a filter offered "
+        "by the UI can never come back empty. Names are whichever a Chicagoan "
+        "would say - Wicker Park rather than West Town, Pilsen rather than Lower "
+        "West Side - and are the exact values POST /api/search expects in its "
+        "`neighborhood` field. `min_events` trims the long tail: geocoding "
+        "reaches the whole city, so dozens of neighborhoods hold one or two "
+        "events. Pass min_events=1 for all of them."
+    ),
     tags=["Events"],
+    responses={**_ok([{"name": "Loop", "event_count": 379},
+                      {"name": "Lincoln Park", "event_count": 295},
+                      {"name": "Wicker Park", "event_count": 294},
+                      {"name": "Pilsen", "event_count": 172}],
+                     "Neighborhoods with at least `min_events` upcoming events"),
+               **_VALIDATION_ERROR},
 )
 async def get_event_neighborhoods(
     min_events: int = Query(
@@ -173,8 +261,17 @@ async def get_event_neighborhoods(
     "/events/{event_id}",
     response_model=Event,
     summary="Get event by ID",
-    description="Retrieve detailed information about a specific event",
+    description=(
+        "One event by its database id. Returns the event whether or not it has "
+        "already happened, unlike the list endpoints, so a link to a past event "
+        "still resolves rather than 404ing."
+    ),
     tags=["Events"],
+    responses={**_ok(_EVENT_EXAMPLE, "The requested event"),
+               404: {"description": "No event with that id.",
+                     "content": {"application/json": {
+                         "example": {"detail": "Event not found"}}}},
+               **_VALIDATION_ERROR},
 )
 async def get_event(
     event_id: int = Path(..., description="Unique event identifier", ge=1),
@@ -209,6 +306,10 @@ async def get_event(
     "/search",
     response_model=list[Event],
     summary="Natural language event search",
+    responses={**_ok([_EVENT_EXAMPLE],
+                     "Matching events, soonest first. An empty array means "
+                     "nothing matched - it is not an error."),
+               **_VALIDATION_ERROR},
     description="Search events using natural language queries with category and date filtering",
     tags=["Search"],
 )
@@ -336,6 +437,10 @@ async def search_events(
 @router.get(
     "/search/categories",
     summary="Get available categories",
+    responses=_ok({"categories": ["Arts & Culture", "Comedy", "Food & Drink",
+                                  "Music", "Theatre & Performing Arts"]},
+                  "Same list as GET /api/events/categories, wrapped in an "
+                  "object for older clients."),
     description="List all event categories indexed in the database",
     tags=["Search"],
 )
@@ -370,8 +475,15 @@ async def get_categories(db: AsyncSession = Depends(get_db)):
 @router.get(
     "/search/stats",
     summary="Get event statistics",
-    description="Retrieve aggregate statistics about indexed events",
+    description=(
+        "Aggregate counts over upcoming events only, so the totals shrink as "
+        "events pass and grow as scrapes run. `earliest_event` and "
+        "`latest_event` are null when nothing is indexed."
+    ),
     tags=["Search"],
+    responses=_ok({"total_events": 3150, "unique_categories": 24,
+                   "earliest_event": "2026-10-07", "latest_event": "2027-06-13"},
+                  "Aggregates over upcoming events"),
 )
 async def get_stats(db: AsyncSession = Depends(get_db)):
     """
@@ -492,15 +604,71 @@ class ChatMessage(BaseModel):
 
 
 class ChatStreamRequest(BaseModel):
-    message: str = Field(..., description="User message or question", max_length=2000)
-    thread_id: Optional[str] = Field(None, description="Session thread ID for conversation context")
+    """Body for POST /api/chat."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {"message": "comedy in Pilsen this weekend"},
+                {"message": "plant workshops in Logan Square, Humboldt Park"},
+                {"message": "free jazz tonight"},
+                {
+                    "message": "anything else that night?",
+                    "thread_id": "3f9a1c84-7b2e-4d51-9a6f-1e2d3c4b5a60",
+                },
+            ]
+        }
+    )
+
+    message: str = Field(
+        ...,
+        max_length=2000,
+        description="A natural language question about Chicago events. A "
+        "neighborhood, category or date phrase in here becomes a real filter.",
+    )
+    thread_id: Optional[str] = Field(
+        None,
+        description="Thread id from a previous `complete` frame, to continue "
+        "that conversation. Omit to start a new one.",
+    )
 
 
 @router.post(
     "/chat",
-    summary="AI-powered event search with streaming",
-    description="Stream REACT agent reasoning for natural language event discovery via Server-Sent Events",
+    summary="Ask Loopara (streaming)",
+    description=(
+        "Natural language event discovery, streamed as Server-Sent Events.\n\n"
+        "**This is a stream, so 'Try it out' in this page will show raw SSE "
+        "frames rather than JSON.** Each frame is `data: {...}` with an `event` "
+        "field: `thinking` while the agent works, `events` when results are "
+        "found, `response` for the written answer, `complete` with the token "
+        "count, or `error`.\n\n"
+        "Out-of-scope questions are rejected before any expensive call: an "
+        "intent classifier runs first, and anything not about Chicago events "
+        "comes back as a `response` frame with `out_of_scope: true`.\n\n"
+        "A neighborhood named in the message is applied as a real filter, the "
+        "same join `POST /api/search` uses, so 'comedy in Pilsen' constrains by "
+        "location rather than searching for the word 'Pilsen' in event titles. "
+        "Several can be named at once; naming none searches the whole city.\n\n"
+        "Pass `thread_id` from a previous `complete` frame to continue a "
+        "conversation. Threads are capped on both turns and tokens; once either "
+        "runs out the reply says so instead of failing."
+    ),
     tags=["Chat"],
+    responses={200: {"description":
+        "An SSE stream (`text/event-stream`). Frames arrive in order: one or "
+        "more `thinking`, then optionally `events`, then `response`, then "
+        "`complete`.",
+        "content": {"text/event-stream": {"example":
+            'data: {"event":"thinking","data":{"status":"Analyzing your question..."}}\n\n'
+            'data: {"event":"events","data":{"events":[{"id":1247,'
+            '"name":"Comedy Open Mic","date":"2026-10-07T00:00:00",'
+            '"venue_name":"Cole\'s Bar","cost":"Free"}]}}\n\n'
+            'data: {"event":"response","data":{"message":"There is a free comedy '
+            'open mic at Cole\'s Bar tonight.","tokens":312}}\n\n'
+            'data: {"event":"complete","data":{"thread_id":"a3f...","tokens_used":312}}\n\n'
+        }}},
+        **_VALIDATION_ERROR},
 )
 async def chat_endpoint(request: ChatStreamRequest):
     """
@@ -567,6 +735,10 @@ async def chat_endpoint(request: ChatStreamRequest):
 @analytics_router.get(
     "/analytics/telemetry",
     summary="OpenTelemetry metrics",
+    responses=_ok({"timestamp": "2026-10-07T11:45:18.810877",
+                   "metrics_data": "MetricsData(resource_metrics=[...])"},
+                  "Counters and histograms as OpenTelemetry's own repr, not "
+                  "parsed JSON - intended for eyeballing, not for machines."),
     description="Get current metrics snapshot for observability",
     tags=["Analytics"],
 )
@@ -590,6 +762,13 @@ def get_telemetry():
 @analytics_router.get(
     "/analytics/audit",
     summary="Query audit logs",
+    responses={**_ok({"logs": [{"id": 1, "action": "chat_question",
+                                "detail": "comedy in Pilsen",
+                                "created_at": "2026-10-07T11:45:18"}],
+                      "count": 1},
+                     "Matching audit entries, newest first. `logs` is empty "
+                     "when nothing matches."),
+               **_VALIDATION_ERROR},
     description="Retrieve audit trail of operations with filtering",
     tags=["Analytics"],
 )
@@ -643,6 +822,13 @@ async def get_audit_logs(
 @analytics_router.get(
     "/analytics/summary",
     summary="Analytics dashboard summary",
+    responses=_ok({"total_sessions": 118, "completed_sessions": 0,
+                   "active_sessions": 118, "total_turns": 118,
+                   "total_tokens": 18163, "avg_tokens_per_session": 0,
+                   "avg_turns_per_session": 0, "operations": []},
+                  "Counters since the process started. A session counts as "
+                  "active until it is explicitly completed, so a restart "
+                  "leaves them active."),
     description="Get aggregate statistics for observability dashboard",
     tags=["Analytics"],
 )
@@ -712,6 +898,13 @@ async def get_analytics_summary(db: AsyncSession = Depends(get_db)):
 @analytics_router.get(
     "/analytics/security",
     summary="Security metrics dashboard",
+    responses=_ok({"security_events": {"blocked_requests": 0,
+                                       "outputs_sanitized": 0,
+                                       "out_of_scope_questions": 0},
+                   "active_injection_attempts": {}, "blocked_sessions": [],
+                   "recent_blocks": []},
+                  "Prompt-injection and sanitization counters. All zero means "
+                  "nothing has been blocked since startup."),
     description="Real-time security monitoring and threat detection metrics",
     tags=["Analytics"],
 )
@@ -797,67 +990,16 @@ async def get_security_summary(db: AsyncSession = Depends(get_db)):
     }
 
 
-class ChatRequest(BaseModel):
-    """Chat message request with optional thread ID for conversation continuity."""
-    message: str = Field(..., description="User's natural language query")
-    thread_id: Optional[str] = Field(None, description="Thread ID for multi-turn conversations")
-
-
-@router.post(
-    "/chat",
-    summary="AI-powered event chat with SSE streaming",
-    description="Send natural language queries and receive event recommendations via Server-Sent Events (SSE)",
-    tags=["Chat"],
-)
-async def chat(request: ChatRequest):
-    """
-    **Stream AI-powered chat responses for event discovery**
-
-    Uses PydanticAI REACT agent with Claude to understand questions and find events.
-
-    **Request:**
-    - `message`: Natural language query (e.g., "free jazz concerts this weekend")
-    - `thread_id` (optional): Reuse conversation thread for multi-turn chat
-
-    **Response:** Server-Sent Events (SSE) stream with events:
-    - `chat_started`: Thread initialized
-    - `thinking`: Agent reasoning status
-    - `tool_call`: Searching database/web
-    - `tool_result`: Results found
-    - `response`: Final message with event summary
-    - `complete`: Chat finished
-    - `error`: Error occurred
-
-    **Example:**
-    ```bash
-    curl -X POST http://localhost:8000/api/chat \\
-      -H "Content-Type: application/json" \\
-      -d '{"message": "free events tonight"}'
-    ```
-    """
-    logger.info(f"Chat request: message='{request.message[:50]}...' thread_id={request.thread_id}")
-    executor = ChatExecutor()
-
-    async def event_stream():
-        """Stream events from executor"""
-        try:
-            async for event in executor.execute(request.message, request.thread_id):
-                logger.debug(f"Chat event: {event.event}")
-                yield sse_event_formatter(event)
-        except Exception as e:
-            logger.error(f"Chat execution error: {type(e).__name__}: {e}", exc_info=True)
-            from app.ai.executor import StreamEvent
-            yield sse_event_formatter(StreamEvent(
-                event="error",
-                data={"error": str(e)}
-            ))
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
-
-
 @router.post(
     "/venue-events/refresh",
     summary="Fetch and persist venue events",
+    responses={**_ok({"status": "success", "new_events": 43},
+                     "Scrape finished. `new_events` counts rows inserted; events "
+                     "already stored are updated in place and not counted."),
+               500: {"description": "The scrape or the database write failed; the "
+                                    "message carries the underlying error.",
+                     "content": {"application/json": {
+                         "example": {"detail": "database is locked"}}}}},
     description="Scrape entertainment venues and persist their events to the database",
     tags=["Admin"],
 )

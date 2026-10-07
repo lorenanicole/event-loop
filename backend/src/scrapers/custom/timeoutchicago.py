@@ -1,4 +1,5 @@
 import logging
+import re
 import httpx
 from datetime import datetime
 from typing import Optional, Union
@@ -167,22 +168,53 @@ class TimeoutChicagoScraper:
 
         return None
 
+    # A category is a short label. Matching any class containing "tag" also
+    # caught the card's date element, which stored values like
+    # "Nov 13, 2026Jan 3, 2027" as categories - 53 of the 85 distinct
+    # categories in the database came from this one bug.
+    _DATE_LIKE = re.compile(
+        r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s*\d",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _plausible_category(cls, text: Optional[str]) -> Optional[str]:
+        """Accept a candidate only if it reads like a category label."""
+        if not text:
+            return None
+        value = " ".join(text.split())
+        if not (2 <= len(value) <= 40):
+            return None
+        if cls._DATE_LIKE.search(value):
+            return None
+        # Needs real words, and should not be mostly digits.
+        letters = sum(ch.isalpha() for ch in value)
+        if letters < 2 or letters < len(value) / 2:
+            return None
+        return value
+
     def _extract_category(self, card) -> str:
         """Extract category/tags from event card"""
         for span in card.find_all("span"):
             span_class = span.get("class", [])
             if any("tag" in cls.lower() for cls in span_class):
-                return span.get_text(strip=True)
+                category = self._plausible_category(span.get_text(strip=True))
+                if category:
+                    return category
 
         for div in card.find_all("div"):
             div_class = div.get("class", [])
             if any("category" in cls.lower() for cls in div_class):
-                return div.get_text(strip=True)
+                category = self._plausible_category(div.get_text(strip=True))
+                if category:
+                    return category
 
         for a in card.find_all("a"):
             a_class = a.get("class", [])
             if any("genre" in cls.lower() for cls in a_class):
-                return a.get_text(strip=True)
+                category = self._plausible_category(a.get_text(strip=True))
+                if category:
+                    return category
 
         return "Events"
 
