@@ -38,8 +38,28 @@ if _env_path:
 logger = get_logger(__name__)
 
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
-# Observed 0.2s on a cache hit, 25s on a miss - this has to clear the slow case.
-SERPAPI_TIMEOUT = 45
+# Most of the wait this protects against is SerpAPI failing, not SerpAPI
+# being slow. Measured over six real queries:
+#
+#   0.9s 200   1.1s 200   1.9s 200     <- normal
+#   67.0s 200                          <- slow, but did return 10 events
+#   90.2s 503  90.2s 503               <- "We couldn't get valid results"
+#
+# A successful call has a median of 1.5s, which matches the ~2.3s SerpAPI
+# documents for the standard Google Search API. The minute-plus cases are a
+# service-side failure mode: SerpAPI retries internally and then returns 503,
+# so the old 45s ceiling spent 45 seconds of a chat turn waiting for an
+# answer that was never coming. Two of six here, so it is not rare.
+#
+# There is nothing to make faster on our side - the call is a single GET, and
+# the fast cases already land in about a second. The only real choice is how
+# long to stall the user. 12s clears a normal call by a wide margin and gives
+# up on the failures 78 seconds sooner. The known cost is the occasional slow
+# success like the 67s one above, which is accepted deliberately: nobody
+# waits a minute for a chat reply, and the local database has already been
+# searched by this point, so a dropped web search degrades the answer rather
+# than breaking it.
+SERPAPI_TIMEOUT = 12
 CLAUDE_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 DB_RESULT_THRESHOLD = 5  # Minimum results before using SerpAPI
 # How relevant the best local match must be before we stop and skip the paid
@@ -379,8 +399,7 @@ async def search_google_events(context: RunContext[str], query: str) -> str:
         search_phrase = " ".join(_extract_keywords(query)) or query
         logger.info(f"Falling back to SerpAPI for: {query!r} as {search_phrase!r}")
 
-        # SerpAPI regularly takes 15-25s on a cache miss. The old 10s ceiling
-        # turned every slow call into "Could not search online (API error)".
+        # See SERPAPI_TIMEOUT for why the ceiling is where it is.
         async with httpx.AsyncClient(timeout=SERPAPI_TIMEOUT) as client:
             response = await client.get(
                 "https://serpapi.com/search",

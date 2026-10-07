@@ -29,6 +29,19 @@ def configure_logging(level: str = "INFO") -> None:
         format="%(message)s",
     )
 
+    # httpx logs every request at INFO as a full URL, query string included.
+    # SerpAPI takes its credential as a query parameter, so running at INFO
+    # wrote the API key into the log file in plaintext, once per search:
+    #
+    #   INFO:httpx:HTTP Request: GET https://serpapi.com/search?...&api_key=...
+    #
+    # Logs get pasted into issues and shipped to aggregators, so this is a
+    # credential leak rather than an untidy line. Requests we care about are
+    # logged by the callers with the parameters they chose to record, so
+    # nothing is lost by silencing the library's own copy.
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
 
 def get_logger(name: str) -> structlog.typing.BoundLogger:
     """Get a structured logger instance."""
