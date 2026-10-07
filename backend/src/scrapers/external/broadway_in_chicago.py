@@ -45,9 +45,12 @@ class BroadwayInChicagoScraper:
         "james m. nederlander theatre": ("James M. Nederlander Theatre", "24 W Randolph St", "Loop"),
         "nederlander theatre": ("James M. Nederlander Theatre", "24 W Randolph St", "Loop"),
         "cadillac palace theatre": ("Cadillac Palace Theatre", "151 W Randolph St", "Loop"),
+        # 175 E Chestnut is in Streeterville; "Near North Side" is a
+        # community area the city's neighborhood layer does not publish, so
+        # nothing could ever be placed there by point-in-polygon.
         "broadway playhouse at water tower place": (
-            "Broadway Playhouse", "175 E Chestnut St", "Near North Side"),
-        "broadway playhouse": ("Broadway Playhouse", "175 E Chestnut St", "Near North Side"),
+            "Broadway Playhouse", "175 E Chestnut St", "Streeterville"),
+        "broadway playhouse": ("Broadway Playhouse", "175 E Chestnut St", "Streeterville"),
         "auditorium theatre": ("Auditorium Theatre", "50 E Ida B Wells Dr", "Loop"),
     }
 

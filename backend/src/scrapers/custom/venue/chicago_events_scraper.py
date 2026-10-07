@@ -1162,6 +1162,69 @@ _WEEKDAY_RE = re.compile(
 )
 
 
+def extract_aeg_showtime(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from an AEG "Showtime"/carbonhouse venue site.
+
+    The markup is semantic, so this reads the real elements rather than
+    guessing from text: the title lives in its own heading, separate from the
+    promoter line. That distinction matters - the generic extractor read
+    Radius's promoter credit ("Auris Presents") as the name of three shows,
+    because it sits above the title in the card.
+    """
+    events = []
+    seen = set()
+
+    for card in soup.select("#eventsList .entry, .event_list .entry"):
+        link = card.select_one("h3.carousel_item_title_small a, .title h3 a")
+        title = link.get_text(" ", strip=True) if link else None
+        if not title:
+            continue
+
+        date_elem = card.select_one("span.date")
+        if not date_elem:
+            continue
+        # "Thu, Oct 8, 2026"
+        match = _ONE_RE.search(date_elem.get_text(" ", strip=True))
+        if not match:
+            continue
+        year = match.group("y") or infer_event_year(match.group("m"))
+        date_str = f"{match.group('m')[:3].title()} {int(match.group('d'))}, {year}"
+
+        key = (date_str, title.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+
+        time_elem = card.select_one("span.time")
+        clock = re.search(
+            r"\b(\d{1,2}(?::\d{2})?\s*[apAP]\.?[mM]\.?)",
+            time_elem.get_text(" ", strip=True) if time_elem else "",
+        )
+
+        href = link.get("href") or config.event_page_url
+        if not href.startswith("http"):
+            href = f"{config.website_url.rstrip('/')}{href}"
+
+        # The support acts are worth keeping, since a bill is often why
+        # someone goes, but they do not belong in the title.
+        support = card.select_one("h4.supporting")
+        details = support.get_text(" ", strip=True) if support else None
+
+        events.append(VenueEvent(
+            name=title[:200],
+            date=date_str,
+            time=clock.group(1).upper().replace(".", "") if clock else None,
+            location=f"{config.name}, {config.address}",
+            url=href,
+            venue_name=config.name,
+            category=config.category,
+            cost=parse_cost(card.get_text(" ", strip=True)),
+        ))
+
+    logger.info(f"{config.name}: extracted {len(events)} events from AEG Showtime")
+    return events
+
+
 def extract_tickeri_venue(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract a venue's events from its Tickeri page.
 
@@ -2804,6 +2867,19 @@ CHICAGO_VENUES = {
             use_playwright=True,
             extractor_fn=extract_eb_item,
         ),
+        VenueConfig(
+            # An AEG/carbonhouse site: /events/all lists the full calendar as
+            # div.entry cards. Ticketing runs through AXS, whose own venue page
+            # is not parseable - the venue's own site is.
+            name="Radius Chicago",
+            website_url="https://www.radius-chicago.com",
+            event_page_url="https://www.radius-chicago.com/events/all",
+            category="music",
+            address="640 W Cermak Rd",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_aeg_showtime,
+        ),
     ],
 
     "Logan Square": [
@@ -3289,7 +3365,7 @@ CHICAGO_VENUES = {
         ),
     ],
 
-    "Grand Crossing": [
+    "Greater Grand Crossing": [
         VenueConfig(
             name="The New Apartment Lounge",
             website_url="https://www.songkick.com",

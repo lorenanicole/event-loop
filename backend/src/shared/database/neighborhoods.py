@@ -18,6 +18,18 @@ logger = logging.getLogger(__name__)
 # them so one place does not end up as two tiles in the UI.
 NEIGHBORHOOD_ALIASES = {
     "lakeview": "Lake View",
+    # The city's neighborhood layer and its community-area list disagree on
+    # these, which left us holding two rows for one place - one with the
+    # boundary, one with the events. Fold each onto the community-area name,
+    # matching how Pilsen and Bronzeville are handled in the boundary loader.
+    "grand crossing": "Greater Grand Crossing",
+    # The city's data has "Mckinley Park"; the park and the president are
+    # McKinley.
+    "mckinley park": "McKinley Park",
+    # Not a neighborhood in the city's layer at all: that area is published as
+    # Streeterville, Gold Coast, River North and Old Town. Anything still
+    # labelled with the community area resolves to where it actually sits.
+    "near north side": "Streeterville",
 }
 
 
