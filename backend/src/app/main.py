@@ -46,6 +46,20 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"Location backfill skipped or failed: {e}")
 
+    # Close conversations nobody came back to. At startup rather than on a
+    # timer: a restart is a natural moment to tidy, and a sweep that only ran
+    # while the app was up could never reach threads left by the previous run.
+    try:
+        from app.ai.threads import sweep_stale_threads
+        from shared.database import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as session:
+            closed = await sweep_stale_threads(session)
+        if closed:
+            logger.info(f"Closed {closed} stale chat threads")
+    except Exception as e:
+        logger.warning(f"Stale thread sweep skipped: {e}")
+
     # Warm the semantic search index in the background. The first call loads a
     # model from disk (downloading it once), so doing it here keeps that cost
     # off the first user query without delaying startup.

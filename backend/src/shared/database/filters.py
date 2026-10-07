@@ -69,3 +69,9 @@ def feed_order(now: Optional[datetime] = None):
         func.lower(EventModel.name).asc(),
         EventModel.id.asc(),
     )
+
+
+# A conversation nobody has added to in this long is over, whatever its
+# status says. Chosen to be comfortably longer than someone stepping away
+# mid-chat and comfortably shorter than a day.
+STALE_THREAD_HOURS = 6

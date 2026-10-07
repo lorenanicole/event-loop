@@ -737,6 +737,32 @@ class ChatStreamRequest(BaseModel):
     )
 
 
+@router.post(
+    "/chat/{thread_id}/close",
+    summary="End a conversation",
+    description=(
+        "Marks a conversation finished, so it stops counting as active.\n\n"
+        "Called when somebody starts a new chat. Without it a thread only ever "
+        "ended by exhausting its budget, which almost nobody does - 270 "
+        "conversations sat open, some of them days old.\n\n"
+        "Idempotent: closing an already-closed thread is a no-op, and an "
+        "unknown thread id is not an error. Nothing here is worth failing a "
+        "page load over."
+    ),
+    responses={200: {"content": {"application/json": {
+        "example": {"thread_id": "6782dca6-...", "closed": True}
+    }}}},
+)
+async def close_chat_thread(thread_id: str, db: AsyncSession = Depends(get_db)):
+    from app.ai.threads import close_thread
+
+    try:
+        changed = await close_thread(db, thread_id)
+    except Exception:
+        changed = False
+    return {"thread_id": thread_id, "closed": changed}
+
+
 @router.get(
     "/chat/greeting",
     summary="The assistant's opening message",

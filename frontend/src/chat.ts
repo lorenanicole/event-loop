@@ -160,6 +160,15 @@ class ChatWidget {
   }
 
   private startNewChat(): void {
+    // Tell the server the old conversation is over, so it stops counting as
+    // active. Fire-and-forget: a thread left open is untidy, not broken, and
+    // is swept at startup anyway - it must never delay opening a new chat.
+    if (this.threadId) {
+      const base = (import.meta as any).env?.VITE_API_URL || "http://localhost:8000";
+      fetch(`${base}/api/chat/${this.threadId}/close`, { method: "POST" })
+        .catch(() => {});
+    }
+
     // Reset thread ID to start a new conversation
     this.threadId = null;
     this.conversationEnded = false;
