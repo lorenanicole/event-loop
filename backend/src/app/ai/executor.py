@@ -200,7 +200,22 @@ class ChatExecutor:
                 else:
                     thread = ChatThreadModel()
                     db.add(thread)
-                    await db.flush()  # Get ID without committing
+                    # Committed immediately, not merely flushed.
+                    #
+                    # A flush opens SQLite's write transaction and leaves it
+                    # open, and the rest of this request is an agent run that
+                    # takes 10-60 seconds. SQLite allows one writer, so every
+                    # other chat - and the scraper - queued behind that lock
+                    # for the whole LLM round trip and then failed with
+                    # "database is locked". Six concurrent chats produced five
+                    # failures; it was never really about the scraper, which
+                    # is where the first two attempts at this went looking.
+                    #
+                    # The row is independent and needs no later rollback, so
+                    # committing here costs nothing and releases the lock
+                    # before the slow part starts.
+                    await db.commit()
+                    await db.refresh(thread)
                     thread_id = thread.id
 
                     # Record new session
@@ -306,7 +321,11 @@ class ChatExecutor:
                     token_count=len(message.split()),  # Simple estimate
                 )
                 db.add(user_msg)
-                await db.flush()
+                # Committed, not flushed, for the same reason as the thread
+                # row above: a flush holds SQLite's single write lock, and the
+                # agent run that follows takes 10-60 seconds. This was the
+                # second of the two writes opening that window.
+                await db.commit()
 
                 # State 2: Thinking
                 yield ThinkingEvent(

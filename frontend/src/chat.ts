@@ -205,6 +205,9 @@ class ChatWidget {
 
     // Stream state for UI
     let currentAssistantMessage = "";
+    // Whether the server signalled it had finished. Without this, a dropped
+    // connection and a genuinely empty answer were reported identically.
+    let streamCompleted = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -244,6 +247,7 @@ class ChatWidget {
         if (!dataLines.length) continue;
         try {
           const data = JSON.parse(dataLines.join("\n"));
+          if (eventType === "complete") streamCompleted = true;
           await this.handleStreamEvent(eventType, data, (msg) => {
             currentAssistantMessage += msg;
           });
@@ -257,8 +261,21 @@ class ChatWidget {
     console.log("Chat: Final message:", currentAssistantMessage);
     if (currentAssistantMessage) {
       this.addMessageToUI("assistant", currentAssistantMessage);
+    } else if (!streamCompleted) {
+      // The stream ended before the server said it was done. That is a lost
+      // connection, not a failure to answer - in development it is usually
+      // the reloader restarting mid-request - and reporting it as "No
+      // response received from AI" sent us looking in the wrong place more
+      // than once.
+      this.addMessageToUI(
+        "error",
+        "Lost the connection before I finished - the answer was on its way. Try asking again."
+      );
     } else {
-      this.addMessageToUI("error", "No response received from AI");
+      this.addMessageToUI(
+        "error",
+        "I got nothing back for that one. Try rewording it?"
+      );
     }
   }
 
@@ -337,16 +354,20 @@ class ChatWidget {
         const tokensLeft = (data.remaining_tokens as number) ?? -1;
         const exhausted = turnsLeft === 0 || tokensLeft === 0;
 
+        // Never the bare word "Complete" for a turn that finished normally -
+        // it reads as the conversation ending, and did: a mid-chat "✅
+        // Complete" chip had the user asking whether a new one had started.
+        // Say how much is left, or say nothing.
         this.showStatus(
           exhausted
             // Name the limit actually reached. It said "token limit" either
             // way, while the turn limit is the one that runs out first.
             ? turnsLeft === 0
-              ? `✅ Chat complete - no more questions left. Start a new chat!`
-              : `✅ Chat complete - reply budget used up. Start a new chat!`
+              ? `✶ That's the last question - hit New Chat to keep going`
+              : `✶ Reply budget used up - hit New Chat to keep going`
             : turnsLeft > 0
-              ? `✅ Complete (${turnsLeft} question${turnsLeft === 1 ? "" : "s"} left)`
-              : `✅ Complete`
+              ? `✓ ${turnsLeft} question${turnsLeft === 1 ? "" : "s"} left`
+              : ``
         );
         if (exhausted) {
           this.endConversation();
@@ -422,6 +443,12 @@ class ChatWidget {
   }
 
   private showStatus(status: string): void {
+    // An empty status means "nothing worth saying", so remove the chip rather
+    // than leave a blank one sitting under the reply.
+    if (!status) {
+      this.clearStatus();
+      return;
+    }
     let statusEl = this.messageList.querySelector(".chat-status") as HTMLElement;
     if (!statusEl) {
       statusEl = document.createElement("div");

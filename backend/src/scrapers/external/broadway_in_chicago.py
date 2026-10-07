@@ -26,6 +26,15 @@ from shared.models import EventCreate
 
 logger = logging.getLogger(__name__)
 
+# Rows written before the lock is released. SQLite serializes writers, and
+# these scrapers used to add several hundred events inside one transaction -
+# which held the write lock for minutes and failed every `INSERT INTO
+# chat_threads` a chat tried to make meanwhile, with "database is locked".
+# Raising busy_timeout to 30s did not help: no wait beats a transaction held
+# that long. Committing in batches does, by letting go between them.
+WRITE_BATCH = 50
+
+
 _MONTHS = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
     "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
@@ -213,7 +222,16 @@ class BroadwayInChicagoScraper:
             # geocoding step here as there is for coordinate-based sources.
             by_venue = {name: hood for name, _, hood in self.THEATRES.values()}
 
+            processed = 0
             for event_data in events:
+                processed += 1
+                if processed % WRITE_BATCH == 0:
+                    # Release the write lock so an
+                    # interactive write can get in.
+                    if is_async:
+                        await db.commit()
+                    else:
+                        db.commit()
                 url = event_data.origination_url
                 if is_async:
                     result = await db.execute(select(EventModel).filter_by(origination_url=url))

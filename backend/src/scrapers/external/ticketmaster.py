@@ -15,6 +15,15 @@ from app.ai.event_enrichment import extract_from_event_text
 
 logger = logging.getLogger(__name__)
 
+# Rows written before the lock is released. SQLite serializes writers, and
+# these scrapers used to add several hundred events inside one transaction -
+# which held the write lock for minutes and failed every `INSERT INTO
+# chat_threads` a chat tried to make meanwhile, with "database is locked".
+# Raising busy_timeout to 30s did not help: no wait beats a transaction held
+# that long. Committing in batches does, by letting go between them.
+WRITE_BATCH = 50
+
+
 
 def _meaningful(name) -> Optional[str]:
     """A classification name, or None when it is a placeholder.
@@ -310,7 +319,16 @@ class TicketmasterScraper:
             boundaries = await load_boundaries(db) if is_async else {}
             neighborhood_ids: dict[str, Optional[int]] = {}
 
+            processed = 0
             for event_data in events:
+                processed += 1
+                if processed % WRITE_BATCH == 0:
+                    # Release the write lock so an
+                    # interactive write can get in.
+                    if is_async:
+                        await db.commit()
+                    else:
+                        db.commit()
                 url = event_data.origination_url
                 if url in seen_urls:
                     continue
