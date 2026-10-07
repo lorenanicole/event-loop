@@ -542,8 +542,20 @@ async def search_google_events(context: RunContext[str], query: str) -> str:
                 results_text += f"   📅 {event.date}\n"
                 if event.location:
                     results_text += f"   📍 {event.location}\n"
+                # Tagged per event, not just in the header above.
+                # `search_local_db` labels every row with its source, this one
+                # labelled only the batch - so when the model merged the two
+                # lists into one answer, the database rows kept their
+                # provenance and these quietly lost theirs. The result read as
+                # if a live Google card and a scraped venue listing were
+                # equally confirmed.
+                results_text += "   📌 Live web search (Google Events)\n"
                 if event.url:
                     results_text += f"   🔗 [View Event]({event.url})\n"
+                else:
+                    # Google's event cards have no link, so there is nothing
+                    # for the reader to check. Say so rather than leave a gap.
+                    results_text += "   ⚠️ No event page available to verify\n"
                 results_text += "\n"
 
             return results_text
@@ -955,7 +967,20 @@ IMPORTANT:
 - Fall back to Google search only if local results are insufficient
 - Show top 3-5 best-matched events
 - Format results with emojis and clear information (date, location, links, price info)
-- Keep responses concise and helpful""",
+- Keep responses concise and helpful
+
+SAY WHERE EACH EVENT CAME FROM:
+Every event a tool returns carries a "📌" line naming its source. Keep that
+distinction in your answer - never merge the two kinds into one plain list.
+- Events from search_local_db come from our own scrapers of venue and city
+  calendars. Treat these as confirmed.
+- Events marked "Live web search (Google Events)" were just pulled off the
+  web, have not been checked by us, and usually have no page to link to.
+  Group them separately under a heading that says so, such as "From a live
+  web search (unverified)".
+If an event carries "⚠️ No event page available to verify", do not invent a
+link or a price for it, and tell the user there is nothing to confirm it
+against. Never present a web result as though it were in our database.""",
 )
 
 # Register tools with the agent
