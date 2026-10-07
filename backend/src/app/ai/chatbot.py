@@ -59,6 +59,16 @@ SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 # waits a minute for a chat reply, and the local database has already been
 # searched by this point, so a dropped web search degrades the answer rather
 # than breaking it.
+#
+# The failure is transient rather than a property of the query, which is the
+# tempting part: "watercolor workshop events" took 90s and 503'd, then
+# returned 10 events in 1.4s a few minutes later. So an automatic retry was
+# tried here, and is not kept. On the query still in the failing state
+# ("zine fair events") both attempts hit the 12s cap, turning one stalled
+# turn into 24 seconds of silence for nothing. Retrying is a coin flip that
+# doubles the worst case, so the retry is left to the user instead: the tool
+# says it timed out and offers to try again, and when they take it the call
+# usually lands in the fast path.
 SERPAPI_TIMEOUT = 12
 CLAUDE_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 DB_RESULT_THRESHOLD = 5  # Minimum results before using SerpAPI
