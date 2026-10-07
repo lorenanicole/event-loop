@@ -4,6 +4,7 @@ from .eventbrite import EventbriteScraper
 from .ticketmaster import TicketmasterScraper
 from .bandsintown import BandsinTownScraper
 from .broadway_in_chicago import BroadwayInChicagoScraper
+from .chicago_park_district import ChicagoParkDistrictScraper
 # from .eventscom import EventsComScraper  # Requires pyppeteer (not essential for API)
 
-__all__ = ["DO312Scraper", "YourChicagoGuideScraper", "EventbriteScraper", "TicketmasterScraper", "BandsinTownScraper", "BroadwayInChicagoScraper"]
+__all__ = ["DO312Scraper", "YourChicagoGuideScraper", "EventbriteScraper", "TicketmasterScraper", "BandsinTownScraper", "BroadwayInChicagoScraper", "ChicagoParkDistrictScraper"]

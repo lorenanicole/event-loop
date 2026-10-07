@@ -4,6 +4,8 @@ All fixtures are trimmed from the real markup each venue serves, so these
 tests fail if a shared extractor regresses without needing a live request.
 """
 
+from datetime import datetime
+
 from bs4 import BeautifulSoup
 
 from scrapers.custom.venue.chicago_events_scraper import (
@@ -12,6 +14,8 @@ from scrapers.custom.venue.chicago_events_scraper import (
 )
 from scrapers.custom.venue.venue_scraper import VenueConfig, parse_cost
 from scrapers.external.broadway_in_chicago import BroadwayInChicagoScraper
+from scrapers.external.chicago_park_district import ChicagoParkDistrictScraper
+from scrapers.external.ticketmaster import TicketmasterScraper
 
 
 def config(name="Test Venue", address="1 N Test St"):
@@ -231,6 +235,93 @@ class TestExtractDatedListItems:
     def test_card_with_only_a_date_is_skipped(self):
         html = '<ul><li class="a"><span>Oct 8</span><a href="/x">TICKETS</a></li></ul>'
         assert extract_dated_list_items(BeautifulSoup(html, "html.parser"), config()) == []
+
+
+class TestParkDistrictDates:
+    """Park District cards print dates three different ways."""
+
+    TODAY = datetime(2026, 10, 6)
+
+    def short(self, text):
+        start, end = ChicagoParkDistrictScraper._dates_from_short(text, self.TODAY)
+        fmt = lambda d: d.strftime("%Y-%m-%d") if d else None  # noqa: E731
+        return fmt(start), fmt(end)
+
+    def full(self, text):
+        start, end = ChicagoParkDistrictScraper._dates_from_text(text)
+        fmt = lambda d: d.strftime("%Y-%m-%d") if d else None  # noqa: E731
+        return fmt(start), fmt(end)
+
+    def test_full_run_with_years(self):
+        assert self.full("April 25, 2026 - October 31, 2026") == ("2026-04-25", "2026-10-31")
+
+    def test_full_single_date(self):
+        assert self.full("October 8, 2026") == ("2026-10-08", None)
+
+    def test_full_ignores_clock_times(self):
+        assert self.full("10:00 AM - 12:00 PM") == (None, None)
+
+    def test_yearless_single_date(self):
+        assert self.short("Oct 7") == ("2026-10-07", None)
+
+    def test_yearless_earlier_month_is_next_year(self):
+        """The listing only shows current and upcoming events."""
+        assert self.short("Feb 3") == ("2027-02-03", None)
+
+    def test_yearless_run_is_anchored_on_its_end(self):
+        """"Apr 25 - Oct 31" read in October is under way, not starting next April."""
+        assert self.short("Apr 25 - Oct 31") == ("2026-04-25", "2026-10-31")
+
+    def test_yearless_run_crossing_new_year(self):
+        assert self.short("Dec 20 - Jan 5") == ("2026-12-20", "2027-01-05")
+
+    def test_repeated_same_date_is_not_a_run(self):
+        assert self.short("Oct 7 Oct 7") == ("2026-10-07", None)
+
+    def test_no_date_at_all(self):
+        assert self.short("") == (None, None)
+
+    def test_venue_is_read_from_the_title(self):
+        """Park names are written into the title as "... at Austin TH"."""
+        venue = ChicagoParkDistrictScraper._venue_from_title
+        assert venue("Boxing Show at Fuller") == "Fuller"
+        assert venue("Community Climb at Steelworkers") == "Steelworkers"
+        assert venue("Drop-In Toddler Garden Hour") is None
+
+
+class TestTicketmasterPriceRanges:
+    """Discovery's structured priceRanges beats scanning the title text."""
+
+    price = staticmethod(TicketmasterScraper._price_from_ranges)
+
+    def test_range(self):
+        assert self.price([{"type": "standard", "min": 35.0, "max": 95.0}]) == "$35-$95"
+
+    def test_single_price(self):
+        assert self.price([{"type": "standard", "min": 49.0, "max": 49.0}]) == "$49"
+
+    def test_zero_is_free(self):
+        assert self.price([{"type": "standard", "min": 0, "max": 0}]) == "Free"
+
+    def test_resale_range_is_ignored(self):
+        """Resale runs far above what the event actually costs."""
+        ranges = [
+            {"type": "standard", "min": 20, "max": 40},
+            {"type": "resale", "min": 300, "max": 900},
+        ]
+        assert self.price(ranges) == "$20-$40"
+
+    def test_untyped_range_is_used(self):
+        assert self.price([{"min": 25.50, "max": 25.50}]) == "$25.50"
+
+    def test_whole_dollars_omit_cents(self):
+        assert self.price([{"min": 30.00, "max": 30.00}]) == "$30"
+
+    def test_missing_or_malformed_input(self):
+        assert self.price(None) is None
+        assert self.price([]) is None
+        assert self.price("nope") is None
+        assert self.price([{"currency": "USD"}]) is None
 
 
 class TestBroadwayInChicago:

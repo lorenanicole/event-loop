@@ -87,7 +87,7 @@ eventloop/
   browse or type into; selecting is the search, so there is no submit step
 
 ### **Neighborhoods**
-- 🗺️ **Events placed in 33 Chicago neighborhoods** - 95% of upcoming events
+- 🗺️ **Events placed in 76 Chicago neighborhoods** - 95% of upcoming events, North Side to South Side
 - 📐 **Point-in-polygon, not geocoding** - the city's 98 neighborhood boundaries are
   stored in the database, so placing a venue is a local geometry test: no API calls,
   no rate limits, ~3 ms
@@ -96,8 +96,7 @@ eventloop/
   once, rate limited, and cached permanently in `geocode_cache`
 
 ### **Data at Scale**
-- 📊 **2,400+ upcoming events** - 6 external sources plus 51 venue scrapers across
-  22 neighborhoods, North Side to South Side
+- 📊 **2,900+ upcoming events** - 7 external sources plus 55 venue scrapers
 - 💵 **Prices where venues publish them** - one `parse_cost()` normalizes "$25",
   "$20-$25", "Starting at $64", "No cover" and "Donation", and rejects the
   near-misses ("21+", "Show 9:30PM")
@@ -118,7 +117,7 @@ eventloop/
 - ⏳ **Exponential Backoff** - Retry transient failures smartly
 - 📊 **OpenTelemetry** - Counters, histograms, audit trails
 - 🔐 **Prompt Injection Defense** - Pattern detection, rate limiting, output validation
-- 🧪 **204 Tests** - Security, resilience, database, API, scraper coverage
+- 🧪 **221 Tests** - Security, resilience, database, API, scraper coverage
 
 ### **Production-Ready**
 - 🛡️ **Security** - Blocks prompt injections, validates outputs, sanitizes inputs
@@ -205,6 +204,11 @@ python db_safety.py restore data/backups/events-<stamp>.db   # if needed
 # Which venues are actually yielding events, one line each.
 python venue_health.py
 
+# Place Park District events without geocoding: the city's open data portal
+# publishes all 617 parks with boundary polygons, so one request replaces
+# hundreds of rate-limited geocodes.
+python place_park_district.py
+
 # One-time: load Chicago's neighborhood boundaries into the database.
 # After this, placing a coordinate is a local point-in-polygon test.
 python load_neighborhood_boundaries.py
@@ -244,7 +248,9 @@ inv coverage          # Generate coverage report
 ### **Scrapers (scrapers/)**
 - **External APIs**: Ticketmaster, Eventbrite, Bandsintown, DO312, Your Chicago Guide (WordPress)
 - **Multi-venue sources**: Broadway In Chicago, which programs five Loop-area
-  theaters that publish no calendar of their own
+  theaters that publish no calendar of their own; the Chicago Park District,
+  which is the broadest source on the South and West Sides where commercial
+  venues are thin
 - **Custom Web Scrapers**: Chicago venue listings, Timeout Chicago, Events.com
 - **Framework**: VenueScraper base class with config-driven extraction, plus
   `extractor_fn` for custom parsing and `page_extractor_fn` for venues whose

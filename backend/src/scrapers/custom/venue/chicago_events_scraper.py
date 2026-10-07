@@ -175,9 +175,11 @@ def jsonld_offer_cost(event_data: dict) -> Optional[str]:
     low, high = min(prices), max(prices)
     if low == 0 and high == 0:
         return "Free"
-    if low == high:
-        return f"${low:g}"
-    return f"${low:g}-${high:g}"
+
+    def money(value: float) -> str:
+        return f"${value:.0f}" if value == int(value) else f"${value:.2f}"
+
+    return money(low) if low == high else f"{money(low)}-{money(high)}"
 
 
 def extract_events_from_json_ld(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
@@ -1153,8 +1155,12 @@ def _title_from(lines: list[str]) -> Optional[str]:
         remainder = _WEEKDAY_RE.sub("", _RUN_RE.sub("", _ONE_RE.sub("", line)))
         if len(re.sub(r"[^A-Za-z]", "", remainder)) <= 3:
             continue
-        if len(line) >= 3:
-            return line
+        # Some venues run the title straight into the blurb in one text node
+        # ("Plim Plim in the Gateway Theater > DATE: October 15 TIME: 6:00pm").
+        # Cut at the marker that starts the blurb.
+        title = re.split(r"\s*[►▶‣]\s*|\s+DATE:\s*|\s+TIME:\s*", line)[0].strip()
+        if len(title) >= 3:
+            return title
     return None
 
 
@@ -2781,6 +2787,48 @@ CHICAGO_VENUES = {
         ),
     ],
 
+    "Albany Park": [
+        VenueConfig(
+            # In Mayfair, inside the Albany Park community area. The 658-seat
+            # Mayfair Theatre here is the city's main Irish music stage.
+            name="Irish American Heritage Center",
+            website_url="https://www.irish-american.org",
+            event_page_url="https://www.irish-american.org/events/",
+            category="music",
+            address="4626 N Knox Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_dated_list_items,
+        ),
+    ],
+
+    "Jefferson Park": [
+        VenueConfig(
+            name="Copernicus Center",
+            website_url="https://copernicuscenter.org",
+            event_page_url="https://copernicuscenter.org/events/",
+            category="music",
+            address="5216 W Lawrence Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_dated_list_items,
+        ),
+    ],
+
+    "Bronzeville": [
+        VenueConfig(
+            # The oldest Black American art center in the US, 1940.
+            name="South Side Community Art Center",
+            website_url="https://sscartcenter.org",
+            event_page_url="https://sscartcenter.org/events/",
+            category="arts",
+            address="3831 S Michigan Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_tribe_events,
+        ),
+    ],
+
     "Near South Side": [
         VenueConfig(
             name="Reggies Chicago",
@@ -2818,6 +2866,16 @@ CHICAGO_VENUES = {
     ],
 
     "Avondale": [
+        VenueConfig(
+            name="Chief O'Neill's Pub",
+            website_url="https://chiefoneillspub.com",
+            event_page_url="https://chiefoneillspub.com/events/",
+            category="music",
+            address="3471 N Elston Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_dated_list_items,
+        ),
         VenueConfig(
             name="Avondale Music Hall",
             website_url="https://avondalemusichall.com",

@@ -168,6 +168,14 @@ class TicketmasterScraper:
             # Extract cost and age_range from title and details
             cost, age_range = extract_from_event_text(title, details)
 
+            # Discovery returns a structured priceRanges array. Prefer it over
+            # whatever a title happens to mention: scanning text found a price
+            # for only 40 of 591 stored events, while the API carries one for
+            # most of them.
+            api_cost = self._price_from_ranges(data.get("priceRanges"))
+            if api_cost:
+                cost = api_cost
+
             event = EventCreate(
                 name=title,
                 date=event_date,
@@ -191,6 +199,43 @@ class TicketmasterScraper:
         except Exception as e:
             logger.debug(f"Parse error: {e}")
             return None
+
+    @staticmethod
+    def _price_from_ranges(price_ranges) -> Optional[str]:
+        """Render Ticketmaster's priceRanges array as a displayable price.
+
+        An event can carry several ranges (standard, VIP, resale), so the
+        overall span is what gets shown. Only `standard` ticket types are
+        considered where the type is given, since resale ranges can run far
+        above what the event actually costs.
+        """
+        if not isinstance(price_ranges, list):
+            return None
+
+        values = []
+        for entry in price_ranges:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("type") and entry["type"] != "standard":
+                continue
+            for key in ("min", "max"):
+                try:
+                    values.append(float(entry[key]))
+                except (KeyError, TypeError, ValueError):
+                    continue
+
+        if not values:
+            return None
+        low, high = min(values), max(values)
+        if low == 0 and high == 0:
+            return "Free"
+
+        def money(value: float) -> str:
+            # Whole dollars read better without cents; 25.5 must not become
+            # "$25.5", which looks like a truncation.
+            return f"${value:.0f}" if value == int(value) else f"${value:.2f}"
+
+        return money(low) if low == high else f"{money(low)}-{money(high)}"
 
     async def scrape_and_save(self, db: Union[Session, AsyncSession], days_ahead: int = 30) -> int:
         """Fetch and save events (sync or async)"""
@@ -252,6 +297,10 @@ class TicketmasterScraper:
                         existing.venue_name = event_data.venue_name
                     if neighborhood_id and not existing.neighborhood_id:
                         existing.neighborhood_id = neighborhood_id
+                    # Backfill the price onto rows stored before priceRanges
+                    # was read. Only ever filled in, never blanked out.
+                    if event_data.cost:
+                        existing.cost = event_data.cost
 
             if is_async:
                 await db.commit()
