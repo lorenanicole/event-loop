@@ -2703,6 +2703,107 @@ def extract_zanies_calendar(soup: BeautifulSoup, config: VenueConfig) -> list[Ve
     return events
 
 
+def extract_squarespace_calendar(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from a Squarespace (YUI) month-grid calendar.
+
+    Replaces a selector-based read of li[class*='item'], which was wrong in
+    three ways at once:
+
+    * The grid renders each entry twice - once in ul.itemlist for the cell and
+      again in ul.flyoutitemlist for the hover card - so every event was
+      stored twice.
+    * A multi-day run repeats in every day cell it spans, so a four-night
+      booking became four more copies. Eight rows for one show.
+    * get_text() with no separator glued the three sibling time spans
+      ("8:00 PM", "20:00", "8:00 PM") onto the title, producing
+      "20:008:00 PMChristopher McBride & The Whole Proof".
+
+    Read the real elements instead: the day number from the cell's marker, the
+    month and year from the grid header, and the title from its own span. A
+    run collapses to one event dated from its first cell, with date_end taken
+    from "(ends Oct 11)".
+    """
+    header = soup.select_one(".yui3-calendar-header, [class*=calendar-header]")
+    header_text = header.get_text(" ", strip=True) if header else ""
+    month_match = re.search(rf"({_MONTH})\s*(\d{{4}})", header_text, re.I)
+    if not month_match:
+        logger.warning(f"{config.name}: no month header on the calendar")
+        return []
+    month_name = month_match.group(1)[:3].title()
+    year = int(month_match.group(2))
+    month = _MONTHS.get(month_name)
+    if not month:
+        return []
+
+    # Keyed by the event's own link, so a run spanning four cells is one event
+    # and the earliest cell wins as its start date.
+    found: dict[str, dict] = {}
+
+    for cell in soup.select("td.yui3-calendar-day"):
+        daynum = cell.select_one(".marker-daynum")
+        if not daynum or not daynum.get_text(strip=True).isdigit():
+            continue
+        try:
+            when = datetime(year, month, int(daynum.get_text(strip=True)))
+        except ValueError:
+            continue
+
+        # ul.itemlist only - ul.flyoutitemlist is the same entries again.
+        for item in cell.select("ul.itemlist li.item"):
+            title_el = item.select_one("span.item-title")
+            title = title_el.get_text(" ", strip=True) if title_el else None
+            if not title:
+                continue
+
+            link = item.select_one("a[href]")
+            href = link.get("href") if link else None
+            key = href or f"{title.lower()}|{when:%Y-%m}"
+
+            time_el = item.select_one("span.item-time--12hr")
+            # Squarespace uses a narrow no-break space in times.
+            time_str = (time_el.get_text(" ", strip=True).replace("\u202f", " ")
+                        if time_el else None)
+
+            end_el = item.select_one("span.item-enddate")
+            date_end = None
+            if end_el:
+                end_match = re.search(rf"({_MONTH})\s*(\d{{1,2}})",
+                                      end_el.get_text(" ", strip=True), re.I)
+                if end_match:
+                    end_month = _MONTHS.get(end_match.group(1)[:3].title())
+                    if end_month:
+                        # A run crossing into January belongs to the next year.
+                        end_year = year + 1 if end_month < month else year
+                        date_end = f"{end_match.group(1)[:3].title()} {int(end_match.group(2))}, {end_year}"
+
+            existing = found.get(key)
+            if existing and existing["when"] <= when:
+                continue
+            found[key] = {
+                "when": when, "title": title, "time": time_str,
+                "date_end": date_end, "href": href,
+            }
+
+    events = []
+    for entry in found.values():
+        url = entry["href"] or config.event_page_url
+        if not url.startswith("http"):
+            url = f"{config.website_url.rstrip('/')}{url if url.startswith('/') else '/' + url}"
+        events.append(VenueEvent(
+            name=entry["title"][:200],
+            date=f"{entry['when']:%b} {entry['when'].day}, {entry['when'].year}",
+            date_end=entry["date_end"],
+            time=entry["time"],
+            location=f"{config.name}, {config.address}",
+            url=url,
+            venue_name=config.name,
+            category=config.category,
+        ))
+
+    logger.info(f"{config.name}: extracted {len(events)} events from the calendar grid")
+    return events
+
+
 def extract_squarespace_events(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from Squarespace li[class*='item'] structure."""
     events = []
@@ -2841,7 +2942,7 @@ CHICAGO_VENUES = {
             address="806 S Plymouth Ct",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_squarespace_events,
+            extractor_fn=extract_squarespace_calendar,
         ),
         VenueConfig(
             name="Auditorium Theatre",
