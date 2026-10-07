@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from shared.categories import infer_category, normalize_category
+from shared.categories import classify_all, infer_category, normalize_category
 
 
 class EventCreate(BaseModel):
@@ -21,7 +21,17 @@ class EventCreate(BaseModel):
         "wrote it. Free text, not parsed: '7:30 PM', 'Doors 8 pm', 'Show: 8 pm'.",
     )
     time_end: Optional[str] = None
-    category: str = Field(..., description="Category slug, e.g. 'music', 'theater', 'comedy'")
+    category: str = Field(
+        ...,
+        description="The primary category, shown on a tile and a result card.",
+    )
+    categories: Optional[list[str]] = Field(
+        default=None,
+        description="Every applicable category, primary first. One event often "
+        "belongs to several - a drag show at a music venue is both Music and "
+        "LGBTQ - and a category filter matches any of them. Derived from the "
+        "title when not supplied.",
+    )
     details: Optional[str] = Field(default=None, description="Description, where the source gives one")
     origination_url: str = Field(
         ...,
@@ -60,6 +70,11 @@ class EventCreate(BaseModel):
         refined = infer_category(self.name, self.category)
         if refined != self.category:
             object.__setattr__(self, "category", refined)
+        # Every applicable label, primary first. A trans pride festival is
+        # both Community and LGBTQ; storing one made it invisible under the
+        # other.
+        if not self.categories:
+            object.__setattr__(self, "categories", classify_all(self.name, self.category))
         return self
 
     @field_validator("category")

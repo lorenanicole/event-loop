@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, Path, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import ConfigDict, BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import and_, or_, func, select
+from sqlalchemy import String, and_, cast, func, or_, select
 
 from shared.database import get_db, start_of_day, upcoming_events_filter
 from shared.database.models import (
@@ -78,6 +78,22 @@ _VALIDATION_ERROR = {
         }}},
     }
 }
+
+
+def _category_matches(label: str):
+    """Match an exact category against the primary or any secondary label.
+
+    Picking "LGBTQ" has to return a drag show whose primary category is Music,
+    or the multi-label data would change nothing for anyone clicking a tile.
+    Stored categories carry stray whitespace ("Poetry & Literary "), so both
+    sides are trimmed rather than trusting the data to be clean. The label is
+    quoted inside the JSON match so "Arts" cannot match "Arts & Crafts".
+    """
+    wanted = label.strip()
+    return or_(
+        func.trim(EventModel.category).ilike(wanted),
+        cast(EventModel.categories, String).ilike(f'%"{wanted}"%'),
+    )
 
 
 @router.get(
@@ -321,19 +337,29 @@ async def get_filter_counts(
                 )
             )
         if with_category and category:
-            stmt = stmt.where(func.trim(EventModel.category).ilike(category.strip()))
+            stmt = stmt.where(_category_matches(category))
         if with_neighborhood and neighborhood:
             stmt = stmt.where(NeighborhoodModel.name == neighborhood)
         return stmt
 
     # Categories: narrowed by neighborhood and timeframe, not by category.
+    #
+    # Counted across every label rather than just the primary, because the
+    # filter matches every label too - an LGBTQ tile reading only the events
+    # whose *primary* category is LGBTQ would undercount the drag shows filed
+    # under Music, and the number would stop matching what clicking it
+    # returns. json_each expands the array; events predating the column fall
+    # back to their single category.
+    label = func.json_each(
+        func.coalesce(EventModel.categories, func.json_array(EventModel.category))
+    ).table_valued("value", joins_implicitly=True)
     category_stmt = constrain(
-        select(EventModel.category, func.count(EventModel.id).label("n"))
+        select(label.c.value, func.count(EventModel.id).label("n"))
         .outerjoin(NeighborhoodModel, EventModel.neighborhood_id == NeighborhoodModel.id)
         .where(EventModel.category.isnot(None)),
         with_category=False,
         with_neighborhood=True,
-    ).group_by(EventModel.category).order_by(func.count(EventModel.id).desc())
+    ).group_by(label.c.value).order_by(func.count(EventModel.id).desc())
 
     # Neighborhoods: narrowed by category and timeframe, not by neighborhood.
     neighborhood_stmt = constrain(
@@ -472,7 +498,9 @@ async def search_events(
 
     # Filter by category
     if category_filters:
-        condition = category_filter(EventModel.category, category_filters)
+        condition = category_filter(
+            EventModel.category, category_filters, EventModel.categories
+        )
         if condition is not None:
             filters.append(condition)
 
@@ -488,12 +516,7 @@ async def search_events(
     # event's *title*, so picking "Health & Wellness" or "Cannabis" returned
     # nothing at all - no event is literally named that.
     if search.category:
-        # Stored categories carry stray whitespace ("Poetry & Literary "), and
-        # the listing endpoint hands back a trimmed label, so trim both sides
-        # rather than relying on the data being clean.
-        db_query = db_query.filter(
-            func.trim(EventModel.category).ilike(search.category.strip())
-        )
+        db_query = db_query.filter(_category_matches(search.category))
 
     # Neighborhood is a structured filter rather than a word in the query
     # string, so picking a tile narrows results exactly instead of relying on

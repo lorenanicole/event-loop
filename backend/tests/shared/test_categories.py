@@ -11,6 +11,7 @@ from sqlalchemy.orm import declarative_base
 
 from shared.categories import (
     category_filter,
+    classify_all,
     classify_from_title,
     infer_category,
     category_labels,
@@ -233,3 +234,66 @@ class TestClassifyFromTitle:
 
     def test_fallback_is_overridable(self):
         assert classify_from_title("", fallback="Other") == "Other"
+
+
+class TestClassifyAll:
+    """One event often belongs to several categories.
+
+    Storing a single label made an event findable under one and invisible
+    under the others: a trans pride festival was Community and not LGBTQ, a
+    drag show at a music venue was Music and not LGBTQ.
+    """
+
+    def test_trans_pride_is_community_and_lgbtq(self):
+        assert classify_all(
+            "Transilience: Chicago Trans Pride Festival at Eckhart", "Community"
+        ) == ["Community", "LGBTQ"]
+
+    def test_a_drag_show_at_a_music_venue_is_both(self):
+        assert classify_all("MALL DRAG CHICAGO", "Music") == ["Music", "LGBTQ"]
+
+    def test_a_drag_show_at_a_theater_is_both(self):
+        assert classify_all("Kiki Queens - Drag to the Future", "Theater") == [
+            "Theater", "LGBTQ"
+        ]
+
+    def test_a_user_group_meeting_is_tech_and_community(self):
+        assert classify_all("CHIPY __MAIN__ MEETING", "Tech / Educational") == [
+            "Tech / Educational", "Community"
+        ]
+
+    def test_the_primary_is_whatever_single_label_would_have_chosen(self):
+        """Nothing that displays `category` had to change."""
+        for title, fallback in [("MALL DRAG CHICAGO", "Music"),
+                                ("SEWING FREAK", "Music"),
+                                ("Kiefer w/ Shibo", "Music")]:
+            assert classify_all(title, fallback)[0] == infer_category(title, fallback)
+
+    def test_an_overridden_venue_category_does_not_come_back_as_a_secondary(self):
+        """The crux: a sewing class at a music hall is not also Music.
+
+        Keeping it would put the class straight back into "music tonight in
+        Avondale", which is the complaint infer_category exists to fix.
+        """
+        assert classify_all("SEWING FREAK", "Music") == ["Arts & Crafts"]
+        assert classify_all("Wine Wednesday Half-Priced Wine", "Music") == ["Food & Drink"]
+
+    def test_an_ordinary_event_keeps_one_label(self):
+        assert classify_all("Kiefer w/ Shibo", "Music") == ["Music"]
+
+    def test_capped(self):
+        from shared.categories import MAX_CATEGORIES
+        labels = classify_all(
+            "Drag Comedy Yoga Film Brunch Workshop Gallery Concert", "Music"
+        )
+        assert len(labels) <= MAX_CATEGORIES
+
+    def test_no_duplicates(self):
+        labels = classify_all("Comedy Comedy Comedy Show", "Comedy")
+        assert len(labels) == len(set(labels))
+
+    def test_labels_are_normalized(self):
+        assert classify_all("a gig", "music")[0] == "Music"
+
+    def test_missing_title_still_yields_the_venue_category(self):
+        assert classify_all(None, "Music") == ["Music"]

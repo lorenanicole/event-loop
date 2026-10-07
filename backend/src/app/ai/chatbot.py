@@ -138,7 +138,9 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
             if categories:
                 # Prefix-matched via the shared vocabulary, so "art" reaches
                 # every Arts* label rather than needing an exact value.
-                condition = category_filter(EventModel.category, categories)
+                condition = category_filter(
+                    EventModel.category, categories, EventModel.categories
+                )
                 if condition is not None:
                     filters.append(condition)
 

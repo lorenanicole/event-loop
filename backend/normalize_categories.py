@@ -14,17 +14,27 @@ Two steps, the same ones EventCreate and save_events_to_db apply:
    A venue scraper labels everything with the venue's own category, so a wine
    special at a music pub arrives as "Music". See infer_category.
 
+3. Fill in every applicable label, not just the primary.
+
+   A trans pride festival is both Community and LGBTQ; a drag show at a music
+   venue is both Music and LGBTQ. See classify_all.
+
     python normalize_categories.py --dry-run
     python normalize_categories.py
 """
 
+import json
 import sqlite3
 import sys
 from collections import Counter
 
 sys.path.insert(0, "src")
 
-from shared.categories import infer_category, normalize_category  # noqa: E402
+from shared.categories import (  # noqa: E402
+    classify_all,
+    infer_category,
+    normalize_category,
+)
 
 DB_PATH = "data/events.db"
 
@@ -60,6 +70,18 @@ def main() -> None:
             "UPDATE events SET category = ? WHERE id = ?",
             [(new, event_id) for event_id, _, new in changes],
         )
+        db.commit()
+
+    # Step 3: every applicable label, not just the primary. One event often
+    # belongs to several, and storing one made it invisible under the others.
+    labelled = [
+        (json.dumps(classify_all(name, normalize_category(current) or current)), event_id)
+        for event_id, name, current in rows
+    ]
+    multi = sum(1 for payload, _ in labelled if len(json.loads(payload)) > 1)
+    print(f"\n{multi} of {len(labelled)} events carry more than one label")
+    if not dry_run:
+        db.executemany("UPDATE events SET categories = ? WHERE id = ?", labelled)
         db.commit()
 
     after = {r[0] for r in db.execute(

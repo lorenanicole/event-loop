@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select
 from shared.database.models import EventModel, VenueModel, NeighborhoodModel, Base
 from shared.database.neighborhoods import canonical_neighborhood, resolve_neighborhood_id
-from shared.categories import infer_category, normalize_category
+from shared.categories import classify_all, infer_category, normalize_category
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -3799,6 +3799,9 @@ async def save_events_to_db(
                         category=normalize_category(
                             infer_category(event.name, event.category)
                         ),
+                        # Every applicable label, so the event is findable
+                        # under its secondary categories too.
+                        categories=classify_all(event.name, event.category),
                         address=event.location,
                         venue_name=event.venue_name or config.name,
                         origination_url=origination_url,

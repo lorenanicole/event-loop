@@ -1,6 +1,17 @@
 from datetime import datetime
 import uuid
-from sqlalchemy import Column, Integer, String, Text, DateTime, Index, ForeignKey, Float, Boolean
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -93,7 +104,16 @@ class EventModel(Base):
     date_end = Column(DateTime, nullable=True, index=True)  # Event end date (for multi-day events)
     time = Column(String(50), nullable=True)  # Start time (e.g., "7:30 PM")
     time_end = Column(String(50), nullable=True)  # End time (e.g., "10:00 PM")
+    # The label shown on a tile and in a result card. One event genuinely
+    # belongs to more than one, so this is the primary of several rather than
+    # the only one - see `categories`.
     category = Column(String(100), index=True)
+    # Every applicable label, as a JSON array with `category` first. A trans
+    # pride festival is both LGBTQ and Community; a drag show at a music venue
+    # is both Music and LGBTQ. Filtering matches any of them, so an event is
+    # findable under each, while `category` stays single-valued and nothing
+    # downstream had to change to display it.
+    categories = Column(JSON, nullable=True)
     details = Column(Text, nullable=True)
     origination_url = Column(String(500), unique=True)
     date_retrieved = Column(DateTime, default=datetime.utcnow)
