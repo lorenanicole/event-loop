@@ -1,5 +1,6 @@
 import os
 import logging
+import re
 import httpx
 import asyncio
 from pathlib import Path
@@ -12,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 from typing import Optional, Union, Literal
 from shared.database import AsyncSessionLocal, start_of_day, upcoming_events_filter
-from shared.database.models import EventModel
+from shared.database.models import EventModel, NeighborhoodModel
+from shared.database.neighborhoods import NEIGHBORHOOD_ALIASES
 from app.ai.smart_search import get_smart_search_tool
 from app.ai.semantic_index import event_index
 from app.logging import get_logger
@@ -104,15 +106,25 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
         async with AsyncSessionLocal() as db:
             query_str = query.lower()
 
-            keywords = _extract_keywords(query_str)
+            neighborhoods = await _extract_neighborhoods(db, query_str)
+            keywords = _strip_neighborhoods(_extract_keywords(query_str), neighborhoods)
             categories = _extract_categories(query_str)
             date_range = _extract_date_range(query_str)
 
             logger.info(f"Extracted keywords ({len(keywords)}): {keywords[:6]}")
             logger.info(f"Extracted categories: {categories}")
+            logger.info(f"Extracted neighborhoods: {neighborhoods}")
 
             db_query = select(EventModel)
             filters = []
+
+            # Named neighborhoods are a hard constraint, exactly as in the UI:
+            # joined and matched on name, not OR-ed in with the keywords. Several
+            # can be named at once, in which case any of them will do.
+            if neighborhoods:
+                db_query = db_query.join(
+                    NeighborhoodModel, EventModel.neighborhood_id == NeighborhoodModel.id
+                ).filter(NeighborhoodModel.name.in_(neighborhoods))
 
             if keywords:
                 keyword_conditions = [EventModel.name.ilike(f"%{kw}%") for kw in keywords]
@@ -156,7 +168,9 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
             # covers queries that share no keyword with the event at all
             # ("plant workshops" vs "foraging wild plants") - often sparing a
             # paid SerpAPI call.
-            semantic_matches = await _semantic_candidates(db, query, date_range)
+            semantic_matches = await _semantic_candidates(
+                db, query, date_range, neighborhoods=neighborhoods
+            )
             by_id = {e.id: e for e in results}
             for event in semantic_matches:
                 by_id.setdefault(event.id, event)
@@ -482,7 +496,10 @@ async def _semantic_scores(db, query: str, event_ids: list[int]) -> dict[int, fl
         return {}
 
 
-async def _semantic_candidates(db, query: str, date_range, limit: int = 20) -> list[EventModel]:
+async def _semantic_candidates(
+    db, query: str, date_range, limit: int = 20,
+    neighborhoods: Optional[list[str]] = None,
+) -> list[EventModel]:
     """Find events by meaning, to stand alongside the keyword candidates."""
     if not await _ensure_semantic_index(db):
         return []
@@ -498,6 +515,13 @@ async def _semantic_candidates(db, query: str, date_range, limit: int = 20) -> l
     # still has to be honoured - "this weekend" means this weekend.
     stmt = select(EventModel).where(EventModel.id.in_([eid for eid, _ in matches]))
     stmt = stmt.where(upcoming_events_filter())
+    # The index searches the whole city, so named neighborhoods have to
+    # constrain these candidates too - otherwise semantic matches from
+    # elsewhere leak past the filter the keyword query just applied.
+    if neighborhoods:
+        stmt = stmt.join(
+            NeighborhoodModel, EventModel.neighborhood_id == NeighborhoodModel.id
+        ).where(NeighborhoodModel.name.in_(neighborhoods))
     if date_range:
         start_date, end_date = date_range
         stmt = stmt.where(
@@ -592,6 +616,65 @@ STOP_WORDS = {
 # OR-ing more terms than this against event names drags in junk faster than it
 # finds anything. Matches the cap the API's own keyword extraction uses.
 MAX_KEYWORDS = 5
+
+
+def _normalize_place(text: str) -> str:
+    """Lowercase and collapse a place name or query for literal matching."""
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9& ]", " ", text.lower())).strip()
+
+
+async def _extract_neighborhoods(db, query: str) -> list[str]:
+    """Find every neighborhood named in the query, matching the UI's filter.
+
+    The UI filters on NeighborhoodModel.name, so the chatbot has to as well:
+    treating "Pilsen" as a keyword matches it against the event *title*, which
+    almost never hits, because the neighborhood is a relationship rather than
+    words in the name.
+
+    A query can name several ("in Logan Square, Humboldt Park"), so all of
+    them are returned and OR-ed together. Names are matched longest-first and
+    the matched span is consumed, so "West Loop" is not also read as "Loop",
+    and "West Pullman" not as "Pullman".
+
+    Naming no neighborhood - "plant workshops this weekend", or "in Chicago",
+    which is not a neighborhood - returns nothing and searches the whole city.
+    """
+    names = (await db.execute(select(NeighborhoodModel.name))).scalars().all()
+
+    # Match on what people type as well as what we store: "lakeview" and
+    # "wrigleyville" both mean Lake View. The alias table is the same one the
+    # boundary loader uses, so the two cannot drift apart.
+    candidates = {_normalize_place(n): n for n in names}
+    for spoken, canonical in NEIGHBORHOOD_ALIASES.items():
+        if canonical in names:
+            candidates.setdefault(_normalize_place(spoken), canonical)
+
+    haystack = f" {_normalize_place(query)} "
+    found = []
+    for needle in sorted(candidates, key=len, reverse=True):
+        if needle and f" {needle} " in haystack:
+            name = candidates[needle]
+            if name not in found:
+                found.append(name)
+            # Consume the span so a shorter nested name cannot match it too.
+            haystack = haystack.replace(f" {needle} ", "  ")
+    return found
+
+
+def _strip_neighborhoods(keywords: list[str], neighborhoods: list[str]) -> list[str]:
+    """Drop the neighborhoods' own words from the keyword list.
+
+    Otherwise the name constrains the title as well as the location, and
+    "comedy in Pilsen" demands "pilsen" appear in the event's name.
+    """
+    parts = {w for name in neighborhoods for w in _normalize_place(name).split()}
+    # Also drop the spelling the user actually typed: "shows in wrigleyville"
+    # resolves to Lake View, but "wrigleyville" would otherwise stay behind as
+    # a keyword and be matched against event titles.
+    for spoken, canonical in NEIGHBORHOOD_ALIASES.items():
+        if canonical in neighborhoods:
+            parts.update(_normalize_place(spoken).split())
+    return [kw for kw in keywords if kw not in parts]
 
 
 def _extract_keywords(query: str) -> list[str]:

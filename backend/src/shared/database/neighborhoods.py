@@ -17,7 +17,15 @@ logger = logging.getLogger(__name__)
 # A few neighborhoods are spelled more than one way across our sources; collapse
 # them so one place does not end up as two tiles in the UI.
 NEIGHBORHOOD_ALIASES = {
+    # How people type it, versus how the city spells it.
     "lakeview": "Lake View",
+    "wrigleyville": "Lake View",
+    "boystown": "Lake View",
+    "northalsted": "Lake View",
+    "ukie village": "Ukrainian Village",
+    "the loop": "Loop",
+    "south loop": "Near South Side",
+    "bronzeville/douglas": "Bronzeville",
     # The city's neighborhood layer and its community-area list disagree on
     # these, which left us holding two rows for one place - one with the
     # boundary, one with the events. Fold each onto the community-area name,
