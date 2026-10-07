@@ -36,10 +36,24 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
         "words": ["theater", "theatre", "play", "drama", "broadway", "musical"],
         # Both spellings are stored, from different sources.
         "prefixes": ["theater", "theatre"],
+        # "Arts & Theatre" is Ticketmaster's top-level segment rather than a
+        # category, and it is where its theater lives - Operation Mincemeat,
+        # Jekyll & Hyde, Drunk Shakespeare. A prefix cannot reach it from here
+        # without also claiming every other Arts label, so name it outright.
+        # It keeps its place under "art" too, because the segment genuinely
+        # spans both and the source does not separate them.
+        "labels": ["Arts & Theatre"],
     },
     "art": {
         "words": ["art", "arts", "gallery", "exhibition", "exhibit", "installation", "mural"],
-        "prefixes": ["art"],
+        # Named outright rather than matched as "art%", which would sweep in
+        # Ticketmaster's "Arts & Theatre" segment and answer "art galleries"
+        # with 185 Broadway shows. These three are the genuine arts labels:
+        # arts-venue programming, participatory making, and do312's culture
+        # bucket. They are kept apart from each other on purpose - a craft
+        # workshop and a gallery talk are not the same outing.
+        "prefixes": [],
+        "labels": ["Arts", "Arts & Crafts", "Arts & Culture"],
     },
     "film": {
         "words": ["film", "movie", "cinema", "screening"],
@@ -114,13 +128,24 @@ def category_prefixes(concepts: list[str]) -> list[str]:
     return [p for c in concepts for p in CATEGORY_CONCEPTS.get(c, {}).get("prefixes", [])]
 
 
+def category_labels(concepts: list[str]) -> list[str]:
+    """Stored values a concept claims outright, where a prefix cannot reach them.
+
+    Needed where a source's label does not begin with the concept's own name -
+    Ticketmaster files theater under "Arts & Theatre" - and where a prefix
+    would overreach if widened to catch it.
+    """
+    return [v for c in concepts for v in CATEGORY_CONCEPTS.get(c, {}).get("labels", [])]
+
+
 def category_filter(column, concepts: list[str]):
     """A SQLAlchemy condition matching any stored category for these concepts.
 
-    Returns None when nothing matched, so a caller can tell "no category was
-    named" apart from "a category was named and nothing has it".
+    Returns None when no concept was recognized, so a caller can tell "no
+    category was named" apart from "a category was named and nothing has it".
     """
-    prefixes = category_prefixes(concepts)
-    if not prefixes:
+    clauses = [column.ilike(f"{prefix}%") for prefix in category_prefixes(concepts)]
+    clauses += [column.ilike(label) for label in category_labels(concepts)]
+    if not clauses:
         return None
-    return or_(*[column.ilike(f"{prefix}%") for prefix in prefixes])
+    return or_(*clauses)

@@ -152,16 +152,40 @@ export class SearchApp {
   }
 
   /** The three fill-in-the-blank slots, in sentence order. */
+  /**
+   * Capitalize a category for display, leaving acronyms and deliberate
+   * internal capitals alone - LGBTQ and DJs must survive.
+   */
+  private static displayCategory(value: string): string {
+    const acronyms = new Set(['LGBTQ', 'TV', 'DJ', 'BYOB', 'NYE', 'EDM'])
+    return value
+      .split(' ')
+      .map(word =>
+        word
+          .split('/')
+          .map(part => {
+            if (/[A-Z]/.test(part.slice(1))) return part
+            if (acronyms.has(part.toUpperCase())) return part.toUpperCase()
+            return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+          })
+          .join('/'),
+      )
+      .join(' ')
+  }
+
   private slots() {
     const categories = this.categories.length > 0
       ? this.categories
-      : ['music', 'comedy', 'theater', 'sports', 'art', 'food', 'film', 'dance']
+      : ['Music', 'Comedy', 'Theater', 'Sports', 'Arts', 'Food & Drink', 'Film', 'Community']
     return [
       {
         key: 'what',
         label: 'anything',
         value: this.selectedKeyword,
-        options: categories.map(c => ({ value: c, label: c })),
+        // The value sent to the API is the stored category, untouched; only
+        // the label is capitalized. The backend normalizes case on the way in,
+        // so this is a safety net for anything older or from a new source.
+        options: categories.map(c => ({ value: c, label: SearchApp.displayCategory(c) })),
         clearable: true,
       },
       {
@@ -336,8 +360,8 @@ export class SearchApp {
           </div>
 
           <div id="browse-panel" class="hidden mt-8 text-left">
-            ${this.renderBrowseGroup('what', 'Event type', what.options, what.value)}
-            ${this.renderBrowseGroup('where', 'Neighborhood', where.options, where.value, true)}
+            ${this.renderBrowseGroup('what', 'Event type', what.options, what.value, what.label)}
+            ${this.renderBrowseGroup('where', 'Neighborhood', where.options, where.value, where.label)}
           </div>
         </div>
       </section>
@@ -350,18 +374,25 @@ export class SearchApp {
     heading: string,
     options: { value: string; label: string; count?: number }[],
     selected: string | null,
-    clearable = false,
+    // The slot's own wording for "no filter" - "anything" for event type,
+    // "anywhere in Chicago" for neighborhood - so the pill reads the same way
+    // the sentence above does. Previously hardcoded to "anywhere", which is
+    // why event type had no way to clear itself at all.
+    clearLabel?: string,
   ) {
+    // "anywhere in Chicago" is the sentence's phrasing; as a pill among
+    // neighborhoods the city name is redundant.
+    const clearText = clearLabel?.replace(/ in Chicago$/, '')
     return `
       <div class="mb-8">
         <h2 class="text-xs text-gray-400 mb-3 uppercase tracking-wider">${heading}</h2>
         <div class="flex flex-wrap gap-2">
-          ${clearable ? `
+          ${clearText ? `
             <button class="browse-tag px-3 py-1.5 rounded-full text-sm border transition-all ${
               selected === null
                 ? 'border-primary-600 bg-primary-600 text-white'
                 : 'border-gray-200 text-gray-600 hover:border-primary-600'
-            }" data-combo-select="${slotKey}" data-value="">anywhere</button>
+            }" data-combo-select="${slotKey}" data-value="">${this.escapeHtml(clearText)}</button>
           ` : ''}
           ${options.map(o => `
             <button
@@ -525,7 +556,7 @@ export class SearchApp {
 
           <div class="flex flex-wrap items-center gap-2 pt-1">
             <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${categoryColor}">
-              ${this.escapeHtml(event.category)}
+              ${this.escapeHtml(SearchApp.displayCategory(event.category))}
             </span>
             ${cost ? `
               <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${

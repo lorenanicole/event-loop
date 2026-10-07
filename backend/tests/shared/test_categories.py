@@ -11,6 +11,7 @@ from sqlalchemy.orm import declarative_base
 
 from shared.categories import (
     category_filter,
+    category_labels,
     category_prefixes,
     extract_category_concepts,
     normalize_category,
@@ -107,18 +108,47 @@ class TestCategoryPrefixes:
         assert category_prefixes(["nonsense"]) == []
 
 
+class TestConceptLabels:
+    """Labels a concept claims outright, where a prefix cannot reach them."""
+
+    def test_theater_claims_ticketmasters_segment(self):
+        """Ticketmaster files its theater under "Arts & Theatre"."""
+        assert "Arts & Theatre" in category_labels(["theater"])
+
+    def test_art_names_the_genuine_arts_labels(self):
+        assert sorted(category_labels(["art"])) == [
+            "Arts", "Arts & Crafts", "Arts & Culture"
+        ]
+
+    def test_art_does_not_claim_the_theater_segment(self):
+        """Otherwise "art galleries" answers with 185 Broadway shows."""
+        assert "Arts & Theatre" not in category_labels(["art"])
+
+    def test_art_uses_no_bare_prefix(self):
+        """"art%" would sweep in every Arts label, theater included."""
+        assert category_prefixes(["art"]) == []
+
+
 class TestCategoryFilter:
     def test_none_when_no_concepts(self):
         """Distinguishes "no category named" from "none matched"."""
         assert category_filter(Row.category, []) is None
 
-    def test_matches_every_arts_variant_by_prefix(self):
+    def test_art_matches_its_named_labels(self):
         clause = str(category_filter(Row.category, ["art"]).compile(
             compile_kwargs={"literal_binds": True}))
-        assert "art%" in clause.lower()
+        assert "arts & crafts" in clause.lower()
+        assert "arts & culture" in clause.lower()
+
+    def test_theater_spans_all_three_stored_labels(self):
+        clause = str(category_filter(Row.category, ["theater"]).compile(
+            compile_kwargs={"literal_binds": True})).lower()
+        assert "theater%" in clause and "theatre%" in clause
+        assert "arts & theatre" in clause
 
     def test_prefix_not_substring(self):
-        """"%art%" would also match "Parties"; "art%" does not."""
-        clause = str(category_filter(Row.category, ["art"]).compile(
+        """"%music%" would also match "Music & Film Fest" mid-string."""
+        clause = str(category_filter(Row.category, ["music"]).compile(
             compile_kwargs={"literal_binds": True}))
-        assert "%art%" not in clause.lower()
+        assert "%music%" not in clause.lower()
+        assert "music%" in clause.lower()
