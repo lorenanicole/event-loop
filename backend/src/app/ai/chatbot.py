@@ -11,6 +11,8 @@ from pydantic_ai.models.anthropic import AnthropicModel
 from sqlalchemy import and_, or_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
+
+from shared.localtime import CHICAGO
 from typing import Optional, Union, Literal
 from shared.database import AsyncSessionLocal, start_of_day, upcoming_events_filter
 from shared.database.models import EventModel, NeighborhoodModel
@@ -1038,6 +1040,36 @@ invent a link, a price or a time for it. Never present a web result as though
 it were in our database. Each event also carries a category in [square
 brackets] - use that wording rather than inventing your own.""",
 )
+
+@agent.system_prompt
+def todays_date() -> str:
+    """Tell the model what day it is.
+
+    It had no idea, and said so in its own answers: asked for "free theater
+    this weekend", it replied "I don't know today's date, so I can't tell you
+    which ones fall on this weekend" and then listed events on November 1 and
+    November 14. The date filtering in `search_local_db` is unaffected - that
+    happens in Python - but anything the model has to reason about itself
+    ("this weekend", "is that soon?", ordering a reply by day) was guesswork.
+
+    Evaluated per run rather than baked into the static prompt, because the
+    process outlives the day: a server started on Friday would otherwise still
+    believe it was Friday a week later.
+    """
+    now = datetime.now(CHICAGO)
+    weekend = "today is the weekend" if now.weekday() >= 5 else (
+        f"the coming weekend is "
+        f"{(now + timedelta(days=(5 - now.weekday()) % 7)):%A %B %-d} and "
+        f"{(now + timedelta(days=(6 - now.weekday()) % 7)):%A %B %-d}"
+    )
+    return (
+        f"Today is {now:%A, %B %-d, %Y} in Chicago ({now:%Z}), and {weekend}. "
+        "Use this for any relative date a user mentions - tonight, this "
+        "weekend, next week - and never claim you do not know the date. "
+        "When a result's date is outside what the user asked for, say so "
+        "rather than listing it as though it matched."
+    )
+
 
 # Register tools with the agent
 agent.tool(search_local_db)

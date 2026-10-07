@@ -261,7 +261,7 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
         "canonical": "Holiday & Seasonal",
         "words": [
             "halloween", "haunted", "haunt", "spooktacular", "spooky",
-            "pumpkin", "jack-o-lantern", "trick or treat", "day of the dead",
+            "jack-o-lantern", "trick or treat", "day of the dead",
             "dia de los muertos", "christmas", "holiday", "hanukkah",
             "kwanzaa", "new year", "nye", "thanksgiving", "easter",
             "valentine", "lunar new year", "juneteenth",
@@ -270,7 +270,16 @@ CATEGORY_CONCEPTS: dict[str, dict[str, list[str]]] = {
             # "Drunk Dracula", "Terror in the Tropics", "Howl-O-Ween Canine
             # Cruise". None of them contains the word Halloween.
             "nightmare", "costume", "creepy", "terror", "dracula", "zombie",
-            "ghost", "howl-o-ween", "all hallows",
+            "howl-o-ween", "all hallows",
+            # "pumpkin" and "ghost" were here and are removed. Both are band
+            # and series names at least as often as they are seasonal:
+            # "Smashing Pumpkins" at the United Center and "Relax Attack Jazz
+            # Series: Common Ghosts" both picked up a Holiday label and turned
+            # up under the Halloween filter. Scored on the labelled set,
+            # dropping them takes precision from 90% to 94% and cuts spurious
+            # secondary labels from 4 to 1, for 6 points of coverage - the
+            # right way round, since a wrong category hides an event from the
+            # filter somebody would actually use.
         ],
         "prefixes": ["holiday"],
     },
