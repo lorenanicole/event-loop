@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Union, Literal
 from shared.database import AsyncSessionLocal, start_of_day, upcoming_events_filter
 from shared.database.models import EventModel, NeighborhoodModel
+from shared.categories import category_filter, extract_category_concepts
 from shared.database.neighborhoods import NEIGHBORHOOD_ALIASES
 from app.ai.smart_search import get_smart_search_tool
 from app.ai.semantic_index import event_index
@@ -108,7 +109,7 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
 
             neighborhoods = await _extract_neighborhoods(db, query_str)
             keywords = _strip_neighborhoods(_extract_keywords(query_str), neighborhoods)
-            categories = _extract_categories(query_str)
+            categories = extract_category_concepts(query_str)
             date_range = _extract_date_range(query_str)
 
             logger.info(f"Extracted keywords ({len(keywords)}): {keywords[:6]}")
@@ -131,8 +132,11 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
                 filters.append(or_(*keyword_conditions))
 
             if categories:
-                category_conditions = [EventModel.category.ilike(cat) for cat in categories]
-                filters.append(or_(*category_conditions))
+                # Prefix-matched via the shared vocabulary, so "art" reaches
+                # every Arts* label rather than needing an exact value.
+                condition = category_filter(EventModel.category, categories)
+                if condition is not None:
+                    filters.append(condition)
 
             if filters:
                 db_query = db_query.filter(or_(*filters))
@@ -698,26 +702,8 @@ def _extract_keywords(query: str) -> list[str]:
     # by general English, not by this domain - "jazz" resolves to the nonsense
     # sense ("malarkey", "bunk") and "happening" to "pass", which is what
     # surfaced a United Center parking pass for a plant-workshop query.
-    # Category synonyms are handled deliberately in _extract_categories.
+    # Category synonyms live in shared.categories, matched by prefix.
     return list(dict.fromkeys(keywords))[:MAX_KEYWORDS]
-
-
-def _extract_categories(query: str) -> list[str]:
-    """Extract event categories"""
-    category_keywords = {
-        "music": ["music", "concert", "band", "dj", "acoustic", "jazz"],
-        "comedy": ["comedy", "stand-up", "standup", "laugh"],
-        "theater": ["theater", "theatre", "play", "drama", "broadway"],
-        "sports": ["sports", "game", "match", "tournament", "athletic"],
-        "art": ["art", "gallery", "exhibition", "installation"],
-        "food": ["food", "dining", "restaurant", "chef", "cooking"],
-        "film": ["film", "movie", "cinema", "screening"],
-    }
-    found = []
-    for category, keywords in category_keywords.items():
-        if any(kw in query for kw in keywords):
-            found.append(category)
-    return found
 
 
 async def smart_search_expand(context: RunContext[str], query: str) -> str:

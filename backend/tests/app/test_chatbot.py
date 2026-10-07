@@ -6,11 +6,13 @@ import pytest
 from datetime import datetime, timedelta
 from app.ai.chatbot import (
     _extract_keywords,
-    _extract_categories,
     _extract_date_range,
     _score_event_relevance,
     _filter_top_results,
 )
+# Category matching is shared with the API's search endpoint, so it lives in
+# shared.categories rather than being duplicated in both.
+from shared.categories import extract_category_concepts as _extract_categories
 
 
 class TestKeywordExtraction:

@@ -17,6 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select
 from shared.database.models import EventModel, VenueModel, NeighborhoodModel, Base
 from shared.database.neighborhoods import canonical_neighborhood, resolve_neighborhood_id
+from shared.categories import normalize_category
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -3494,7 +3495,7 @@ async def save_events_to_db(
                         date_end=final_date_end,
                         time=event.time,
                         time_end=event.time_end,
-                        category=event.category,
+                        category=normalize_category(event.category),
                         address=event.location,
                         venue_name=event.venue_name or config.name,
                         origination_url=origination_url,

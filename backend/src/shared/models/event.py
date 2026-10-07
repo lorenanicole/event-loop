@@ -1,6 +1,8 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from shared.categories import normalize_category
 
 
 class EventCreate(BaseModel):
@@ -46,6 +48,18 @@ class EventCreate(BaseModel):
     date_retrieved: datetime = Field(
         default_factory=datetime.utcnow, description="When this row was last refreshed"
     )
+
+    @field_validator("category")
+    @classmethod
+    def _normalize_category(cls, value: str) -> str:
+        """Settle casing at the boundary, so one category is never two tiles.
+
+        Sources disagree on case for the same category - "music" from the venue
+        scrapers, "Music" from Ticketmaster - and the difference is meaningless.
+        Wording is left alone: "Arts & Crafts" stays distinct from "Arts &
+        Culture", and a search for "art" reaches both by prefix instead.
+        """
+        return normalize_category(value) or value
 
 
 class Event(EventCreate):

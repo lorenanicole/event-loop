@@ -9,7 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_, or_, func, select
 
 from shared.database import get_db, start_of_day, upcoming_events_filter
-from shared.database.models import EventModel, ChatThreadModel, AuditLogModel, NeighborhoodModel
+from shared.database.models import (
+    AuditLogModel,
+    ChatThreadModel,
+    EventModel,
+    NeighborhoodModel,
+)
+from shared.categories import category_filter, extract_category_concepts
 from shared.models import Event, EventSearch
 from app.ai.executor import ChatExecutor, sse_event_formatter
 from app import telemetry
@@ -359,7 +365,7 @@ async def search_events(
 
     # Extract keywords and filters from natural language query
     keywords = _extract_keywords(query_str)
-    category_filters = _extract_categories(query_str)
+    category_filters = extract_category_concepts(query_str)
     date_range = _extract_date_range(query_str)
 
     # Build database query
@@ -377,10 +383,9 @@ async def search_events(
 
     # Filter by category
     if category_filters:
-        category_conditions = [
-            EventModel.category.ilike(cat) for cat in category_filters
-        ]
-        filters.append(or_(*category_conditions))
+        condition = category_filter(EventModel.category, category_filters)
+        if condition is not None:
+            filters.append(condition)
 
     # Apply filters with OR logic (if we have any filters)
     if filters:
@@ -534,26 +539,6 @@ def _extract_keywords(query: str) -> list[str]:
     words = [w.strip(".,!?;:'\"()") for w in query.lower().split()]
     keywords = [w for w in words if w and w not in STOP_WORDS and len(w) > 2]
     return list(dict.fromkeys(keywords))[:5]  # Limit to 5 keywords
-
-
-def _extract_categories(query: str) -> list[str]:
-    """Extract event categories from query"""
-    category_keywords = {
-        "music": ["music", "concert", "band", "dj", "acoustic"],
-        "comedy": ["comedy", "stand-up", "standup", "laugh"],
-        "theater": ["theater", "theatre", "play", "drama", "broadway"],
-        "sports": ["sports", "game", "match", "tournament", "athletic"],
-        "art": ["art", "gallery", "exhibition", "installation", "sculpture"],
-        "food": ["food", "dining", "restaurant", "chef", "cooking"],
-        "film": ["film", "movie", "cinema", "screening"],
-    }
-
-    found_categories = []
-    for category, keywords in category_keywords.items():
-        if any(kw in query for kw in keywords):
-            found_categories.append(category)
-
-    return found_categories
 
 
 def _extract_date_range(query: str) -> Optional[tuple[datetime, datetime]]:
