@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 from scrapers.custom.venue.chicago_events_scraper import (
     extract_dated_list_items,
     extract_songkick_venue,
+    extract_tickeri_venue,
     extract_tribe_events,
 )
 from scrapers.custom.venue.venue_scraper import VenueConfig, parse_cost
@@ -426,3 +427,53 @@ class TestBroadwayInChicago:
     def test_every_mapped_theatre_has_an_address_and_neighborhood(self):
         for venue, address, hood in BroadwayInChicagoScraper.THEATRES.values():
             assert venue and address and hood
+
+
+class TestExtractTickeriVenue:
+    """Tickeri ships its page data as JSON, including ticket prices."""
+
+    HTML = """
+    <html><body>
+    <script id="__NEXT_DATA__" type="application/json">
+    {"props": {"pageProps": {"data": {"venue": {"events": [
+      {"__typename": "Event", "name": "Chencho Corleone", "status": "LIVE",
+       "url": "https://www.tickeri.com/events/vrip6vps83ym/chencho-corleone",
+       "ticketPriceRange": {"min": {"major": 70}},
+       "eventDate": {"date": {"isoDateTime": "2026-10-16T20:00:00-05:00"}}},
+      {"__typename": "Event", "name": "Rata Blanca", "status": "LIVE",
+       "url": "https://www.tickeri.com/events/x/rata-blanca",
+       "ticketPriceRange": {"min": {"major": 60}, "max": {"major": 120}},
+       "eventDate": {"date": {"isoDateTime": "2026-11-05T20:00:00-06:00"}}},
+      {"__typename": "Event", "name": "Scrapped Show", "status": "CANCELED",
+       "url": "https://www.tickeri.com/events/y/scrapped",
+       "ticketPriceRange": {"min": {"major": 25}},
+       "eventDate": {"date": {"isoDateTime": "2026-11-20T20:00:00-06:00"}}}
+    ]}}}}}
+    </script></body></html>
+    """
+
+    def extracted(self):
+        config_ = config(name="V-Live", address="2501 S Kedzie Ave")
+        return extract_tickeri_venue(BeautifulSoup(self.HTML, "html.parser"), config_)
+
+    def test_canceled_shows_are_skipped(self):
+        assert [e.name for e in self.extracted()] == ["Chencho Corleone", "Rata Blanca"]
+
+    def test_date_and_time_from_the_iso_stamp(self):
+        event = self.extracted()[0]
+        assert event.date == "Oct 16, 2026"
+        assert event.time == "8:00 PM"
+
+    def test_a_floor_price_is_labelled_as_one(self):
+        """"min" alone is a starting price, not the whole price."""
+        assert self.extracted()[0].cost == "From $70"
+
+    def test_a_real_range_is_shown_as_a_range(self):
+        assert self.extracted()[1].cost == "$60-$120"
+
+    def test_missing_next_data_returns_nothing(self):
+        assert extract_tickeri_venue(BeautifulSoup("<html></html>", "html.parser"), config()) == []
+
+    def test_malformed_json_returns_nothing(self):
+        html = '<script id="__NEXT_DATA__">{not json</script>'
+        assert extract_tickeri_venue(BeautifulSoup(html, "html.parser"), config()) == []

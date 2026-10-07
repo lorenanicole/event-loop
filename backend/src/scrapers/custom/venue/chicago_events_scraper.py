@@ -1161,6 +1161,94 @@ _WEEKDAY_RE = re.compile(
 )
 
 
+def extract_tickeri_venue(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract a venue's events from its Tickeri page.
+
+    Tickeri is the ticketing platform behind much of Chicago's Latin music
+    circuit, and several of those venues have no website of their own. It is a
+    Next.js app, so the page ships its data in a __NEXT_DATA__ script tag:
+    structured events with an ISO timestamp and, unusually, a ticket price.
+    That makes it better than scraping the rendered page and better than
+    Songkick, which carries no prices at all.
+    """
+    script = soup.find("script", id="__NEXT_DATA__")
+    if not script or not script.string:
+        logger.warning(f"{config.name}: no __NEXT_DATA__ on the page")
+        return []
+
+    try:
+        payload = json.loads(script.string)
+    except ValueError:
+        logger.warning(f"{config.name}: __NEXT_DATA__ is not valid JSON")
+        return []
+
+    # The events sit at an unstable depth under pageProps, so collect every
+    # Event object rather than relying on a fixed path.
+    found: list[dict] = []
+
+    def walk(node, depth=0):
+        if depth > 10:
+            return
+        if isinstance(node, dict):
+            if node.get("__typename") == "Event" and node.get("name"):
+                found.append(node)
+            for value in node.values():
+                walk(value, depth + 1)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value, depth + 1)
+
+    walk(payload)
+
+    events = []
+    seen = set()
+    for item in found:
+        # Tickeri keeps canceled shows in the feed, flagged by status.
+        if (item.get("status") or "").upper() not in ("LIVE", "", "ACTIVE"):
+            continue
+
+        date_info = (item.get("eventDate") or {}).get("date") or {}
+        iso = date_info.get("isoDateTime") or date_info.get("localDate")
+        if not iso:
+            continue
+        try:
+            when = datetime.fromisoformat(iso)
+        except ValueError:
+            continue
+
+        title = (item.get("name") or "").strip()
+        key = (when.date(), title.lower())
+        if not title or key in seen:
+            continue
+        seen.add(key)
+
+        price_range = item.get("ticketPriceRange") or {}
+        low = (price_range.get("min") or {}).get("major")
+        high = (price_range.get("max") or {}).get("major")
+        cost = None
+        if low is not None:
+            if high is not None and high != low:
+                cost = f"${low:g}-${high:g}"
+            else:
+                # Only a floor is published, so say so rather than implying
+                # it is the whole price.
+                cost = f"From ${low:g}" if low else "Free"
+
+        events.append(VenueEvent(
+            name=title[:200],
+            date=f"{when.strftime('%b')} {when.day}, {when.year}",
+            time=when.strftime("%-I:%M %p") if (when.hour or when.minute) else None,
+            location=f"{config.name}, {config.address}",
+            url=item.get("url") or config.event_page_url,
+            venue_name=config.name,
+            category=config.category,
+            cost=cost,
+        ))
+
+    logger.info(f"{config.name}: extracted {len(events)} events from Tickeri")
+    return events
+
+
 def extract_songkick_venue(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract a venue's concerts from its Songkick venue page.
 
@@ -2958,6 +3046,11 @@ CHICAGO_VENUES = {
         ),
     ],
 
+    # Tickeri only for Los Globos and V-Live, not Songkick as well: the two
+    # sources name the same concert differently ("Rata Blanca" vs "Rata Blanca
+    # en concierto en Chicago"), so running both duplicated every show rather
+    # than merging it. Tickeri wins because it carries ticket prices.
+    #
     # Little Village's music venues are real but web-invisible: Los Globos and
     # V-Live both book touring regional Mexican acts, and neither has a working
     # site - Los Globos has none at all and vlivechicago.com refuses
@@ -2968,12 +3061,24 @@ CHICAGO_VENUES = {
             # No website at all; Instagram is the venue's home. Same reasoning
             # as V-Live below: linked, not scraped.
             website_url="https://www.instagram.com/losgloboschicago/",
-            event_page_url="https://www.songkick.com/venues/4345062-los-globos",
+            event_page_url="https://www.tickeri.com/venues/60d2525292d3766d2a792de2",
             category="music",
             address="3059 S Central Park Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_songkick_venue,
+            extractor_fn=extract_tickeri_venue,
+        ),
+        VenueConfig(
+            # Tickeri holds a second, duplicate record for the same room under
+            # a mistyped address; it carries shows the first one does not.
+            name="Los Globos",
+            website_url="https://www.instagram.com/losgloboschicago/",
+            event_page_url="https://www.tickeri.com/venues/96bf9258-7c35-4db1-8c31-260ab2e28b35",
+            category="music",
+            address="3059 S Central Park Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_tickeri_venue,
         ),
         VenueConfig(
             name="V-Live",
@@ -2983,12 +3088,12 @@ CHICAGO_VENUES = {
             # the venue's real link, since Songkick is where the calendar
             # comes from and not where the venue lives.
             website_url="https://www.instagram.com/vlivechicagoofficial/",
-            event_page_url="https://www.songkick.com/venues/498306-v-live",
+            event_page_url="https://www.tickeri.com/venues/54cbefe9e7fbb67858965f0c",
             category="music",
             address="2501 S Kedzie Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_songkick_venue,
+            extractor_fn=extract_tickeri_venue,
         ),
         VenueConfig(
             name="Apollo's 2000",
