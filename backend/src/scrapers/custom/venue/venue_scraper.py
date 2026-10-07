@@ -25,6 +25,44 @@ class VenueEvent:
     category: str
     date_end: Optional[str] = None  # For multi-day events
     time_end: Optional[str] = None  # End time for events with duration
+    cost: Optional[str] = None  # "Free", "$25", "From $64" - shown in result tiles
+
+
+def parse_cost(text: Optional[str]) -> Optional[str]:
+    """Pull a human-readable price out of event card text.
+
+    Venues write prices a dozen ways ("$25", "$20-$25", "Starting at $64",
+    "No cover", "Free w/ RSVP", "Donation"), so normalise to the handful of
+    forms the UI renders. Returns None rather than guessing when the text has
+    no price in it - an absent price is honest, a wrong one is not.
+    """
+    if not text:
+        return None
+
+    # Strip strings that look like prices but aren't: "21+", "2 for 1", times.
+    cleaned = re.sub(r"\d{1,2}:\d{2}\s*[APap]\.?[Mm]\.?", " ", text)
+
+    if re.search(r"\bno cover\b|\bfree\b(?!\s*(?:parking|wifi))", cleaned, re.I):
+        return "Free"
+
+    # Ranges first, so "$20-$25" doesn't truncate to "$20".
+    span = re.search(r"\$\s?(\d{1,4})(?:\.\d{2})?\s*(?:-|–|to)\s*\$?\s?(\d{1,4})", cleaned)
+    if span:
+        low, high = int(span.group(1)), int(span.group(2))
+        if low <= high:
+            return f"${low}-${high}"
+
+    one = re.search(r"\$\s?(\d{1,4})(?:\.(\d{2}))?", cleaned)
+    if one:
+        amount = f"${int(one.group(1))}" + (f".{one.group(2)}" if one.group(2) and one.group(2) != "00" else "")
+        if re.search(r"\b(?:starting at|starts at|from|tickets from)\b", cleaned, re.I):
+            return f"From {amount}"
+        return amount
+
+    if re.search(r"\bdonation\b|\bpay what you (?:can|wish)\b", cleaned, re.I):
+        return "Donation"
+
+    return None
 
 
 @dataclass
@@ -89,9 +127,22 @@ class VenueScraper:
                         '--disable-dev-shm-usage',
                     ]
                 )
-                page = await browser.new_page(
-                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                # A truncated user agent with no locale, timezone or
+                # Accept-Language is enough for Cloudflare to challenge the
+                # request, which is what several venues were answering 403/406
+                # to. Present a complete, coherent browser instead.
+                context = await browser.new_context(
+                    viewport={"width": 1512, "height": 1000},
+                    user_agent=(
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/129.0.0.0 Safari/537.36"
+                    ),
+                    locale="en-US",
+                    timezone_id="America/Chicago",
+                    extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
                 )
+                page = await context.new_page()
 
                 # Hide automation signals
                 await page.add_init_script("""
@@ -210,6 +261,16 @@ class VenueScraper:
         else:
             url = self.config.website_url
 
+        # Prefer a dedicated price element where the venue has one, otherwise
+        # sniff the whole card - most venues print the price as loose text.
+        cost = None
+        cost_selector = selectors.get("cost")
+        if cost_selector:
+            cost_elem = container.select_one(cost_selector)
+            cost = parse_cost(cost_elem.get_text(" ", strip=True)) if cost_elem else None
+        if not cost:
+            cost = parse_cost(container.get_text(" ", strip=True))
+
         return VenueEvent(
             name=title,
             date=date,
@@ -217,5 +278,6 @@ class VenueScraper:
             location=f"{self.config.name}, {self.config.address}",
             url=url,
             venue_name=self.config.name,
-            category=self.config.category
+            category=self.config.category,
+            cost=cost,
         )

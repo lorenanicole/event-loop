@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, Callable
 from bs4 import BeautifulSoup
-from .venue_scraper import VenueScraper, VenueConfig, VenueEvent
+from .venue_scraper import VenueScraper, VenueConfig, VenueEvent, parse_cost
 import re
 import asyncio
 import json
@@ -25,6 +25,12 @@ logger = logging.getLogger(__name__)
 # that paginate through "load more" (Salt Shed takes ~40s), short enough that one
 # unresponsive site doesn't hang the full run.
 VENUE_SCRAPE_TIMEOUT = 120
+
+
+_MONTHS = {
+    "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+    "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
+}
 
 
 def infer_event_year(month_str: str, today: Optional[datetime] = None) -> int:
@@ -136,6 +142,44 @@ def parse_date_range(date_str: Optional[str]) -> tuple[Optional[datetime], Optio
         return None, None
 
 
+def jsonld_offer_cost(event_data: dict) -> Optional[str]:
+    """Read a price out of a schema.org Event's `offers`.
+
+    This is the one structured price in the whole pipeline, so prefer its
+    numeric fields over sniffing text. `offers` may be a single object or a
+    list of them (one per ticket tier), in which case report the range.
+    """
+    offers = event_data.get("offers")
+    if isinstance(offers, dict):
+        offers = [offers]
+    if not isinstance(offers, list):
+        return None
+
+    prices = []
+    for offer in offers:
+        if not isinstance(offer, dict):
+            continue
+        spec = offer.get("priceSpecification")
+        source = spec if isinstance(spec, dict) else offer
+        for key in ("price", "lowPrice", "highPrice", "minPrice", "maxPrice"):
+            value = source.get(key)
+            if value in (None, ""):
+                continue
+            try:
+                prices.append(float(str(value).replace("$", "").replace(",", "")))
+            except ValueError:
+                continue
+
+    if not prices:
+        return None
+    low, high = min(prices), max(prices)
+    if low == 0 and high == 0:
+        return "Free"
+    if low == high:
+        return f"${low:g}"
+    return f"${low:g}-${high:g}"
+
+
 def extract_events_from_json_ld(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
     """Extract events from JSON-LD schema.org data embedded in HTML."""
     events = []
@@ -200,7 +244,8 @@ def extract_events_from_json_ld(soup: BeautifulSoup, config: VenueConfig) -> lis
                                 location=f"{config.name}, {config.address}",
                                 url=url,
                                 venue_name=config.name,
-                                category=config.category
+                                category=config.category,
+                                cost=jsonld_offer_cost(event_data),
                             ))
                         continue
                     else:
@@ -245,7 +290,8 @@ def extract_events_from_json_ld(soup: BeautifulSoup, config: VenueConfig) -> lis
                         location=f"{config.name}, {config.address}",
                         url=url,
                         venue_name=config.name,
-                        category=config.category
+                        category=config.category,
+                        cost=jsonld_offer_cost(event_data),
                     ))
 
             except (json.JSONDecodeError, AttributeError, KeyError) as e:
@@ -285,7 +331,8 @@ def extract_chop_shop(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEve
             events.append(VenueEvent(
                 name=event_name, date=None, time=None,
                 location=f"{config.name}, {config.address}",
-                url=ticket_url, venue_name=config.name, category=config.category
+                url=ticket_url, venue_name=config.name, category=config.category,
+                cost=parse_cost(article.get_text(" ", strip=True)),
             ))
         logger.info(f"{config.name}: extracted {len(events)} events")
     except Exception as e:
@@ -339,7 +386,8 @@ def extract_concord(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
                 events.append(VenueEvent(
                     name=event_name, date=event_date, time=None,
                     location=f"{config.name}, {config.address}",
-                    url=event_url, venue_name=config.name, category=config.category
+                    url=event_url, venue_name=config.name, category=config.category,
+                    cost=parse_cost(container.get_text(" ", strip=True)),
                 ))
 
         logger.info(f"{config.name}: extracted {len(events)} events")
@@ -381,7 +429,8 @@ def extract_rosas_lounge(soup: BeautifulSoup, config: VenueConfig) -> list[Venue
                 location=f"{config.name}, {config.address}",
                 url=url if url != config.website_url else config.website_url,
                 venue_name=config.name,
-                category=config.category
+                category=config.category,
+                cost=parse_cost(link.get_text(" ", strip=True)),
             ))
 
         logger.info(f"{config.name}: extracted {len(events)} events")
@@ -430,7 +479,8 @@ def extract_hideout(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
                 location=f"{config.name}, {config.address}",
                 url=event_url,
                 venue_name=config.name,
-                category=config.category
+                category=config.category,
+                cost=parse_cost(item.get_text(" ", strip=True)),
             ))
 
         logger.info(f"{config.name}: extracted {len(events)} events")
@@ -602,7 +652,8 @@ def extract_salt_shed(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEve
                     location=f"{config.name}, {config.address}",
                     url=config.website_url,
                     venue_name=config.name,
-                    category=config.category
+                    category=config.category,
+                    cost=parse_cost(article.get_text(" ", strip=True)),
                 ))
 
         logger.info(f"{config.name}: extracted {len(events)} events from ve-events__card")
@@ -667,6 +718,7 @@ def extract_eb_item(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
                 url=url,
                 venue_name=venue_name or config.name,
                 category=config.category,
+                cost=parse_cost(item.get_text(" ", strip=True)),
             ))
 
         logger.info(f"{config.name}: extracted {len(events)} events from .eb-item grid")
@@ -729,6 +781,7 @@ def extract_lh_st(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
                 url=url,
                 venue_name=config.name,
                 category=config.category,
+                cost=parse_cost(card.get_text(" ", strip=True)),
             ))
 
         logger.info(f"{config.name}: extracted {len(events)} events from lh-st cards")
@@ -796,6 +849,7 @@ def extract_martyrs(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
                 url=config.event_page_url,
                 venue_name=config.name,
                 category=config.category,
+                cost=cost,
             ))
 
         logger.info(f"{config.name}: extracted {len(events)} events from calendar rows")
@@ -854,6 +908,7 @@ def extract_old_town_school(soup: BeautifulSoup, config: VenueConfig) -> list[Ve
                 url=url,
                 venue_name=config.name,
                 category=config.category,
+                cost=parse_cost(row.get_text(" ", strip=True)),
             ))
 
         logger.info(f"{config.name}: extracted {len(events)} events from concert listings")
@@ -910,9 +965,747 @@ def extract_squarespace_eventlist(soup: BeautifulSoup, config: VenueConfig) -> l
                 url=url,
                 venue_name=config.name,
                 category=config.category,
+                cost=parse_cost(item.get_text(" ", strip=True)),
             ))
 
         logger.info(f"{config.name}: extracted {len(events)} upcoming events from Squarespace list")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
+async def extract_eventscalendar_widget(page, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from a Wix site embedding an eventscalendar.co widget.
+
+    The venue page carries no events: it embeds plugin.eventscalendar.co in an
+    iframe that renders nothing under automation, which is why this venue was
+    previously written off as "cross-origin, not scrapable".
+
+    The widget feeds itself from a public JSON endpoint, so listen for that
+    response instead of fighting the iframe. The project ids are captured from
+    live traffic rather than hardcoded, so they can change without breaking
+    this. The listener has to be attached before the requests fire, hence the
+    reload - navigation has already happened by the time an extractor runs.
+    """
+    events = []
+    try:
+        payloads = []
+
+        async def capture(response):
+            # Two feeds matter: the widget's own project data, and the broker
+            # that proxies the venue's Eventbrite listings. The project feed is
+            # largely historical; the broker carries what is actually coming up.
+            if not any(part in response.url for part in ("/data/public/events", "/eventbrite/events")):
+                return
+            try:
+                payloads.append(await response.json())
+            except Exception:
+                pass
+
+        page.on("response", capture)
+        await page.reload(wait_until="domcontentloaded")
+        await page.wait_for_timeout(4000)
+        # Wix defers the widget until it scrolls into view, and the broker call
+        # only fires then - without this the feed is never requested.
+        for _ in range(5):
+            await page.mouse.wheel(0, 1200)
+            await page.wait_for_timeout(1200)
+        await page.wait_for_timeout(3000)
+        page.remove_listener("response", capture)
+
+        seen = set()
+        for payload in payloads:
+            # The project feed nests under "value", the broker under "events".
+            items = (payload or {}).get("value") or (payload or {}).get("events") or []
+            for item in items:
+                title = (item.get("title") or "").strip()
+                start = item.get("start")
+                if not title or not start:
+                    continue
+                try:
+                    # Epoch milliseconds, UTC.
+                    when = datetime.utcfromtimestamp(start / 1000)
+                except (TypeError, ValueError, OSError):
+                    continue
+
+                key = (when.date(), title.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                events.append(VenueEvent(
+                    name=title[:200],
+                    date=f"{when.strftime('%b')} {when.day}, {when.year}",
+                    time=when.strftime("%-I:%M %p") if (when.hour or when.minute) else None,
+                    location=f"{config.name}, {config.address}",
+                    url=config.event_page_url,
+                    venue_name=config.name,
+                    category=config.category,
+                ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from calendar widget API")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
+def extract_tessitura_calendar(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from a Tessitura ticketing calendar (`tn-events-calendar`).
+
+    Theatres often publish nothing dated on their marketing site while their
+    ticketing subdomain carries the full performance calendar - Goodman's own
+    site yields nothing, my.goodmantheatre.org yields the lot.
+
+    The month grid shows only a day number per cell, but each cell also carries
+    a screen-reader label with the complete date ("Thursday 1 October 2026"),
+    which is both unambiguous and immune to month-boundary spillover.
+    """
+    import re
+    events = []
+    try:
+        full_date = re.compile(
+            r'(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})',
+            re.IGNORECASE,
+        )
+        for cell in soup.select('.tn-events-calendar__day'):
+            items = cell.select('.tn-events-calendar__day-event-list-item')
+            if not items:
+                continue
+
+            label = cell.select_one('.sr-only')
+            match = full_date.search(label.get_text(" ", strip=True)) if label else None
+            if not match:
+                continue
+            day, month, year = match.group(1), match.group(2)[:3].title(), match.group(3)
+
+            for item in items:
+                name_elem = item.select_one('.tn-events-calendar__event-name')
+                title = name_elem.get_text(" ", strip=True) if name_elem else None
+                if not title or len(title) < 3:
+                    continue
+
+                time_elem = item.select_one('.tn-events-calendar__event-time')
+                raw_time = time_elem.get_text(" ", strip=True) if time_elem else ""
+                stamp = re.search(r'(\d{1,2}:\d{2}\s*[APap]\.?[Mm])', raw_time)
+
+                link = item.select_one('a[href]')
+                url = link.get('href', config.event_page_url) if link else config.event_page_url
+                if not url.startswith('http'):
+                    url = f"{config.website_url}{url}"
+
+                events.append(VenueEvent(
+                    name=title[:200],
+                    date=f"{month} {day}, {year}",
+                    time=stamp.group(1).upper().replace(" ", "") if stamp else None,
+                    location=f"{config.name}, {config.address}",
+                    url=url,
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=parse_cost(item.get_text(" ", strip=True)),
+                ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from Tessitura calendar")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
+_MONTH = r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?"
+# "SEP 11-OCT 18, 2026" / "OCT 27-MAR 20, 2027" - a run, not a single night.
+_RUN_RE = re.compile(
+    rf"(?P<m1>{_MONTH})\s*(?P<d1>\d{{1,2}})\s*[–—-]\s*"
+    rf"(?:(?P<m2>{_MONTH})\s*)?(?P<d2>\d{{1,2}})(?:,?\s*(?P<y>\d{{4}}))?",
+    re.I,
+)
+# "Oct 7 - Wednesday", "Thu, Oct 08", "October 17, 2026"
+_ONE_RE = re.compile(
+    rf"(?P<m>{_MONTH})\s*(?P<d>\d{{1,2}})(?:,?\s*(?P<y>\d{{4}}))?", re.I
+)
+_BOILERPLATE = (
+    "tickets", "buy tickets", "more info", "learn more", "details", "sold out",
+    "rsvp", "doors", "on sale", "free", "info", "read more", "get tickets",
+)
+
+
+def _title_from(lines: list[str]) -> Optional[str]:
+    """Pick the event title out of a card's text lines.
+
+    The title is the first line that is neither the date nor a call to action.
+    "OCT 7 - WEDNESDAY" has to be rejected too, which is why what's left after
+    removing the date has to contain real words.
+    """
+    for line in lines:
+        if line.lower().rstrip(":").startswith(_BOILERPLATE):
+            continue
+        remainder = _RUN_RE.sub("", _ONE_RE.sub("", line))
+        if len(re.sub(r"[^A-Za-z]", "", remainder)) <= 3:
+            continue
+        if len(line) >= 3:
+            return line
+    return None
+
+
+def extract_dated_list_items(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from a list where each item is "<date> <title> <CTA>".
+
+    Written once for the many venues that share this shape - a WordPress show
+    archive, a Wix event list, a season grid - rather than one extractor each.
+    It keys off the date text in each item instead of class names, which is
+    what makes it portable: Wix in particular ships obfuscated classes like
+    `li.qElViY` that change on every redeploy.
+
+    Only the innermost matching element is kept, so the surrounding list
+    container doesn't get reported as one giant event.
+    """
+    # A candidate must carry both a date and a title. Requiring only a date
+    # would select the innermost element, which on Wix-style markup is a bare
+    # "Thu, Oct 08" div with the title in a sibling.
+    candidates = []
+    for el in soup.select("li, article, div[class], a[class]"):
+        text = el.get_text("\n", strip=True)
+        if not (10 <= len(text) <= 400):
+            continue
+        if not _ONE_RE.search(text):
+            continue
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        if _title_from(lines):
+            candidates.append(el)
+
+    # Of the nested candidates keep the innermost, so the list container isn't
+    # reported as one giant event. Checked by identity against a set rather
+    # than pairwise, which would be quadratic on a large page.
+    qualified = {id(el) for el in candidates}
+    chosen = [
+        el for el in candidates
+        if not any(id(d) in qualified for d in el.descendants if d is not el)
+    ]
+
+    events = []
+    seen = set()
+    for el in chosen:
+        lines = [l.strip() for l in el.get_text("\n", strip=True).split("\n") if l.strip()]
+
+        date_str = date_end_str = None
+        run = _RUN_RE.search(" ".join(lines))
+        if run:
+            start_month = run.group("m1")[:3].title()
+            end_month = (run.group("m2") or run.group("m1"))[:3].title()
+            # A run whose end month precedes its start month crosses New Year.
+            crosses = _MONTHS.get(end_month, 0) < _MONTHS.get(start_month, 0)
+            if run.group("y"):
+                # "OCT 27-MAR 20, 2027": a trailing year belongs to the END of
+                # the run, so the start is the year before when it crosses.
+                end_year = int(run.group("y"))
+                start_year = end_year - 1 if crosses else end_year
+            else:
+                start_year = infer_event_year(start_month)
+                end_year = start_year + 1 if crosses else start_year
+            date_str = f"{start_month} {int(run.group('d1'))}, {start_year}"
+            date_end_str = f"{end_month} {int(run.group('d2'))}, {end_year}"
+        else:
+            one = _ONE_RE.search(" ".join(lines))
+            if not one:
+                continue
+            year = one.group("y") or infer_event_year(one.group("m"))
+            date_str = f"{one.group('m')[:3].title()} {int(one.group('d'))}, {year}"
+
+        title = _title_from(lines)
+        if not title:
+            continue
+
+        key = (date_str, title.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+
+        clock = re.search(r"\b(\d{1,2}(?::\d{2})?\s*[apAP]\.?[mM]\.?)", " ".join(lines))
+        link = el.select_one("a[href]") or (el if el.name == "a" and el.get("href") else None)
+        url = link["href"] if link else config.event_page_url
+        if not url.startswith("http"):
+            url = f"{config.website_url.rstrip('/')}{url if url.startswith('/') else '/' + url}"
+
+        events.append(VenueEvent(
+            name=title[:200],
+            date=date_str,
+            date_end=date_end_str,
+            time=clock.group(1).upper().replace(".", "") if clock else None,
+            location=f"{config.name}, {config.address}",
+            url=url,
+            venue_name=config.name,
+            category=config.category,
+            cost=parse_cost(el.get_text(" ", strip=True)),
+        ))
+
+    logger.info(f"{config.name}: extracted {len(events)} events from dated list items")
+    return events
+
+
+def scrolling(extractor_fn, passes: int = 5):
+    """Wrap a soup extractor so it runs after scrolling the page.
+
+    Wix and similar builders defer list items until they scroll into view, so
+    the scraper's flat post-load wait sees an empty list no matter how long it
+    is. Scrolling is what actually triggers the render.
+    """
+    async def page_extractor(page, config: VenueConfig) -> list[VenueEvent]:
+        for _ in range(passes):
+            await page.mouse.wheel(0, 1600)
+            await page.wait_for_timeout(800)
+        await page.wait_for_timeout(1500)
+        return extractor_fn(BeautifulSoup(await page.content(), "html.parser"), config)
+
+    return page_extractor
+
+
+def extract_tribe_events(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from The Events Calendar, the common WordPress plugin.
+
+    Worth one shared extractor rather than per-venue selectors: the plugin is
+    everywhere on smaller arts venues, and it emits a machine-readable
+    `<time datetime="2026-10-17">` so dates need no parsing or year guessing.
+
+    Handles both the list view and the month view, which use different
+    container classes but the same inner markup.
+    """
+    containers = soup.select(
+        ".tribe-events-calendar-list__event, "
+        ".tribe-events-calendar-month__calendar-event, "
+        ".tribe-events-calendar-month__multiday-event, "
+        "article.type-tribe_events"
+    )
+
+    events = []
+    seen = set()
+    for item in containers:
+        # The first full ISO date wins; month view also emits bare "14:00"
+        # times in <time>, so require the YYYY-MM-DD shape.
+        iso = None
+        for tag in item.select("time[datetime]"):
+            value = (tag.get("datetime") or "").strip()
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value[:10]) and len(value) >= 10:
+                iso = value[:10]
+                break
+        if not iso:
+            continue
+        try:
+            when = datetime.strptime(iso, "%Y-%m-%d")
+        except ValueError:
+            continue
+
+        title_elem = item.select_one(
+            ".tribe-events-calendar-list__event-title a, "
+            ".tribe-events-calendar-list__event-title, "
+            ".tribe-events-calendar-month__calendar-event-title a, "
+            ".tribe-events-calendar-month__multiday-event-bar-title, "
+            "[class*='event-title'] a, [class*='event-title'], h3 a, h3"
+        )
+        title = title_elem.get_text(" ", strip=True) if title_elem else None
+        if not title or len(title) < 3:
+            continue
+
+        # Multi-day events repeat once per day in the month view.
+        key = (when.date(), title.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+
+        time_elem = item.select_one("[class*='event-datetime'], [class*='event-time']")
+        time_text = time_elem.get_text(" ", strip=True) if time_elem else item.get_text(" ", strip=True)
+        clock = re.search(r"\b(\d{1,2}(?::\d{2})?\s*[apAP]\.?[mM]\.?)", time_text)
+
+        link = item.select_one("a[href]")
+        url = link["href"] if link else config.event_page_url
+        if not url.startswith("http"):
+            url = f"{config.website_url.rstrip('/')}{url}"
+
+        events.append(VenueEvent(
+            name=title[:200],
+            date=f"{when.strftime('%b')} {when.day}, {when.year}",
+            time=clock.group(1).upper().replace(".", "") if clock else None,
+            location=f"{config.name}, {config.address}",
+            url=url,
+            venue_name=config.name,
+            category=config.category,
+            cost=parse_cost(item.get_text(" ", strip=True)),
+        ))
+
+    logger.info(f"{config.name}: extracted {len(events)} events from The Events Calendar")
+    return events
+
+
+async def extract_ace_calendar(page, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from an Adage `ace-cal-grid` month calendar (Lyric Opera).
+
+    The marketing season page lists productions without performance dates; the
+    calendar carries the dated performances. Each day cell is keyed by
+    `aria-labelledby="Day-<epoch>"` - midnight Chicago local - so dates come out
+    exact and no year has to be inferred.
+
+    Only one month renders at a time, so page forward through the season. The
+    header is read after each click because a season has empty months in it
+    (December here) and the click is otherwise unverifiable.
+    """
+    from zoneinfo import ZoneInfo
+    chicago = ZoneInfo("America/Chicago")
+    next_selector = (
+        "button[aria-label*='next' i], a[aria-label*='next' i], "
+        "[class*=next] button, button[class*=next]"
+    )
+    skip_prefixes = ("buy ticket", "tickets", "learn more", "more info", "details")
+
+    events = []
+    seen = set()
+    try:
+        # The calendar is client-rendered behind a Cloudflare check, so it is
+        # not in the DOM yet when the scraper's generic post-load wait expires.
+        await page.wait_for_selector(".ace-cal-grid-day", timeout=25000)
+        await page.wait_for_timeout(1500)
+
+        for month in range(9):
+            soup = BeautifulSoup(await page.content(), "html.parser")
+
+            for cell in soup.select(".ace-cal-grid-day"):
+                stamp = re.search(r"Day-(\d{9,11})", cell.get("aria-labelledby") or "")
+                if not stamp:
+                    continue
+                try:
+                    when = datetime.fromtimestamp(int(stamp.group(1)), tz=chicago)
+                except (ValueError, OSError):
+                    continue
+
+                for card in cell.select(".ace-cal-grid-event"):
+                    title = time_str = cost = None
+                    for line in card.get_text("\n", strip=True).split("\n"):
+                        line = line.strip()
+                        low = line.lower()
+                        if not line:
+                            continue
+                        if re.fullmatch(r"\d{1,2}(:\d{2})?\s*[ap]\.?m\.?", low):
+                            time_str = time_str or line
+                        elif low.startswith("starting at") or line.startswith("$"):
+                            cost = cost or line
+                        elif low.startswith(skip_prefixes):
+                            continue
+                        elif title is None:
+                            title = line
+
+                    if not title:
+                        continue
+
+                    key = (when.date(), title.lower())
+                    if key in seen:
+                        continue
+                    seen.add(key)
+
+                    link = card.find("a", href=True)
+                    url = link["href"] if link else config.event_page_url
+                    if not url.startswith("http"):
+                        url = f"{config.website_url}{url}"
+
+                    events.append(VenueEvent(
+                        name=title[:200],
+                        date=f"{when.strftime('%b')} {when.day}, {when.year}",
+                        time=time_str,
+                        location=f"{config.name}, {config.address}",
+                        url=url,
+                        venue_name=config.name,
+                        category=config.category,
+                        cost=cost,
+                    ))
+
+            if month == 8:
+                break
+            header = await page.evaluate(
+                "() => document.querySelector('.ace-cal-grid-month')?.innerText.split('\\n')[0]"
+            )
+            try:
+                await page.click(next_selector, timeout=4000)
+                await page.wait_for_timeout(3000)
+            except Exception:
+                break
+            moved = await page.evaluate(
+                "() => document.querySelector('.ace-cal-grid-month')?.innerText.split('\\n')[0]"
+            )
+            if moved == header:
+                break
+
+        logger.info(f"{config.name}: extracted {len(events)} events from ace calendar")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return events
+
+
+def extract_den_theatre(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from the Den Theatre calendar.
+
+    Calendar cells render as "7:15 PM  Chad Daniels" with no date of their own -
+    the date lives in the event link, /calendar/2026/10/1/chad-daniels - so that
+    is what gets parsed. The time comes from `.item-time--12hr`, and the title is
+    whatever follows it in the cell.
+    """
+    import re
+    events = []
+    try:
+        seen = set()
+        for item in soup.select('.item'):
+            link = item.select_one('a[href]')
+            href = link.get('href', '') if link else ''
+            stamp = re.search(r'/calendar/(\d{4})/(\d{1,2})/(\d{1,2})', href)
+            if not stamp:
+                continue
+            year, month, day = (int(g) for g in stamp.groups())
+
+            time_elem = item.select_one('.item-time--12hr')
+            # Squarespace separates the time from the billing with a narrow
+            # no-break space and a non-breaking space.
+            time_str = time_elem.get_text(strip=True).replace(" ", " ") if time_elem else None
+
+            # The cell renders the time three times over - 12hr, 24hr and
+            # localized - so strip those elements out before reading the
+            # billing, or the title comes back as "19:15 7:15 PM Chad Daniels".
+            from copy import copy
+            billing = copy(item)
+            for stamp in billing.select('[class*="item-time"]'):
+                stamp.decompose()
+            title = billing.get_text(" ", strip=True).replace(" ", " ").replace(" ", " ")
+            title = re.sub(r'^\s*\d{1,2}:\d{2}\s*([AP]M)?\s*', '', title, flags=re.IGNORECASE).strip()
+            if not title or len(title) < 3:
+                continue
+
+            key = (year, month, day, title.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+
+            when = datetime(year, month, day)
+            events.append(VenueEvent(
+                name=title[:200],
+                date=f"{when.strftime('%b')} {when.day}, {when.year}",
+                time=time_str,
+                location=f"{config.name}, {config.address}",
+                url=href if href.startswith('http') else f"{config.website_url}{href}",
+                venue_name=config.name,
+                category=config.category,
+                cost=parse_cost(item.get_text(" ", strip=True)),
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from calendar items")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
+def extract_dice_widget(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from an embedded Dice.fm event-list widget.
+
+    The venue's own page carries no events at all - it ships an empty
+    `#dice-event-list-widget` div that the Dice script fills in at runtime. The
+    rendered markup uses styled-component class names ("sc-64038102-3 SpeZo")
+    that change with every Dice build, so matching on them cannot hold.
+
+    Anchor on what is stable instead: each card links to link.dice.fm and
+    states its date as "Wed 7 Oct - 2:30pm".
+    """
+    import re
+    events = []
+    try:
+        when = re.compile(
+            r'\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*\.?,?\s+'
+            r'(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*'
+            r'(?:\s*[‐-―\-—]\s*(\d{1,2}(?::\d{2})?\s*[ap]m))?',
+            re.IGNORECASE,
+        )
+        seen = set()
+
+        for link in soup.select('a[href*="dice.fm"]'):
+            href = link.get('href', '')
+            if not href or href in seen:
+                continue
+
+            # Climb until an ancestor carries the date line - that block is the card.
+            card = link
+            match = None
+            for _ in range(6):
+                card = card.parent
+                if card is None:
+                    break
+                match = when.search(card.get_text("\n", strip=True))
+                if match:
+                    break
+            if not match:
+                continue
+
+            lines = [l.strip() for l in card.get_text("\n", strip=True).split("\n") if l.strip()]
+            # The billing is the first line that is neither the date nor a button.
+            title = next(
+                (l for l in lines
+                 if not when.search(l)
+                 and not re.fullmatch(r'(buy now|join the waiting list|more info|sold out|\+)', l, re.IGNORECASE)
+                 and len(l) > 3),
+                None,
+            )
+            if not title:
+                continue
+
+            seen.add(href)
+            day, month, time_str = match.group(1), match.group(2).title(), match.group(3)
+            events.append(VenueEvent(
+                name=title[:200],
+                date=f"{month} {day}, {infer_event_year(month)}",
+                time=time_str.upper().replace(" ", "") if time_str else None,
+                location=f"{config.name}, {config.address}",
+                url=href,
+                venue_name=config.name,
+                category=config.category,
+                cost=parse_cost(link.get_text(" ", strip=True)),
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from Dice widget")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
+def extract_green_mill(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from the Green Mill's month calendar.
+
+    The calendar cells show only a day number, but every event links to
+    /events/YYYY-MM-DD/, so the date comes from the href rather than the text.
+    Each cell can hold several sets ("(5pm - 7pm) ANDY BROWN"), which are
+    emitted as separate events.
+    """
+    import re
+    events = []
+    try:
+        seen = set()
+        for link in soup.select('a[href*="/events/"]'):
+            href = link.get('href', '')
+            stamp = re.search(r'/events/(\d{4})-(\d{2})-(\d{2})', href)
+            if not stamp:
+                continue
+            year, month, day = stamp.groups()
+
+            cell = link.find_parent(class_='eventful') or link.parent
+            text = cell.get_text("\n", strip=True) if cell else link.get_text(strip=True)
+
+            for line in text.split("\n"):
+                line = line.strip()
+                # "(8pm - midnight) ALAN GRESIK'S SWING ORCHESTRA"
+                billing = re.match(r'^\(([^)]*)\)\s*(.+)$', line)
+                if billing:
+                    time_str, title = billing.group(1).strip(), billing.group(2).strip()
+                elif len(line) > 4 and not line.isdigit():
+                    time_str, title = None, line
+                else:
+                    continue
+                # A bare time range is the set time, not the act.
+                if re.fullmatch(r'[\d:apm\s–—.\-]+', title, re.IGNORECASE):
+                    continue
+                if len(title) < 4:
+                    continue
+
+                key = (year, month, day, title.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                when = datetime(int(year), int(month), int(day))
+                events.append(VenueEvent(
+                    name=title[:200],
+                    date=f"{when.strftime('%b')} {when.day}, {when.year}",
+                    time=time_str,
+                    location=f"{config.name}, {config.address}",
+                    url=href if href.startswith('http') else f"{config.website_url}{href}",
+                    venue_name=config.name,
+                    category=config.category,
+                    cost=parse_cost(line),
+                ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from calendar links")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
+def extract_day_month_card(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from cards that stack the date as separate day/month tiles.
+
+    Covers the Aragon Ballroom (`.chakra-card`) and Concord Music Hall
+    (`.show.columns`), which both render something like:
+
+        WED / 07 / OCT / <billing>
+
+    The tiles are read from the card's text rather than per-element, since the
+    two sites order and class them differently.
+    """
+    import re
+    events = []
+    try:
+        containers = soup.select('.chakra-card') or soup.select('.show')
+        month_day = re.compile(
+            r'\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\.?\s*(\d{1,2})\b|'
+            r'\b(\d{1,2})\s*(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\b',
+            re.IGNORECASE,
+        )
+        for card in containers:
+            lines = [l.strip() for l in card.get_text("\n", strip=True).split("\n") if l.strip()]
+            if not lines:
+                continue
+
+            joined = " ".join(lines)
+            match = month_day.search(joined)
+            if not match:
+                continue
+            month = (match.group(1) or match.group(4)).title()[:3]
+            day = match.group(2) or match.group(3)
+
+            # The billing is the longest line that is not a date tile, a weekday,
+            # a doors notice or a merchandising label.
+            noise = re.compile(
+                r'^(MON|TUE|WED|THU|FRI|SAT|SUN)|^\d{1,2}$|doors|selling fast|sold out|'
+                r'^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\.?$|presents?$|'
+                # Button labels sit in the same card and are often the longest line.
+                r'buy tickets?|get tickets?|more info|tickets available|on sale|waiting list|'
+                r'^\s*(free|rsvp|learn more)\s*$',
+                re.IGNORECASE,
+            )
+            candidates = [l for l in lines if not noise.search(l) and len(l) > 4]
+            if not candidates:
+                continue
+            title = max(candidates, key=len)
+
+            doors = re.search(r'(\d{1,2}(?::\d{2})?\s*[APap]\.?[Mm])', joined)
+            link = card.select_one('a[href]')
+            url = link.get('href', config.website_url) if link else config.website_url
+            if not url.startswith('http'):
+                url = f"{config.website_url}{url}"
+
+            events.append(VenueEvent(
+                name=title[:200],
+                date=f"{month} {day}, {infer_event_year(month)}",
+                time=doors.group(1).upper().replace(" ", "") if doors else None,
+                location=f"{config.name}, {config.address}",
+                url=url,
+                venue_name=config.name,
+                category=config.category,
+                cost=parse_cost(card.get_text(" ", strip=True)),
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from date-tile cards")
         return events
 
     except Exception as e:
@@ -950,7 +1743,8 @@ def extract_bramble(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent
                 location=f"{config.name}, {config.address}",
                 url=href,
                 venue_name=config.name,
-                category=config.category
+                category=config.category,
+                cost=parse_cost(link.get_text(" ", strip=True)),
             ))
 
         logger.info(f"{config.name}: extracted {len(events)} events from ticket links (no dates published)")
@@ -997,7 +1791,8 @@ def extract_outset(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]
                 location=f"{config.name}, {config.address}",
                 url=url,
                 venue_name=config.name,
-                category=config.category
+                category=config.category,
+                cost=parse_cost(listing.get_text(" ", strip=True)),
             ))
 
         logger.info(f"{config.name}: extracted {len(events)} events from listings block")
@@ -1047,7 +1842,8 @@ def extract_united_center(soup: BeautifulSoup, config: VenueConfig) -> list[Venu
                 location=f"{config.name}, {config.address}",
                 url=url,
                 venue_name=config.name,
-                category=config.category
+                category=config.category,
+                cost=parse_cost(link.get_text(" ", strip=True)),
             ))
 
         logger.info(f"{config.name}: extracted {len(events)} events from event links")
@@ -1087,7 +1883,8 @@ def extract_cobra_lounge(soup: BeautifulSoup, config: VenueConfig) -> list[Venue
                     location=f"{config.name}, {config.address}",
                     url=config.website_url,
                     venue_name=config.name,
-                    category=config.category
+                    category=config.category,
+                    cost=parse_cost(article.get_text(" ", strip=True)),
                 ))
 
         logger.info(f"{config.name}: extracted {len(events)} events from articles")
@@ -1139,7 +1936,8 @@ def extract_auditorium_theatre(soup: BeautifulSoup, config: VenueConfig) -> list
                     location=f"{config.name}, {config.address}",
                     url=config.website_url,
                     venue_name=config.name,
-                    category=config.category
+                    category=config.category,
+                    cost=parse_cost(line),
                 ))
 
         logger.info(f"{config.name}: extracted {len(events)} events from eventItem")
@@ -1181,7 +1979,8 @@ def extract_jamusa_events(soup: BeautifulSoup, config: VenueConfig) -> list[Venu
                         location=f"{config.name}, {config.address}",
                         url=config.website_url,
                         venue_name=config.name,
-                        category=config.category
+                        category=config.category,
+                        cost=parse_cost(container.get_text(" ", strip=True)),
                     ))
 
         logger.info(f"{config.name}: extracted {len(events)} events from Jam Presents")
@@ -1231,7 +2030,8 @@ def extract_generic_javascript_events(soup: BeautifulSoup, config: VenueConfig) 
                         location=f"{config.name}, {config.address}",
                         url=config.website_url,
                         venue_name=config.name,
-                        category=config.category
+                        category=config.category,
+                        cost=parse_cost(line),
                     ))
 
         # Deduplicate by title
@@ -1294,7 +2094,8 @@ def extract_zanies_calendar(soup: BeautifulSoup, config: VenueConfig) -> list[Ve
                     location=f"{config.name}, {config.address}",
                     url=config.website_url,  # No individual event URLs, use venue URL
                     venue_name=config.name,
-                    category=config.category
+                    category=config.category,
+                    cost=parse_cost(line),
                 ))
 
         logger.info(f"{config.name}: extracted {len(events)} events from calendar")
@@ -1360,7 +2161,8 @@ def extract_squarespace_events(soup: BeautifulSoup, config: VenueConfig) -> list
                 name=event_name, date=date_str, time=time_str,
                 location=f"{config.name}, {config.address}",
                 url=event_url, venue_name=config.name,
-                category=config.category
+                category=config.category,
+                cost=parse_cost(item.get_text(" ", strip=True)),
             ))
 
         logger.info(f"{config.name}: extracted {len(events)} events")
@@ -1417,16 +2219,12 @@ CHICAGO_VENUES = {
         VenueConfig(
             name="Goodman Theatre",
             website_url="https://www.goodmantheatre.org",
-            event_page_url="https://www.goodmantheatre.org/plays",
+            event_page_url="https://my.goodmantheatre.org/Events",
             category="theater",
             address="170 N Dearborn St",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            selectors={},
             use_playwright=True,
-            extractor_fn=None,
+            extractor_fn=extract_tessitura_calendar,
         ),
         VenueConfig(
             name="House of Blues Chicago",
@@ -1445,16 +2243,12 @@ CHICAGO_VENUES = {
         VenueConfig(
             name="Civic Opera House",
             website_url="https://www.lyricopera.org",
-            event_page_url="https://www.lyricopera.org/season",
+            event_page_url="https://www.lyricopera.org/calendar/",
             category="theater",
             address="20 N Wacker Dr",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            selectors={},
             use_playwright=True,
-            extractor_fn=None,
+            page_extractor_fn=extract_ace_calendar,
         ),
         VenueConfig(
             name="Jay Pritzker Pavilion",
@@ -1513,7 +2307,7 @@ CHICAGO_VENUES = {
             address="2033 W North Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_events_from_json_ld,
+            extractor_fn=extract_dice_widget,
         ),
         VenueConfig(
             name="Empty Bottle",
@@ -1530,9 +2324,9 @@ CHICAGO_VENUES = {
             event_page_url="https://thedentheatre.com/calendar?view=calendar&month=10-2026",
             category="comedy",
             address="1331 N Milwaukee Ave",
-            selectors={"event_container": "li.item", "title": "span.item-title", "time": "span.item-time--12hr"},
+            selectors={},
             use_playwright=True,
-            extractor_fn=extract_events_from_json_ld,
+            extractor_fn=extract_den_theatre,
         ),
         VenueConfig(
             name="Rosa's Lounge",
@@ -1563,7 +2357,7 @@ CHICAGO_VENUES = {
             address="2047 N Milwaukee Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_hideout,
+            extractor_fn=extract_day_month_card,
         ),
         VenueConfig(
             name="Salt Shed",
@@ -1587,21 +2381,6 @@ CHICAGO_VENUES = {
         ),
     ],
 
-    "Avondale": [
-        VenueConfig(
-            name="Rockwell on the River",
-            website_url="https://www.rockwellontheriver.com",
-            event_page_url="https://rockwellontheriver.com/event-space/",
-            category="music",
-            address="3757 N Rockwell Ave",
-            # No public calendar: /calendar/ 404s and the site is a rental/marina
-            # marketing page with no event listings. Empty selectors so the generic
-            # extractor yields nothing rather than scraping page furniture.
-            selectors={},
-            use_playwright=True,
-            extractor_fn=None,
-        ),
-    ],
 
     "Rogers Park": [
         VenueConfig(
@@ -1633,7 +2412,7 @@ CHICAGO_VENUES = {
             address="4802 N Broadway Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_squarespace_events,
+            extractor_fn=extract_green_mill,
         ),
         VenueConfig(
             name="Byline Bank Aragon Ballroom",
@@ -1641,13 +2420,9 @@ CHICAGO_VENUES = {
             event_page_url="https://www.aragonballroomchicago.com/",
             category="music",
             address="1106 W Lawrence Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            selectors={},
             use_playwright=True,
-            extractor_fn=None,
+            extractor_fn=extract_day_month_card,
         ),
         VenueConfig(
             name="Riviera Theatre",
@@ -1723,6 +2498,19 @@ CHICAGO_VENUES = {
         ),
     ],
 
+    "Edgewater": [
+        VenueConfig(
+            name="Uncommon Ground",
+            website_url="https://www.uncommonground.com",
+            event_page_url="https://www.uncommonground.com/events-page",
+            category="music",
+            address="3800 N Clark St",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_squarespace_eventlist,
+        ),
+    ],
+
     "Lake View": [
         VenueConfig(
             name="Metro Chicago",
@@ -1750,7 +2538,7 @@ CHICAGO_VENUES = {
                 "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
             },
             use_playwright=True,
-            extractor_fn=extract_events_from_json_ld,
+            extractor_fn=extract_jamusa_events,
         ),
         VenueConfig(
             name="Schubas Tavern",
@@ -1766,19 +2554,6 @@ CHICAGO_VENUES = {
     ],
 
     "Lincoln Square": [
-        VenueConfig(
-            name="Lincoln Theatre",
-            website_url="https://www.lincolntheatre.org",
-            event_page_url="https://www.lincolntheatre.org/calendar",
-            category="theater",
-            address="4415 N Lincoln Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
-            use_playwright=True,
-        ),
         VenueConfig(
             name="Old Town School of Folk Music",
             website_url="https://www.oldtownschool.org",
@@ -1831,7 +2606,7 @@ CHICAGO_VENUES = {
             address="2421 N Milwaukee Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_events_from_json_ld,
+            extractor_fn=extract_squarespace_eventlist,
         ),
         VenueConfig(
             name="Cole's Bar",
@@ -1857,7 +2632,7 @@ CHICAGO_VENUES = {
             address="2040 N Milwaukee Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_generic_javascript_events,
+            page_extractor_fn=extract_eventscalendar_widget,
         ),
     ],
 
@@ -1871,16 +2646,6 @@ CHICAGO_VENUES = {
             selectors={},
             use_playwright=True,
             extractor_fn=extract_martyrs,
-        ),
-        VenueConfig(
-            name="The Loft on Lake",
-            website_url="https://loftonlake.com",
-            event_page_url="https://loftonlake.com/calendar",
-            category="music",
-            address="3453 W Lake St",
-            selectors={},
-            use_playwright=True,
-            extractor_fn=extract_squarespace_eventlist,
         ),
     ],
 
@@ -2001,49 +2766,97 @@ CHICAGO_VENUES = {
         ),
     ],
 
-    "Andersonville": [
+    # South Side coverage. Every venue above is North or Central, which left
+    # the whole South Side unrepresented in the neighborhood filter even though
+    # these venues publish full calendars.
+    "Beverly": [
         VenueConfig(
-            name="Bramble Arts Loft",
-            website_url="https://www.brambleartsloft.com",
-            event_page_url="https://www.brambleartsloft.com",
+            name="Beverly Arts Center",
+            website_url="https://thebeverlyartscenter.com",
+            event_page_url="https://thebeverlyartscenter.com/events",
             category="arts",
-            address="5545 N Clark St",
+            address="2407 W 111th St",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_bramble,
-        ),
-        VenueConfig(
-            name="Patio Theater",
-            website_url="https://www.thepatiotheater.com",
-            event_page_url="https://www.thepatiotheater.com",
-            category="music",
-            address="6008 W Irving Park Rd",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
-            use_playwright=True,
-            extractor_fn=None,
+            extractor_fn=extract_tribe_events,
         ),
     ],
 
-    "Edgewater": [
+    "Hyde Park": [
         VenueConfig(
-            name="Uncommon Ground",
-            website_url="https://www.uncommonground.com",
-            event_page_url="https://www.uncommonground.com",
-            category="music",
-            address="1401 W Devon Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            name="Hyde Park Art Center",
+            website_url="https://www.hydeparkart.org",
+            event_page_url="https://www.hydeparkart.org/events/",
+            category="arts",
+            address="5020 S Cornell Ave",
+            selectors={},
             use_playwright=True,
-            extractor_fn=None,
+            extractor_fn=extract_tribe_events,
         ),
     ],
+
+    "Near South Side": [
+        VenueConfig(
+            name="Reggies Chicago",
+            website_url="https://www.reggieslive.com",
+            event_page_url="https://www.reggieslive.com/2026/10/?post_type=show",
+            category="music",
+            address="2105 S State St",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_dated_list_items,
+        ),
+    ],
+
+    "Streeterville": [
+        VenueConfig(
+            name="Chicago Shakespeare Theater",
+            website_url="https://www.chicagoshakes.com",
+            event_page_url="https://www.chicagoshakes.com/plays-and-events",
+            category="theater",
+            address="800 E Grand Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_dated_list_items,
+        ),
+        VenueConfig(
+            name="Lookingglass Theatre",
+            website_url="https://lookingglasstheatre.org",
+            event_page_url="https://lookingglasstheatre.org/whats-on/",
+            category="theater",
+            address="821 N Michigan Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_dated_list_items,
+        ),
+    ],
+
+    "Avondale": [
+        VenueConfig(
+            name="Avondale Music Hall",
+            website_url="https://avondalemusichall.com",
+            event_page_url="https://avondalemusichall.com/",
+            category="music",
+            address="3528 W Belmont Ave",
+            selectors={},
+            use_playwright=True,
+            page_extractor_fn=scrolling(extract_dated_list_items),
+        ),
+    ],
+
+    "Washington Park": [
+        VenueConfig(
+            name="DuSable Black History Museum",
+            website_url="https://www.dusablemuseum.org",
+            event_page_url="https://www.dusablemuseum.org/events/",
+            category="arts",
+            address="740 E 56th Pl",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_tribe_events,
+        ),
+    ],
+
 }
 
 
@@ -2121,6 +2934,11 @@ async def save_events_to_db(
                     existing_event.time = event.time
                     existing_event.time_end = event.time_end
                     existing_event.date_retrieved = datetime.utcnow()
+                    # Only fill a price in, never blank one out: a venue that
+                    # stops printing the price on its listing page should not
+                    # erase a price already collected.
+                    if event.cost:
+                        existing_event.cost = event.cost
                     if neighborhood_id:
                         existing_event.neighborhood_id = neighborhood_id
                 else:
@@ -2149,6 +2967,7 @@ async def save_events_to_db(
                         origination_url=origination_url,
                         source=source_name,
                         details=None,
+                        cost=event.cost,
                         neighborhood_id=neighborhood_id,
                     )
                     session.add(event_model)
