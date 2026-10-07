@@ -46,7 +46,25 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"Location backfill skipped or failed: {e}")
 
+    # Warm the semantic search index in the background. The first call loads a
+    # model from disk (downloading it once), so doing it here keeps that cost
+    # off the first user query without delaying startup.
+    asyncio.create_task(_warm_semantic_index())
+
     # For telemetry, we'll use AsyncSessionLocal when metrics are accessed
+
+
+async def _warm_semantic_index() -> None:
+    """Build the event embedding index without blocking startup."""
+    try:
+        from app.ai.semantic_index import event_index
+
+        async with AsyncSessionLocal() as session:
+            count = await event_index.rebuild(session)
+        logger.info(f"Semantic index ready ({count} events)")
+    except Exception as e:
+        # Keyword search still works without it.
+        logger.warning(f"Semantic index warm-up failed: {e}")
 
 
 async def shutdown_event():
@@ -94,7 +112,7 @@ async def root():
         "docs": "/docs",
         "features": {
             "ai_search": "REACT agent with Claude + PydanticAI",
-            "semantic_matching": "NLTK-powered similarity matching",
+            "semantic_matching": "Static embedding similarity (model2vec)",
             "resilience": "Circuit breaker + exponential backoff",
             "observability": "OpenTelemetry metrics + audit trails",
             "security": "Prompt injection defense + rate limiting",

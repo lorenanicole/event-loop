@@ -23,6 +23,10 @@ eventloop/
 │   │   │   ├── security.py
 │   │   │   ├── telemetry.py
 │   │   │   └── resilience.py
+│   │   ├── shared/            # Cross-cutting
+│   │   │   ├── database/      # Models, filters, neighborhoods
+│   │   │   ├── geo/           # Boundary lookup + geocoding resolver
+│   │   │   └── models/
 │   │   ├── scrapers/          # Data collection
 │   │   │   ├── external/      # Third-party APIs (5)
 │   │   │   │   ├── do312.py
@@ -73,14 +77,32 @@ eventloop/
 
 ### **Smart Event Discovery**
 - 🔍 **REACT Agent** - Multi-step reasoning with Claude + PydanticAI
-- 🧠 **Semantic Search** - NLTK-powered similarity matching (find "events like that")
+- 🧠 **Semantic Search** - Static embeddings (model2vec) match on meaning, not keywords:
+  "plant workshops" finds "foraging wild plants" with no shared word. Indexes the
+  whole corpus in under a second and queries in ~0.3 ms, with no torch dependency
 - 📝 **Natural Language** - Understands "concerts this weekend" → filters by date/category
-- 🎯 **Smart Ranking** - Events scored by relevance (keyword + category + date proximity)
+- 🎯 **Smart Ranking** - Keyword, semantic similarity, category and date proximity,
+  with whole-word matching so "class" does not match "Classic"
+- 🧭 **Fill-in-the-blank UI** - "Let's explore ___ ___ ___" with comboboxes you can
+  browse or type into; selecting is the search, so there is no submit step
+
+### **Neighborhoods**
+- 🗺️ **Events placed in 46 Chicago neighborhoods** - 93% of upcoming events
+- 📐 **Point-in-polygon, not geocoding** - the city's 98 neighborhood boundaries are
+  stored in the database, so placing a venue is a local geometry test: no API calls,
+  no rate limits, ~3 ms
+- 🏷️ **Vernacular names** - Pilsen, not "Lower West Side"; Bronzeville, not "Douglas"
+- 📍 **Geocoding only as a last resort** - addresses with no coordinates are looked up
+  once, rate limited, and cached permanently in `geocode_cache`
 
 ### **Data at Scale**
-- 📊 **4,959 Events** - Normalized from 5 external APIs + 28 Chicago neighborhoods with 68 venues
+- 📊 **2,000+ upcoming events** - 5 external APIs plus 51 venue scrapers across
+  18 neighborhoods
 - 🗄️ **SQLite** - Fully indexed for fast queries
-- 🔄 **Async Scraping** - httpx + BeautifulSoup for concurrent data collection
+- 🔄 **Async Scraping** - httpx + BeautifulSoup, per-venue timeouts so one slow site
+  cannot stall a run
+- 💾 **Safe rescrapes** - `db_safety.py` snapshots the database and diffs counts by
+  source and neighborhood afterwards, flagging any source that *lost* events
 - ⚡ **Real-time SSE** - Server-Sent Events for streaming chat responses
 
 ### **Resilience & Observability**
@@ -88,7 +110,7 @@ eventloop/
 - ⏳ **Exponential Backoff** - Retry transient failures smartly
 - 📊 **OpenTelemetry** - Counters, histograms, audit trails
 - 🔐 **Prompt Injection Defense** - Pattern detection, rate limiting, output validation
-- 🧪 **118+ Tests** - Security, resilience, database, API, scraper coverage
+- 🧪 **166 Tests** - Security, resilience, database, API, scraper coverage
 
 ### **Production-Ready**
 - 🛡️ **Security** - Blocks prompt injections, validates outputs, sanitizes inputs
@@ -151,6 +173,30 @@ npm run dev
 - 📊 **Analytics**: http://localhost:8000/analytics
 - ✅ **Health Check**: http://localhost:8000/health
 - 📚 **API Docs**: http://localhost:8000/docs
+
+### **Scraping & data operations**
+
+All run from `backend/`.
+
+```bash
+# Snapshot the database before a scrape, and diff it afterwards.
+# `compare` flags any source that LOST events - a scrape that silently drops a
+# venue looks fine in the logs and obvious here.
+python db_safety.py backup
+python clean_rescrape.py
+python db_safety.py compare
+python db_safety.py restore data/backups/events-<stamp>.db   # if needed
+
+# One-time: load Chicago's neighborhood boundaries into the database.
+# After this, placing a coordinate is a local point-in-polygon test.
+python load_neighborhood_boundaries.py
+
+# Place any events still missing a neighborhood.
+python backfill_neighborhoods.py            # coordinates + known venues only
+python backfill_neighborhoods.py --geocode  # also geocode unknown addresses
+```
+
+Backups and the boundary cache live in `backend/data/backups/`, which is gitignored.
 
 ### **Alternative: Using Invoke Task Automation**
 

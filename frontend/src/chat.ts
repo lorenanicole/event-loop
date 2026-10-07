@@ -106,7 +106,7 @@ I'm your AI event discovery assistant, powered by Python 3.15, PydanticAI, and p
 
 🔄 **Behind the scenes:**
 - REACT agent reasoning with Claude
-- Semantic similarity matching with NLTK
+- Semantic search with static embeddings
 - Circuit breaker resilience patterns
 - Real-time SSE streaming
 

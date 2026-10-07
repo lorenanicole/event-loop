@@ -3,7 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EventLoop: Async Event Discovery in the 312</title>
+    <title>EventLoop: Async Event Discovery in Chicago</title>
+    <!-- Archivo: an American grotesque drawn for signage and headlines, which
+         carries more civic weight than a generic geometric sans. Preconnect so
+         the display face is not the slowest thing on the page. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/src/input.css">
     <style>
         html, body {
@@ -17,17 +23,12 @@
             gap: 0;
             background: #f5f5f5;
             transition: grid-template-columns 0.3s ease;
+            /* The chat column animates to 0 while its contents stay 400px wide;
+               clip that overflow instead of letting it scroll the whole page. */
+            overflow-x: hidden;
         }
         body.chat-collapsed {
             grid-template-columns: 1fr 0;
-        }
-        @media (max-width: 1200px) {
-            body {
-                grid-template-columns: 1fr;
-            }
-            #chat-widget-container {
-                display: none;
-            }
         }
         #app {
             background: white;
@@ -39,17 +40,29 @@
             display: flex;
             flex-direction: column;
             height: 100vh;
-            width: 400px;
-            transition: width 0.3s ease;
+            /* Width comes from the grid column. A grid item defaults to
+               min-width:auto, which refuses to shrink below its content - that
+               left the panel at full width over the page when "collapsed". */
+            min-width: 0;
             overflow: hidden;
         }
-        #chat-widget-container.collapsed {
-            width: 0;
+        /* Keyed off body, not the container: ChatWidget is constructed with the
+           inner #chat-widget, so its "collapsed" class lands there - only
+           body.chat-collapsed is a reliable signal for the whole panel. */
+        body.chat-collapsed #chat-widget-container {
             border-left: none;
+        }
+        /* Hold the panel's contents at full width so they slide out of view
+           rather than reflowing as the column animates shut. */
+        #chat-widget-container > * {
+            width: 400px;
+            flex-shrink: 0;
         }
         .chat-toggle-btn {
             display: none;
-            position: absolute;
+            /* Anchored to the viewport, not the document - the document is wider
+               than the window while the chat column animates. */
+            position: fixed;
             right: 20px;
             bottom: 20px;
             width: 60px;
@@ -75,7 +88,7 @@
         }
         .chat-cta {
             font-size: 11px;
-            position: absolute;
+            position: fixed;
             bottom: 80px;
             right: 20px;
             background: rgba(15, 23, 42, 0.9);
@@ -96,21 +109,27 @@
         #chat-widget {
             display: flex;
             flex-direction: column;
-            height: 100%;
+            /* Fill the space the header leaves, rather than a flat 100% of the
+               container - which would overrun it and push the input off-screen. */
+            flex: 1;
+            min-height: 0;
             visibility: visible;
             opacity: 1;
             transition: opacity 0.3s ease;
             overflow: hidden;
         }
-        #chat-widget-container.collapsed #chat-widget {
+        body.chat-collapsed #chat-widget {
             visibility: hidden;
             opacity: 0;
         }
+        /* Matches the page: white surface, Archivo, and the flag's red rule
+           under it - the same device the footer's title block uses. The dark
+           navy gradient here read as a different product bolted on. */
         .chat-header {
             padding: 16px;
-            border-bottom: 1px solid #e5e7eb;
-            background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
-            color: white;
+            border-bottom: 3px solid #C8102E;
+            background: #ffffff;
+            color: #111827;
         }
         .chat-header h2 {
             margin: 0;
@@ -244,6 +263,34 @@
             font-size: 12px;
             color: #6b7280;
         }
+
+        /* Narrow screens: a 400px column would leave too little for the page,
+           so the chat becomes a full-width drawer that slides over it and back
+           out again. Must come after the rules above to override them. */
+        @media (max-width: 1200px) {
+            body {
+                grid-template-columns: 1fr;
+            }
+            #chat-widget-container {
+                position: fixed;
+                top: 0;
+                right: 0;
+                bottom: 0;
+                width: 100%;
+                max-width: 420px;
+                height: 100%;
+                z-index: 200;
+                box-shadow: -4px 0 16px rgba(0, 0, 0, 0.12);
+                transition: transform 0.3s ease;
+            }
+            #chat-widget-container > * {
+                width: 100%;
+            }
+            body.chat-collapsed #chat-widget-container {
+                transform: translateX(100%);
+                box-shadow: none;
+            }
+        }
     </style>
 </head>
 <body>
@@ -252,14 +299,14 @@
     <div id="chat-widget-container">
         <div class="chat-header">
             <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
-                <div>
-                    <h2>⚡ EventLoop</h2>
-                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
-                        <img src="/loopara-logo.svg" style="width: 20px; height: 20px; filter: brightness(1.2);" alt="Loopara" />
-                        <p style="margin: 0; font-size: 12px; opacity: 0.9; font-weight: 500;">Powered by Loopara</p>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <img src="/loopara-logo.svg" style="width: 30px; height: 30px; flex-shrink: 0;" alt="" />
+                    <div>
+                        <h2 style="letter-spacing: -0.01em;">EventLoop</h2>
+                        <p style="margin: 2px 0 0; font-size: 11px; color: #6b7280; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em;">Ask Loopara</p>
                     </div>
                 </div>
-                <button id="chat-close-btn" style="background: none; border: none; font-size: 20px; cursor: pointer; color: white; padding: 8px; opacity: 0.7; transition: opacity 0.2s;">✕</button>
+                <button id="chat-close-btn" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #6b7280; padding: 8px; opacity: 0.8; transition: color 0.2s, opacity 0.2s;">✕</button>
             </div>
         </div>
         <div id="chat-widget">

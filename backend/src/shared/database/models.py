@@ -15,6 +15,9 @@ class NeighborhoodModel(Base):
     official_name = Column(String(100), nullable=True)  # Official City of Chicago name
     description = Column(Text, nullable=True)  # Neighborhood description
     entertainment_level = Column(String(20), nullable=True)  # "high", "medium", "low"
+    # GeoJSON geometry for this neighborhood's boundary, stored so a coordinate
+    # can be placed by point-in-polygon locally instead of calling a geocoder.
+    boundary = Column(Text, nullable=True)
     is_researched = Column(Boolean, default=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -36,6 +39,10 @@ class VenueModel(Base):
     name = Column(String(255), index=True)  # "Rosa's Lounge", "Steppenwolf", etc.
     category = Column(String(50), index=True)  # "music", "theater", "comedy", "cinema", "other"
     address = Column(String(255), nullable=True)
+    # Geocoded once and kept: there are only a few dozen venues, so this turns
+    # address lookup into a database read instead of a geocoding API call.
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
     website_url = Column(String(500), nullable=True)
     event_page_url = Column(String(500), nullable=True)  # Direct URL to events/calendar page
     phone = Column(String(20), nullable=True)
@@ -57,6 +64,26 @@ class VenueModel(Base):
     )
 
 
+class GeocodeCacheModel(Base):
+    """Address -> coordinates, remembered permanently.
+
+    Events arrive from sources that name arbitrary venues, most of which repeat.
+    Caching the lookup per address means an external geocoder is consulted at
+    most once for any given place, which keeps us inside its rate limits.
+    """
+    __tablename__ = "geocode_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    query = Column(String(400), unique=True, index=True)  # Normalised address
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    provider = Column(String(40), nullable=True)  # "nominatim", "manual", ...
+    # Recorded even when nothing was found, so a failed address is not retried
+    # on every scrape.
+    resolved = Column(Boolean, default=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class EventModel(Base):
     __tablename__ = "events"
 
@@ -76,6 +103,10 @@ class EventModel(Base):
     is_outdoor = Column(String(20), nullable=True)  # "outdoor", "indoor", "hybrid"
     address = Column(String(255), nullable=True)  # Street address or location
     venue_name = Column(String(255), nullable=True)  # Venue/location name
+    # Venue coordinates, when the source supplies them (Ticketmaster does).
+    # Stored so a neighborhood can be re-derived without re-scraping.
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
     neighborhood_id = Column(Integer, ForeignKey("neighborhoods.id"), nullable=True, index=True)  # Link to neighborhood
     venue_id = Column(Integer, ForeignKey("venues.id"), nullable=True, index=True)  # Link to venue
 

@@ -11,26 +11,33 @@ from sqlalchemy import and_, or_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 from typing import Optional, Union, Literal
-from shared.database import AsyncSessionLocal
+from shared.database import AsyncSessionLocal, start_of_day, upcoming_events_filter
 from shared.database.models import EventModel
 from app.ai.smart_search import get_smart_search_tool
+from app.ai.semantic_index import event_index
 from app.logging import get_logger
 
-try:
-    from nltk.corpus import wordnet
-    NLTK_AVAILABLE = True
-except ImportError:
-    NLTK_AVAILABLE = False
-
-# Load .env before using environment variables
-_env_path = Path(__file__).parent.parent.parent / ".env"
-load_dotenv(_env_path)
+# Load .env before reading the keys below. This module is imported during app
+# startup, before main.py gets to its own load_dotenv(), so it has to find the
+# file itself. Walk up from this file rather than from the working directory,
+# so the keys resolve however the server was launched.
+_env_path = next(
+    (parent / ".env" for parent in Path(__file__).resolve().parents if (parent / ".env").is_file()),
+    None,
+)
+if _env_path:
+    load_dotenv(_env_path)
 
 logger = get_logger(__name__)
 
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
+# Observed 0.2s on a cache hit, 25s on a miss - this has to clear the slow case.
+SERPAPI_TIMEOUT = 45
 CLAUDE_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 DB_RESULT_THRESHOLD = 5  # Minimum results before using SerpAPI
+# How relevant the best local match must be before we stop and skip the paid
+# web search. Applied to the top result, not the average of the list.
+LOCAL_CONFIDENCE_FLOOR = 0.3
 
 class EventResult(BaseModel):
     title: str
@@ -101,7 +108,7 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
             categories = _extract_categories(query_str)
             date_range = _extract_date_range(query_str)
 
-            logger.info(f"Extracted keywords ({len(keywords)} with NLTK synonyms): {keywords[:6]}")
+            logger.info(f"Extracted keywords ({len(keywords)}): {keywords[:6]}")
             logger.info(f"Extracted categories: {categories}")
 
             db_query = select(EventModel)
@@ -118,39 +125,77 @@ async def search_local_db(context: RunContext[str], query: str) -> str:
             if filters:
                 db_query = db_query.filter(or_(*filters))
 
+            # Never recommend events that have already finished.
+            db_query = db_query.filter(upcoming_events_filter())
+
             if date_range:
                 start_date, end_date = date_range
+                # Match events overlapping the window, not just starting in it,
+                # so a run already under way still counts. Dates are stored at
+                # midnight, so the lower bound is the start of the day -
+                # otherwise "what's on tonight?" at 11am returns nothing.
+                window_start = start_of_day(start_date)
                 db_query = db_query.filter(
                     and_(
-                        EventModel.date >= start_date,
                         EventModel.date <= end_date,
+                        or_(
+                            EventModel.date_end >= window_start,
+                            and_(EventModel.date_end.is_(None), EventModel.date >= window_start),
+                        ),
                     )
                 )
 
-            result = await db.execute(db_query.limit(50))
+            result = await db.execute(db_query.order_by(EventModel.date.asc()).limit(50))
             results = result.scalars().all()
 
             logger.info(f"Database query returned {len(results)} raw results")
+
+            # Keyword candidates are the 50 *soonest* matches, so a highly
+            # relevant event further out never gets considered. Semantic
+            # retrieval contributes its own candidates by meaning, which also
+            # covers queries that share no keyword with the event at all
+            # ("plant workshops" vs "foraging wild plants") - often sparing a
+            # paid SerpAPI call.
+            semantic_matches = await _semantic_candidates(db, query, date_range)
+            by_id = {e.id: e for e in results}
+            for event in semantic_matches:
+                by_id.setdefault(event.id, event)
+            results = list(by_id.values())
+
+            logger.info(
+                f"Candidates: {len(by_id)} total "
+                f"({len(semantic_matches)} from semantic search)"
+            )
 
             if not results:
                 logger.info("No results found - returning NO_RESULTS")
                 return "NO_RESULTS"
 
+            semantic_scores = await _semantic_scores(db, query, [e.id for e in results])
+
             # Score and filter to top 5 most relevant events
-            top_events = _filter_top_results(results, query, keywords, categories, limit=5)
+            top_events = _filter_top_results(
+                results, query, keywords, categories, limit=5, semantic_scores=semantic_scores
+            )
 
             if not top_events:
                 logger.info(f"No results after scoring for query: {query}")
                 return "NO_RESULTS"
 
-            # Check confidence - if average < 0.3, suggest Google search
+            # Judge on the best match, not the average: the list is ranked, so
+            # averaging lets weak tail entries veto a strong leading result and
+            # send an answerable query out to the paid API.
+            best_confidence = max(e.confidence for e in top_events)
             avg_confidence = sum(e.confidence for e in top_events) / len(top_events)
-            logger.info(f"Local search found {len(top_events)} events, avg confidence: {avg_confidence:.2f}")
+            logger.info(
+                f"Local search found {len(top_events)} events, "
+                f"best confidence: {best_confidence:.2f} (avg {avg_confidence:.2f})"
+            )
             for evt in top_events:
                 logger.info(f"  - {evt.title}: {evt.confidence:.2f}")
 
-            if avg_confidence < 0.3:
-                logger.info(f"Confidence {avg_confidence:.2f} below threshold, falling back to SerpAPI")
+            if best_confidence < LOCAL_CONFIDENCE_FLOOR:
+                logger.info(f"Confidence {best_confidence:.2f} below threshold, falling back to SerpAPI")
                 return "LOW_CONFIDENCE_LOCAL_RESULTS"
 
             # Build response with event details
@@ -264,14 +309,20 @@ async def search_google_events(context: RunContext[str], query: str) -> str:
         if not SERPAPI_KEY:
             return "SerpAPI not configured"
 
-        logger.info(f"Falling back to SerpAPI for: {query}")
+        # Google returns no structured events for a conversational sentence, so
+        # reduce it to the subject ("plant workshops"). The city is dropped too -
+        # the `location` param already scopes the search to Chicago.
+        search_phrase = " ".join(_extract_keywords(query)) or query
+        logger.info(f"Falling back to SerpAPI for: {query!r} as {search_phrase!r}")
 
-        async with httpx.AsyncClient(timeout=10) as client:
+        # SerpAPI regularly takes 15-25s on a cache miss. The old 10s ceiling
+        # turned every slow call into "Could not search online (API error)".
+        async with httpx.AsyncClient(timeout=SERPAPI_TIMEOUT) as client:
             response = await client.get(
                 "https://serpapi.com/search",
                 params={
                     "engine": "google",
-                    "q": f"{query} events",
+                    "q": f"{search_phrase} events",
                     "location": "Chicago, Illinois, United States",
                     "google_domain": "google.com",
                     "api_key": SERPAPI_KEY,
@@ -280,9 +331,15 @@ async def search_google_events(context: RunContext[str], query: str) -> str:
             response.raise_for_status()
             data = response.json()
 
+            if data.get("error"):
+                logger.error(f"SerpAPI returned an error: {data['error']}")
+                return "Could not search online (API error)"
+
             events = []
-            # Try event_results first, fallback to organic results
-            results = data.get("events_results", []) or data.get("organic_results", [])
+            # events_results only. organic_results are undated web pages - they
+            # were being rendered as events, which is how five-year-old Facebook
+            # posts ended up presented as answers to "this weekend".
+            results = data.get("events_results") or []
             for event in results[:10]:
                 try:
                     # Handle address as list or string
@@ -332,37 +389,64 @@ async def search_google_events(context: RunContext[str], query: str) -> str:
         return f"Error: {str(e)}"
 
 
-def _score_event_relevance(event: EventModel, keywords: list[str], query_categories: list[str]) -> float:
+def _count_word_matches(keywords: list[str], text: str) -> int:
+    """How many keywords appear in `text` as whole words.
+
+    Plurals are treated as the same word so "workshops" matches "Workshop",
+    but unrelated words that merely share a prefix are not ("class"/"Classic").
+    """
+    words = {w.strip(".,!?;:'\"()-") for w in text.lower().split()}
+    stems = {w.rstrip("s") for w in words if w}
+    return sum(1 for kw in keywords if kw in words or kw.rstrip("s") in stems)
+
+
+def _score_event_relevance(
+    event: EventModel,
+    keywords: list[str],
+    query_categories: list[str],
+    semantic_score: Optional[float] = None,
+) -> float:
     """
     Score event relevance to query (0.0-1.0).
-    Combines keyword matching, category match, and date proximity.
+    Combines keyword matching, semantic similarity, category match, and date proximity.
     Uses pre-extracted keywords to ensure consistent scoring.
     """
     score = 0.0
 
-    # Keyword matching (0-0.5) - more generous with expanded synonyms
+    # Keyword matching (0-0.4) - every term here is one the user actually typed.
+    # Whole words only: the SQL filter matches substrings for recall, which
+    # scores "Classic Stadium Tour" against a query for a "class" unless
+    # scoring is stricter than retrieval.
     event_text = f"{event.name} {event.category or ''}".lower()
-    matching_keywords = sum(1 for kw in keywords if kw in event_text)
-    # Give credit for any keyword match; with synonyms we have many candidates
+    matching_keywords = _count_word_matches(keywords, event_text)
     if matching_keywords > 0:
-        score += min(0.5, 0.2 + (matching_keywords / max(len(keywords), 1)) * 0.3)
+        score += min(0.4, 0.15 + (matching_keywords / max(len(keywords), 1)) * 0.25)
 
-    # Category match (0-0.3)
+    # Semantic similarity (0-0.4), weighted on par with keywords so a genuinely
+    # related event can outrank a coincidental substring hit. Scaled for the
+    # range these embeddings actually produce - a clearly related short title
+    # lands around 0.35-0.45 cosine, which has to clear the confidence floor on
+    # its own for keyword-free matches ("gardening class" vs "community garden").
+    if semantic_score is not None and semantic_score > 0:
+        score += min(0.4, max(0.0, semantic_score) * 0.9)
+
+    # Category match (0-0.15)
     if event.category and query_categories:
         if event.category.lower() in [c.lower() for c in query_categories]:
-            score += 0.3
+            score += 0.15
 
-    # Date proximity (0-0.3)
-    # Recent events score higher
+    # Date proximity (0-0.05): a tiebreaker between comparably relevant events,
+    # not a ranking signal of its own. Weighted heavily before, it buried the
+    # relevant results under whatever happened to be on soonest.
     now = datetime.now()
-    if event.date >= now:
+    if event.date and event.date >= now:
         days_away = (event.date - now).days
         if days_away <= 7:
-            score += 0.3  # This week = high score
+            score += 0.05
         elif days_away <= 30:
-            score += 0.2  # This month = medium
+            score += 0.03
         else:
-            score += 0.1  # Future = low
+            score += 0.01
 
     return min(1.0, score)
 
@@ -374,16 +458,96 @@ def _truncate_summary(text: str, words: int = 10) -> str:
     return " ".join(text.split()[:words]) + ("..." if len(text.split()) > words else "")
 
 
-def _filter_top_results(events: list[EventModel], query: str, keywords: list[str], categories: list[str], limit: int = 5) -> list[ScoredEvent]:
+async def _ensure_semantic_index(db) -> bool:
+    """Build the embedding index on first use. False if it is unavailable."""
+    try:
+        if not event_index.is_ready:
+            await event_index.rebuild(db)
+        return event_index.is_ready
+    except Exception as e:
+        # Semantic search is an enhancement - a missing model or failed
+        # download must never take down keyword search with it.
+        logger.warning(f"Semantic index unavailable: {e}")
+        return False
+
+
+async def _semantic_scores(db, query: str, event_ids: list[int]) -> dict[int, float]:
+    """Similarity of the query to each candidate event, for ranking."""
+    if not await _ensure_semantic_index(db):
+        return {}
+    try:
+        return event_index.scores_for(query, event_ids)
+    except Exception as e:
+        logger.warning(f"Semantic scoring failed: {e}")
+        return {}
+
+
+async def _semantic_candidates(db, query: str, date_range, limit: int = 20) -> list[EventModel]:
+    """Find events by meaning, to stand alongside the keyword candidates."""
+    if not await _ensure_semantic_index(db):
+        return []
+    try:
+        matches = event_index.search(query, limit=limit)
+    except Exception as e:
+        logger.warning(f"Semantic search failed: {e}")
+        return []
+    if not matches:
+        return []
+
+    # The index is built over upcoming events, but the caller's date window
+    # still has to be honoured - "this weekend" means this weekend.
+    stmt = select(EventModel).where(EventModel.id.in_([eid for eid, _ in matches]))
+    stmt = stmt.where(upcoming_events_filter())
+    if date_range:
+        start_date, end_date = date_range
+        stmt = stmt.where(
+            and_(EventModel.date >= start_of_day(start_date), EventModel.date <= end_date)
+        )
+
+    found = (await db.execute(stmt)).scalars().all()
+    logger.info(f"Semantic fallback matched {len(found)} events for {query!r}")
+    return list(found)
+
+
+def _format_event_date(event: EventModel) -> str:
+    """Render an event's date for the chat reply.
+
+    The date column is stored at midnight, so reading a clock time off it
+    reported every event as "@ 12:00 AM". The published time lives in `time`,
+    and a multi-day event shows its run instead.
+    """
+    if not event.date:
+        return "Date not listed"
+
+    label = event.date.strftime("%a, %b %d, %Y")
+
+    date_end = getattr(event, "date_end", None)
+    if date_end and date_end.date() != event.date.date():
+        return f"{label} through {date_end.strftime('%a, %b %d, %Y')}"
+
+    time_str = (getattr(event, "time", None) or "").strip()
+    return f"{label} @ {time_str}" if time_str else label
+
+
+def _filter_top_results(
+    events: list[EventModel],
+    query: str,
+    keywords: list[str],
+    categories: list[str],
+    limit: int = 5,
+    semantic_scores: Optional[dict[int, float]] = None,
+) -> list[ScoredEvent]:
     """
     Score and filter events to top N results by relevance.
     Returns only high-confidence matches to avoid overwhelming user.
     Uses pre-extracted keywords and categories to avoid re-extraction.
+    `semantic_scores` maps event id to cosine similarity, when the index is available.
     """
+    semantic_scores = semantic_scores or {}
     scored = [
         ScoredEvent(
             title=event.name,
-            date=event.date.strftime('%a, %b %d, %Y @ %I:%M %p'),
+            date=_format_event_date(event),
             location=None,
             url=event.origination_url,
             source=event.source or "Local DB",
@@ -393,7 +557,12 @@ def _filter_top_results(events: list[EventModel], query: str, keywords: list[str
             age_range=event.age_range if hasattr(event, 'age_range') else None,
             is_outdoor=event.is_outdoor if hasattr(event, 'is_outdoor') else None,
             address=event.address if hasattr(event, 'address') else None,
-            confidence=_score_event_relevance(event, keywords, categories),
+            # getattr, not event.id: this is called with plain objects in tests
+            # and with rows that have not been flushed, and an absent id just
+            # means there is no semantic score to apply.
+            confidence=_score_event_relevance(
+                event, keywords, categories, semantic_scores.get(getattr(event, "id", None))
+            ),
         )
         for event in events
     ]
@@ -402,41 +571,52 @@ def _filter_top_results(events: list[EventModel], query: str, keywords: list[str
     return sorted(scored, key=lambda e: e.confidence, reverse=True)[:limit]
 
 
-def _extract_keywords(query: str) -> list[str]:
-    """Extract search keywords with synonym expansion"""
-    stop_words = {
-        "the", "a", "an", "and", "or", "is", "are", "in", "on", "at",
-        "this", "that", "these", "those", "what", "when", "where", "why",
-        "find", "get", "search", "show", "tell", "give", "all", "want",
-        "looking", "events", "event", "i", "want", "to", "for", "any",
-        # Location/context - filter out to avoid matching irrelevant events
-        "chicago", "city", "illinois", "windy", "area", "town", "region"
-    }
+STOP_WORDS = {
+    "the", "a", "an", "and", "or", "is", "are", "in", "on", "at",
+    "this", "that", "these", "those", "what", "when", "where", "why",
+    "find", "get", "search", "show", "tell", "give", "all", "want",
+    "looking", "events", "event", "i", "want", "to", "for", "any",
+    # Location/context - filter out to avoid matching irrelevant events
+    "chicago", "city", "illinois", "windy", "area", "town", "region",
+    # Conversational filler. Left in, these became search terms in their own
+    # right: "like" and "see" match a huge slice of the events table.
+    "like", "would", "see", "me", "my", "please", "can", "could", "need",
+    "there", "some", "something", "anything", "know", "about", "happening",
+    "going", "see", "got", "have", "has", "near", "around", "list",
+    # Temporal words - _extract_date_range already turns these into a date
+    # filter, so matching them against event *names* only adds noise.
+    "today", "tonight", "tomorrow", "weekend", "week", "month", "year",
+    "next", "upcoming", "soon", "now", "weekends", "nights", "night",
+}
 
-    words = query.split()
-    keywords = [w for w in words if w not in stop_words and len(w) > 2]
+# OR-ing more terms than this against event names drags in junk faster than it
+# finds anything. Matches the cap the API's own keyword extraction uses.
+MAX_KEYWORDS = 5
+
+
+def _extract_keywords(query: str) -> list[str]:
+    """Extract search keywords, most meaningful first, with bounded synonyms.
+
+    Order matters: the words the user actually typed come first and are never
+    displaced. Synonyms only fill whatever budget is left over - previously the
+    whole set was built unordered and truncated, which could drop the subject of
+    the query ("plant") while keeping a WordNet artifact ("pass", "ilk").
+    """
+    words = [w.strip(".,!?;:'\"()") for w in query.lower().split()]
+    keywords = [w for w in words if w and w not in STOP_WORDS and len(w) > 2]
 
     if not keywords:
         return []
 
-    # Expand keywords with NLTK WordNet synonyms
-    expanded_keywords = set(keywords)
-
-    if NLTK_AVAILABLE:
-        for kw in keywords:
-            kw_lower = kw.lower()
-            try:
-                synsets = wordnet.synsets(kw_lower, lang='eng')
-                for synset in synsets[:2]:  # Limit to top 2 synsets to avoid noise
-                    for lemma in synset.lemmas():
-                        synonym = lemma.name().replace('_', ' ')
-                        # Only use short, single-word synonyms (no phrases like "base on balls")
-                        if 2 < len(synonym) < 20 and ' ' not in synonym and '?' not in synonym:
-                            expanded_keywords.add(synonym)
-            except Exception:
-                pass
-
-    return list(expanded_keywords)[:15]
+    # dict.fromkeys dedupes while preserving the order they were typed in.
+    #
+    # No WordNet expansion: these terms are OR-ed as `name ILIKE %kw%`, so a
+    # single bad synonym silently captures the whole result set. WordNet ranks
+    # by general English, not by this domain - "jazz" resolves to the nonsense
+    # sense ("malarkey", "bunk") and "happening" to "pass", which is what
+    # surfaced a United Center parking pass for a plant-workshop query.
+    # Category synonyms are handled deliberately in _extract_categories.
+    return list(dict.fromkeys(keywords))[:MAX_KEYWORDS]
 
 
 def _extract_categories(query: str) -> list[str]:

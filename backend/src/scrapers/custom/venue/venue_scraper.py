@@ -39,6 +39,9 @@ class VenueConfig:
     use_playwright: bool = False
     extractor_fn: Optional[Callable] = None
     playwright_wait_until: str = "domcontentloaded"
+    # Async extractor receiving the live Playwright page instead of soup.
+    # Use for venues that render event cards from JS after load (Salt Shed).
+    page_extractor_fn: Optional[Callable] = None
 
 
 class VenueScraper:
@@ -98,6 +101,12 @@ class VenueScraper:
                 try:
                     await page.goto(self.config.event_page_url, timeout=15000, wait_until=self.config.playwright_wait_until)
                     await page.wait_for_timeout(2000)
+
+                    # Page-based extractors need the live DOM (JS-rendered cards,
+                    # "load more" pagination), so they run before the browser closes.
+                    if self.config.page_extractor_fn:
+                        events = await self.config.page_extractor_fn(page, self.config)
+                        return events
 
                     html = await page.content()
 

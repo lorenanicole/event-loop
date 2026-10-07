@@ -8,8 +8,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_, or_, func, select
 
-from shared.database import get_db
-from shared.database.models import EventModel, ChatThreadModel, AuditLogModel
+from shared.database import get_db, start_of_day, upcoming_events_filter
+from shared.database.models import EventModel, ChatThreadModel, AuditLogModel, NeighborhoodModel
 from shared.models import Event, EventSearch
 from app.ai.executor import ChatExecutor, sse_event_formatter
 from app import telemetry
@@ -24,8 +24,8 @@ analytics_router = APIRouter(prefix="", tags=["analytics"])
 @router.get(
     "/events",
     response_model=list[Event],
-    summary="List all events",
-    description="Retrieve paginated list of all indexed Chicago events from the database",
+    summary="List upcoming events",
+    description="Retrieve paginated list of Chicago events happening today or later, soonest first",
     tags=["Events"],
 )
 async def list_events(
@@ -34,9 +34,11 @@ async def list_events(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    **List all events with pagination**
+    **List upcoming events with pagination**
 
-    Returns a paginated list of Chicago events from the database.
+    Returns a paginated list of Chicago events happening today or later,
+    ordered soonest first. Multi-day events stay listed until their end
+    date passes, so a festival already under way is still included.
 
     - **skip**: Pagination offset (default: 0)
     - **limit**: Number of results to return (default: 20, max: 100)
@@ -56,7 +58,13 @@ async def list_events(
     ]
     ```
     """
-    result = await db.execute(select(EventModel).offset(skip).limit(limit))
+    result = await db.execute(
+        select(EventModel)
+        .filter(upcoming_events_filter())
+        .order_by(EventModel.date.asc())
+        .offset(skip)
+        .limit(limit)
+    )
     events = result.scalars().all()
     return events
 
@@ -70,10 +78,11 @@ async def list_events(
 )
 async def get_event_categories(db: AsyncSession = Depends(get_db)):
     """
-    **Get all distinct event categories**
+    **Get categories that have upcoming events**
 
-    Returns a list of all unique event categories in the database.
-    Useful for dynamic UI filtering.
+    Only categories with at least one event still to come, so a tile in the UI
+    never leads to an empty page. Categories whose events have all passed are
+    left out.
 
     **Example response:**
     ```json
@@ -81,7 +90,10 @@ async def get_event_categories(db: AsyncSession = Depends(get_db)):
     ```
     """
     result = await db.execute(
-        select(EventModel.category).distinct().filter(EventModel.category.isnot(None))
+        select(EventModel.category)
+        .distinct()
+        .filter(EventModel.category.isnot(None))
+        .filter(upcoming_events_filter())
     )
 
     def is_valid_category(cat: str) -> bool:
@@ -103,8 +115,58 @@ async def get_event_categories(db: AsyncSession = Depends(get_db)):
         has_digit = bool(re.search(r'\d', cat_lower))
         return not (has_date or has_digit)
 
-    categories = sorted([cat for cat in result.scalars().all() if is_valid_category(cat)])
-    return categories
+    # The same category is stored with different casing ("Music" and "music"),
+    # which would otherwise render as two tiles that each return half the
+    # events. Collapse case-insensitively and keep the tidiest spelling.
+    by_key: dict[str, str] = {}
+    for cat in result.scalars().all():
+        if not is_valid_category(cat):
+            continue
+        key = cat.strip().lower()
+        existing = by_key.get(key)
+        # Prefer the capitalised form, which reads better as a label.
+        if existing is None or (cat[:1].isupper() and not existing[:1].isupper()):
+            by_key[key] = cat.strip()
+    return sorted(by_key.values(), key=str.lower)
+
+
+@router.get(
+    "/events/neighborhoods",
+    summary="Get neighborhoods with upcoming events",
+    description="Chicago neighborhoods that currently have events, with counts, busiest first",
+    tags=["Events"],
+)
+async def get_event_neighborhoods(
+    min_events: int = Query(
+        3, ge=1, le=100, description="Hide neighborhoods with fewer events than this"
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    **Get neighborhoods that actually have upcoming events**
+
+    Only returns neighborhoods with upcoming events, so the UI never offers a
+    filter that comes back empty. Geocoding reaches right across the city, which
+    leaves a long tail of neighborhoods holding a single event; `min_events`
+    keeps the tile row to places worth browsing. Pass `min_events=1` for all.
+
+    **Example response:**
+    ```json
+    [
+      {"name": "Wicker Park", "event_count": 230},
+      {"name": "Lincoln Park", "event_count": 228}
+    ]
+    ```
+    """
+    result = await db.execute(
+        select(NeighborhoodModel.name, func.count(EventModel.id).label("event_count"))
+        .join(EventModel, EventModel.neighborhood_id == NeighborhoodModel.id)
+        .where(upcoming_events_filter())
+        .group_by(NeighborhoodModel.name)
+        .having(func.count(EventModel.id) >= min_events)
+        .order_by(func.count(EventModel.id).desc())
+    )
+    return [{"name": name, "event_count": count} for name, count in result.all()]
 
 
 @router.get(
@@ -223,17 +285,49 @@ async def search_events(
     if filters:
         db_query = db_query.filter(or_(*filters))
 
+    # Never surface events that have already finished.
+    db_query = db_query.filter(upcoming_events_filter())
+
+    # Category, like neighborhood, is a structured filter rather than words in
+    # the query string. Matched through the query text it had to appear in an
+    # event's *title*, so picking "Health & Wellness" or "Cannabis" returned
+    # nothing at all - no event is literally named that.
+    if search.category:
+        # Stored categories carry stray whitespace ("Poetry & Literary "), and
+        # the listing endpoint hands back a trimmed label, so trim both sides
+        # rather than relying on the data being clean.
+        db_query = db_query.filter(
+            func.trim(EventModel.category).ilike(search.category.strip())
+        )
+
+    # Neighborhood is a structured filter rather than a word in the query
+    # string, so picking a tile narrows results exactly instead of relying on
+    # the name happening to appear in an event title.
+    if search.neighborhood:
+        db_query = db_query.join(
+            NeighborhoodModel, EventModel.neighborhood_id == NeighborhoodModel.id
+        ).filter(NeighborhoodModel.name == search.neighborhood)
+
     # Filter by date range (always apply if present)
     if date_range:
         start_date, end_date = date_range
+        # Match events that *overlap* the window rather than start inside it.
+        # A festival running Sep 25 - Nov 2 is on "this month" even though it
+        # began before the range started. Dates are stored at midnight, so the
+        # lower bound is the start of the day, otherwise a query run at 11am
+        # hides everything happening today.
+        window_start = start_of_day(start_date)
         db_query = db_query.filter(
             and_(
-                EventModel.date >= start_date,
                 EventModel.date <= end_date,
+                or_(
+                    EventModel.date_end >= window_start,
+                    and_(EventModel.date_end.is_(None), EventModel.date >= window_start),
+                ),
             )
         )
 
-    db_query = db_query.limit(limit)
+    db_query = db_query.order_by(EventModel.date.asc()).limit(limit)
     result = await db.execute(db_query)
     results = result.scalars().all()
     return results
@@ -295,8 +389,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
     }
     ```
     """
-    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    future_filter = EventModel.date >= today
+    future_filter = upcoming_events_filter()
 
     total_result = await db.execute(select(func.count(EventModel.id)).where(future_filter))
     total = total_result.scalar()
@@ -321,17 +414,14 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
 
 def _extract_keywords(query: str) -> list[str]:
     """Extract search keywords from query"""
-    # Remove common words
-    stop_words = {
-        "the", "a", "an", "and", "or", "is", "are", "in", "on", "at",
-        "this", "that", "these", "those", "what", "when", "where", "why",
-        "find", "get", "search", "show", "tell", "give", "all", "want",
-        "looking", "events", "event", "i", "want", "to", "for"
-    }
+    # Shares the chatbot's stop list so UI search and the chat agent agree on
+    # what counts as a search term - filler like "would"/"see" and temporal
+    # words like "weekend" (already handled by _extract_date_range) are dropped.
+    from app.ai.chatbot import STOP_WORDS
 
-    words = query.split()
-    keywords = [w for w in words if w not in stop_words and len(w) > 2]
-    return keywords[:5]  # Limit to 5 keywords
+    words = [w.strip(".,!?;:'\"()") for w in query.lower().split()]
+    keywords = [w for w in words if w and w not in STOP_WORDS and len(w) > 2]
+    return list(dict.fromkeys(keywords))[:5]  # Limit to 5 keywords
 
 
 def _extract_categories(query: str) -> list[str]:
@@ -793,6 +883,17 @@ async def refresh_venue_events(db: AsyncSession = Depends(get_db)):
     try:
         count = await fetch_and_persist_venue_events(db)
         logger.info(f"Venue refresh complete: {count} new events")
+
+        # Re-embed so the new events are semantically searchable. A full
+        # rebuild takes well under a second, so there is nothing to optimise.
+        if count:
+            try:
+                from app.ai.semantic_index import event_index
+
+                await event_index.rebuild(db)
+            except Exception as e:
+                logger.warning(f"Semantic index refresh failed: {e}")
+
         return {"status": "success", "new_events": count}
     except Exception as e:
         logger.error(f"Venue events refresh failed: {e}", exc_info=True)

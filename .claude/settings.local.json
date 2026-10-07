@@ -23,7 +23,8 @@
       "Bash(curl -s \"https://discover.events.com/forme?lat=41.8756&lng=-87.6244&day=2026-10-01\" -H \"User-Agent: Mozilla/5.0\")",
       "Bash(.venv/bin/python scrape_events.py --init-db --sources all)",
       "Bash(.venv/bin/python)",
-      "Bash(curl -s \"https://www.kingstonmines.com/\")"
+      "Bash(curl -s \"https://www.kingstonmines.com/\")",
+      "Bash(python3 -c ' *)"
     ]
   }
 }

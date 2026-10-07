@@ -26,6 +26,9 @@ data/*.db
 .DS_Store
 Thumbs.db
 
+# Python packaging (regenerated on every editable install)
+*.egg-info/
+
 # Node/Frontend
 node_modules/
 dist/
@@ -35,3 +38,6 @@ build/
 
 # Playwright
 .playwright/
+
+# Local database snapshots (see backend/db_safety.py)
+backend/data/backups/

@@ -135,7 +135,7 @@ class TestEventScoring:
             'date': datetime.now() + timedelta(days=2)
         })()
 
-        score = _score_event_relevance(event, "jazz concert", ["music"])
+        score = _score_event_relevance(event, ["jazz", "concert"], ["music"])
         assert score > 0.3  # Should have decent score
 
     def test_scores_category_match(self):
@@ -148,7 +148,7 @@ class TestEventScoring:
             'date': datetime.now() + timedelta(days=2)
         })()
 
-        score = _score_event_relevance(event, "stand up comedy", ["comedy"])
+        score = _score_event_relevance(event, ["stand", "up", "comedy"], ["comedy"])
         assert score > 0.4  # Should have good score with category match
 
     def test_scores_recent_events_higher(self):
@@ -165,8 +165,8 @@ class TestEventScoring:
             'date': datetime.now() + timedelta(days=60)
         })()
 
-        score_soon = _score_event_relevance(event_soon, "concert", ["music"])
-        score_far = _score_event_relevance(event_far, "concert", ["music"])
+        score_soon = _score_event_relevance(event_soon, ["concert"], ["music"])
+        score_far = _score_event_relevance(event_far, ["concert"], ["music"])
 
         assert score_soon > score_far
 
@@ -178,7 +178,7 @@ class TestEventScoring:
             'date': datetime.now() + timedelta(days=100)
         })()
 
-        score = _score_event_relevance(event, "query", [])
+        score = _score_event_relevance(event, ["query"], [])
         assert 0.0 <= score <= 1.0
 
 
@@ -201,7 +201,7 @@ class TestResultFiltering:
             for i in range(10)
         ]
 
-        top_events = _filter_top_results(events, "music", limit=5)
+        top_events = _filter_top_results(events, "music", ["music"], ["music"], limit=5)
         assert len(top_events) <= 5
 
     def test_ranks_by_confidence(self):
@@ -227,7 +227,7 @@ class TestResultFiltering:
             })(),
         ]
 
-        results = _filter_top_results(events, "jazz", limit=10)
+        results = _filter_top_results(events, "jazz", ["jazz"], ["music"], limit=10)
         # First result should have higher confidence
         assert results[0].confidence >= results[-1].confidence
 

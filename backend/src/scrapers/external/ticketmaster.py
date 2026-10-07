@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from shared.models import EventCreate
 from shared.database.models import EventModel
+from shared.database.neighborhoods import load_boundaries, resolve_neighborhood_id
+from shared.geo import chicago_neighborhoods
 from app.ai.event_enrichment import extract_from_event_text
 
 logger = logging.getLogger(__name__)
@@ -132,6 +134,10 @@ class TicketmasterScraper:
 
             embedded = data.get("_embedded", {})
             venues = embedded.get("venues", [])
+            venue_name = None
+            address = None
+            latitude = None
+            longitude = None
             if venues:
                 venue = venues[0]
                 venue_name = venue.get("name")
@@ -144,6 +150,19 @@ class TicketmasterScraper:
                     location = f"{city}, {state}" if city and state else city or state
                     details_parts.append(f"Location: {location}")
 
+                # Street address and coordinates were previously folded into the
+                # details blob and lost. They are what place an event in a
+                # neighborhood, so keep them as structured fields.
+                street = (venue.get("address") or {}).get("line1")
+                address = ", ".join(p for p in (street, city, state) if p) or None
+
+                coordinates = venue.get("location") or {}
+                try:
+                    latitude = float(coordinates["latitude"])
+                    longitude = float(coordinates["longitude"])
+                except (KeyError, TypeError, ValueError):
+                    latitude = longitude = None
+
             details = " | ".join(details_parts) if details_parts else None
 
             # Extract cost and age_range from title and details
@@ -155,6 +174,10 @@ class TicketmasterScraper:
                 category=category,
                 details=details,
                 origination_url=url,
+                venue_name=venue_name,
+                address=address,
+                latitude=latitude,
+                longitude=longitude,
             )
 
             # Add cost and age_range to the event if extracted
@@ -178,6 +201,11 @@ class TicketmasterScraper:
 
             is_async = isinstance(db, AsyncSession)
 
+            # Neighborhood boundaries come from our own tables and are read once
+            # for the whole run, so placing each venue costs nothing further.
+            boundaries = await load_boundaries(db) if is_async else {}
+            neighborhood_ids: dict[str, Optional[int]] = {}
+
             for event_data in events:
                 url = event_data.origination_url
                 if url in seen_urls:
@@ -194,12 +222,36 @@ class TicketmasterScraper:
                     # Sync query
                     existing = db.query(EventModel).filter_by(origination_url=url).first()
 
+                # Place the venue by its coordinates, caching the id per
+                # neighborhood so repeated venues cost one lookup in total.
+                neighborhood_id = None
+                if boundaries:
+                    name = chicago_neighborhoods.locate_in(
+                        event_data.latitude, event_data.longitude, boundaries
+                    )
+                    if name:
+                        if name not in neighborhood_ids:
+                            neighborhood_ids[name] = await resolve_neighborhood_id(db, name)
+                        neighborhood_id = neighborhood_ids[name]
+
                 if not existing:
                     event = EventModel(**event_data.model_dump(), source="ticketmaster")
+                    event.neighborhood_id = neighborhood_id
                     db.add(event)
                     saved_count += 1
                 else:
                     existing.date_retrieved = datetime.utcnow()
+                    # Refresh location on rows stored before these fields were
+                    # captured, so existing events gain a neighborhood too.
+                    if event_data.latitude is not None:
+                        existing.latitude = event_data.latitude
+                        existing.longitude = event_data.longitude
+                    if event_data.address and not existing.address:
+                        existing.address = event_data.address
+                    if event_data.venue_name and not existing.venue_name:
+                        existing.venue_name = event_data.venue_name
+                    if neighborhood_id and not existing.neighborhood_id:
+                        existing.neighborhood_id = neighborhood_id
 
             if is_async:
                 await db.commit()

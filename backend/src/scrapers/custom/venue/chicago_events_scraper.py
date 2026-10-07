@@ -15,10 +15,32 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select
-from shared.database.models import EventModel, VenueModel, Base
+from shared.database.models import EventModel, VenueModel, NeighborhoodModel, Base
+from shared.database.neighborhoods import canonical_neighborhood, resolve_neighborhood_id
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Upper bound on a single venue's scrape. Generous enough for Playwright venues
+# that paginate through "load more" (Salt Shed takes ~40s), short enough that one
+# unresponsive site doesn't hang the full run.
+VENUE_SCRAPE_TIMEOUT = 120
+
+
+def infer_event_year(month_str: str, today: Optional[datetime] = None) -> int:
+    """Pick the year for a yearless venue date like "Oct 6".
+
+    Venue calendars list upcoming shows only, so a month earlier than the
+    current one belongs to next year (a January show listed in October).
+    """
+    today = today or datetime.now()
+    for fmt in ("%b", "%B"):
+        try:
+            month = datetime.strptime(month_str[:3] if fmt == "%b" else month_str, fmt).month
+        except ValueError:
+            continue
+        return today.year + 1 if month < today.month else today.year
+    return today.year
 
 
 def parse_date_range(date_str: Optional[str]) -> tuple[Optional[datetime], Optional[datetime]]:
@@ -506,10 +528,13 @@ async def extract_salt_shed_playwright(page, config: VenueConfig) -> list[VenueE
                 const heading = card.querySelector('h1,h2,h3,h4,h5,h6');
                 const date = leafText(card, /^(mon|tue|wed|thu|fri|sat|sun)[a-z]*,?\\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i);
                 const doors = leafText(card, /^doors/i);
+                const link = [...card.querySelectorAll('a[href]')].find(isTix)
+                    || card.querySelector('a[href]');
                 return {
                     date: date,
                     doors: doors ? doors.replace(/^doors:\\s*/i, '') : null,
                     title: heading ? heading.textContent.trim().replace(/\\s+/g, ' ') : null,
+                    url: link ? link.href : null,
                 };
             });
         }
@@ -526,10 +551,10 @@ async def extract_salt_shed_playwright(page, config: VenueConfig) -> list[VenueE
 
                     events.append(VenueEvent(
                         name=card['title'],
-                        date=f"{month} {day}, 2026",
+                        date=f"{month} {day}, {infer_event_year(month)}",
                         time=card['doors'],
                         location=f"{config.name}, {config.address}",
-                        url=config.website_url,
+                        url=card.get('url') or config.website_url,
                         venue_name=config.name,
                         category=config.category
                     ))
@@ -581,6 +606,451 @@ def extract_salt_shed(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEve
                 ))
 
         logger.info(f"{config.name}: extracted {len(events)} events from ve-events__card")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
+def extract_eb_item(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from the `.eb-item` show grid.
+
+    Used by the 16 on Center venues (Thalia Hall and siblings). Each card holds
+    its own fields, so no text mining is needed:
+
+        .date        "THU OCTOBER 8"
+        .start-time  "DOORS: 7:00PM"
+        .title       the billing
+        a[ticketweb] the per-event ticket link
+
+    Note the page also carries four `.recent-show` cards. Matching those instead
+    is why this venue reported exactly four events while the grid held seventy.
+    """
+    import re
+    events = []
+    try:
+        for item in soup.select('.eb-item'):
+            title_elem = item.select_one('.title')
+            title = title_elem.get_text(" ", strip=True) if title_elem else None
+            if not title or len(title) < 3:
+                continue
+
+            date_elem = item.select_one('.date')
+            date_text = date_elem.get_text(" ", strip=True) if date_elem else ""
+            match = re.search(
+                r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})',
+                date_text,
+                re.IGNORECASE,
+            )
+            if not match:
+                continue
+            month = match.group(1).title()[:3]
+            day = match.group(2)
+
+            time_elem = item.select_one('.start-time')
+            time_str = time_elem.get_text(" ", strip=True) if time_elem else None
+
+            link = item.select_one('a[href*="ticketweb"]') or item.select_one('a[href]')
+            url = link.get('href', config.website_url) if link else config.website_url
+            if not url.startswith('http'):
+                url = f"{config.website_url}{url}"
+
+            venue_elem = item.select_one('.venue')
+            venue_name = venue_elem.get_text(" ", strip=True) if venue_elem else config.name
+
+            events.append(VenueEvent(
+                name=title,
+                date=f"{month} {day}, {infer_event_year(month)}",
+                time=time_str,
+                location=f"{config.name}, {config.address}",
+                url=url,
+                venue_name=venue_name or config.name,
+                category=config.category,
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from .eb-item grid")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
+def extract_lh_st(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from lh-st.com, which lists Lincoln Hall and Schubas together.
+
+    One site serves both rooms, so every card names its venue ("SCHUBAS",
+    "SCHUBAS (UPSTAIRS)", "LINCOLN HALL") and the config's own name decides
+    which cards it keeps. Without that filter the two venues would each claim
+    all 132 shows.
+    """
+    import re
+    events = []
+    try:
+        # "Schubas Tavern" -> "schubas", "Lincoln Hall" -> "lincoln hall"
+        wanted = config.name.lower().replace(" tavern", "").strip()
+
+        for card in soup.select('.card'):
+            title_elem = card.select_one('.card-title')
+            title = title_elem.get_text(" ", strip=True) if title_elem else None
+            if not title or len(title) < 3:
+                continue
+
+            text = card.get_text(" ", strip=True)
+            if wanted not in text.lower():
+                continue
+
+            # "OCT 07"
+            match = re.search(
+                r'\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\.?\s+(\d{1,2})\b',
+                text,
+                re.IGNORECASE,
+            )
+            if not match:
+                continue
+            month = match.group(1).title()
+            day = match.group(2)
+
+            time_elem = card.select_one('.tessera-showTime')
+            time_str = time_elem.get_text(" ", strip=True) if time_elem else None
+
+            ages_elem = card.select_one('.showAges')
+            link = card.select_one('a[href]')
+            url = link.get('href', config.website_url) if link else config.website_url
+            if not url.startswith('http'):
+                url = f"{config.website_url}{url}"
+
+            events.append(VenueEvent(
+                name=title,
+                date=f"{month} {day}, {infer_event_year(month)}",
+                time=time_str,
+                location=f"{config.name}, {config.address}",
+                url=url,
+                venue_name=config.name,
+                category=config.category,
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from lh-st cards")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
+def extract_martyrs(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from Martyrs' calendar (a Drupal view).
+
+    Each row pairs a schedule line with the billing:
+
+        .views-field-field-show-schedule-value  "Fri, Oct 9th - Doors 6:30PM - Show 7:30PM - $20"
+        .views-field-field-show-bands-nid       "Phil Angotti & Friends ..."
+    """
+    import re
+    events = []
+    try:
+        for schedule in soup.select('.views-field-field-show-schedule-value'):
+            line = schedule.get_text(" ", strip=True)
+            match = re.search(
+                r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2})',
+                line,
+                re.IGNORECASE,
+            )
+            if not match:
+                continue
+            month, day = match.group(1).title(), match.group(2)
+
+            # The billing lives in a sibling field within the same row.
+            row = schedule
+            bands = None
+            for _ in range(4):
+                row = row.parent
+                if row is None:
+                    break
+                bands = row.select_one('.views-field-field-show-bands-nid')
+                if bands:
+                    break
+            title = bands.get_text(" ", strip=True) if bands else None
+            if not title or len(title) < 3:
+                continue
+
+            # "Doors 6:30PM - Show 7:30PM" -> keep the show time where given
+            show = re.search(r'Show\s*(\d{1,2}(?::\d{2})?\s*[APap]\.?[Mm])', line)
+            doors = re.search(r'Doors\s*(\d{1,2}(?::\d{2})?\s*[APap]\.?[Mm])', line)
+            time_str = (show or doors).group(1).upper().replace(" ", "") if (show or doors) else None
+
+            cost = None
+            if re.search(r'no cover|free', line, re.IGNORECASE):
+                cost = "Free"
+            else:
+                price = re.search(r'\$(\d+)', line)
+                if price:
+                    cost = f"${price.group(1)}"
+
+            events.append(VenueEvent(
+                name=title[:200],
+                date=f"{month} {day}, {infer_event_year(month)}",
+                time=time_str,
+                location=f"{config.name}, {config.address}",
+                url=config.event_page_url,
+                venue_name=config.name,
+                category=config.category,
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from calendar rows")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
+def extract_old_town_school(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from Old Town School of Folk Music.
+
+    Each `.concertListing` row shows the month and day as two separate tiles
+    ("OCT" / "08"), which is why reading them produced a month with no day.
+    The row also carries a full line that has everything, so parse that:
+
+        "Thursday · October 08 2026 · 1:00 PM CDT · Maurer Hall"
+    """
+    import re
+    events = []
+    try:
+        line_pattern = re.compile(
+            r'(January|February|March|April|May|June|July|August|September|October|November|December)'
+            r'\s+(\d{1,2})\s+(\d{4})(?:.*?(\d{1,2}:\d{2}\s*[AP]M))?',
+            re.IGNORECASE,
+        )
+        for row in soup.select('.concertListing'):
+            text = row.get_text(" ", strip=True)
+            match = line_pattern.search(text)
+            if not match:
+                continue
+            month, day, year, time_str = match.groups()
+
+            # The billing is the first heading in the row.
+            heading = row.find(['h2', 'h3', 'h4'])
+            title = heading.get_text(" ", strip=True) if heading else None
+            if not title:
+                # Fall back to the longest link text, which is the show name.
+                links = [a.get_text(" ", strip=True) for a in row.select('a')]
+                links = [t for t in links if t and 'ticket' not in t.lower()]
+                title = max(links, key=len) if links else None
+            if not title or len(title) < 3:
+                continue
+
+            link = row.select_one('a[href]')
+            url = link.get('href', config.website_url) if link else config.website_url
+            if not url.startswith('http'):
+                url = f"{config.website_url}{url}"
+
+            events.append(VenueEvent(
+                name=title[:200],
+                date=f"{month[:3].title()} {day}, {year}",
+                time=time_str.upper() if time_str else None,
+                location=f"{config.name}, {config.address}",
+                url=url,
+                venue_name=config.name,
+                category=config.category,
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from concert listings")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
+def extract_squarespace_eventlist(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from a Squarespace event list (The Loft on Lake).
+
+    Squarespace renders the date in a machine-readable `<time datetime>`, which
+    is far better than the "APR" tile beside it - reading the tiles produced
+    run-together values like "Apr1911:00 AM1". Past events are marked by the
+    `eventlist-event--past` class and skipped here.
+    """
+    events = []
+    try:
+        for item in soup.select('.eventlist-event'):
+            classes = " ".join(item.get('class', []))
+            if 'past' in classes:
+                continue
+
+            title_elem = item.select_one('.eventlist-title, .eventlist-title-link')
+            title = title_elem.get_text(" ", strip=True) if title_elem else None
+            if not title or len(title) < 3:
+                continue
+
+            stamp = item.select_one('time[datetime]')
+            iso = stamp.get('datetime') if stamp else None
+            if not iso:
+                continue
+            try:
+                parsed = datetime.strptime(iso[:10], "%Y-%m-%d")
+            except ValueError:
+                continue
+
+            time_elem = item.select_one('.event-time-12hr')
+            # Squarespace uses a narrow no-break space inside times.
+            time_str = time_elem.get_text(" ", strip=True).replace(" ", " ") if time_elem else None
+
+            link = item.select_one('a[href]')
+            url = link.get('href', config.website_url) if link else config.website_url
+            if not url.startswith('http'):
+                url = f"{config.website_url}{url}"
+
+            events.append(VenueEvent(
+                name=title[:200],
+                date=f"{parsed.strftime('%b')} {parsed.day}, {parsed.year}",
+                time=time_str,
+                location=f"{config.name}, {config.address}",
+                url=url,
+                venue_name=config.name,
+                category=config.category,
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} upcoming events from Squarespace list")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
+def extract_bramble(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from Bramble Arts Loft ("What's Playing" ticket links).
+
+    Bramble publishes no dates on its own site - each show is just a link out to
+    a different ticketing platform (Universe, Tickettailor, Eventbrite), and none
+    of those expose structured dates. So titles and URLs only; date stays None.
+    """
+    import re
+    events = []
+    try:
+        seen = set()
+        ticketing = re.compile(r'universe\.com|tickettailor\.com|eventbrite\.com|pointtheatreproject\.com', re.IGNORECASE)
+
+        for link in soup.select('a[href]'):
+            href = link.get('href', '')
+            if not ticketing.search(href):
+                continue
+
+            title = link.get_text(strip=True)
+            if not title or len(title) < 3 or href in seen:
+                continue
+            seen.add(href)
+
+            events.append(VenueEvent(
+                name=title,
+                date=None,
+                time=None,
+                location=f"{config.name}, {config.address}",
+                url=href,
+                venue_name=config.name,
+                category=config.category
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from ticket links (no dates published)")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
+def extract_outset(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from Outset (listings block with "15 Oct • 6:30pm" meta)."""
+    import re
+    events = []
+    try:
+        for listing in soup.select('.listings-block-list__listing'):
+            title_elem = listing.select_one('.listing__title')
+            title = title_elem.get_text(strip=True) if title_elem else None
+            if not title or len(title) < 3:
+                continue
+
+            meta_elem = listing.select_one('.listingDateTime')
+            meta = meta_elem.get_text(" ", strip=True) if meta_elem else ""
+
+            date_match = re.search(
+                r'(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)', meta, re.IGNORECASE
+            )
+            if not date_match:
+                continue
+            day, month = date_match.group(1), date_match.group(2).title()
+
+            time_match = re.search(r'(\d{1,2}(?::\d{2})?\s*[ap]m)', meta, re.IGNORECASE)
+            time_str = time_match.group(1).upper().replace(" ", "") if time_match else None
+
+            link = listing.select_one('.listing__titleLink')
+            url = link.get('href', config.website_url) if link else config.website_url
+            if not url.startswith("http"):
+                url = f"{config.website_url}{url}"
+
+            events.append(VenueEvent(
+                name=title,
+                date=f"{month} {day}, {infer_event_year(month)}",
+                time=time_str,
+                location=f"{config.name}, {config.address}",
+                url=url,
+                venue_name=config.name,
+                category=config.category
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from listings block")
+        return events
+
+    except Exception as e:
+        logger.error(f"{config.name} extraction failed: {e}")
+        return []
+
+
+def extract_united_center(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract events from United Center (a.eventLink rows on the events list)."""
+    import re
+    events = []
+    try:
+        seen = set()
+        # Each event links to /events/YYYY/MM/DD/slug/ - the date lives in the href,
+        # which is more reliable than the calendar cell text.
+        for link in soup.select('a.eventLink[href]'):
+            href = link.get('href', '')
+            date_match = re.search(r'/events/(\d{4})/(\d{2})/(\d{2})/', href)
+            if not date_match:
+                continue
+
+            title = link.get_text(strip=True)
+            if not title or len(title) < 3:
+                continue
+
+            url = href if href.startswith('http') else f"{config.website_url}{href}"
+            if url in seen:
+                continue
+            seen.add(url)
+
+            year, month, day = date_match.groups()
+            event_date = datetime(int(year), int(month), int(day))
+            date_str = f"{event_date.strftime('%b')} {event_date.day}, {event_date.year}"
+
+            # Time appears next to the title in the row: "Gorillaz (07:30 PM)"
+            row = link.find_parent('li') or link.parent
+            time_match = re.search(r'\((\d{1,2}:\d{2}\s*[AP]M)\)', row.get_text(" ", strip=True), re.IGNORECASE)
+            time_str = time_match.group(1).upper() if time_match else None
+
+            events.append(VenueEvent(
+                name=title,
+                date=date_str,
+                time=time_str,
+                location=f"{config.name}, {config.address}",
+                url=url,
+                venue_name=config.name,
+                category=config.category
+            ))
+
+        logger.info(f"{config.name}: extracted {len(events)} events from event links")
         return events
 
     except Exception as e:
@@ -1012,8 +1482,8 @@ CHICAGO_VENUES = {
         ),
         VenueConfig(
             name="James M. Nederlander Theatre",
-            website_url="https://www.jimmynet.com",
-            event_page_url="https://www.jimmynet.com/events",
+            website_url="https://www.broadwayinchicago.com",
+            event_page_url="https://www.broadwayinchicago.com/broadway-shows-in-chicago/",
             category="theater",
             address="24 W Randolph St",
             selectors={
@@ -1103,7 +1573,7 @@ CHICAGO_VENUES = {
             address="1357 N Elston Ave",
             selectors={},
             use_playwright=True,
-            extractor_fn=extract_salt_shed,
+            page_extractor_fn=extract_salt_shed_playwright,
         ),
         VenueConfig(
             name="Outset",
@@ -1111,13 +1581,9 @@ CHICAGO_VENUES = {
             event_page_url="https://outsetlive.com/events/",
             category="music",
             address="1675 N Elston Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            selectors={},
             use_playwright=True,
-            extractor_fn=None,
+            extractor_fn=extract_outset,
         ),
     ],
 
@@ -1125,14 +1591,13 @@ CHICAGO_VENUES = {
         VenueConfig(
             name="Rockwell on the River",
             website_url="https://www.rockwellontheriver.com",
-            event_page_url="https://www.rockwellontheriver.com/calendar/",
+            event_page_url="https://rockwellontheriver.com/event-space/",
             category="music",
             address="3757 N Rockwell Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            # No public calendar: /calendar/ 404s and the site is a rental/marina
+            # marketing page with no event listings. Empty selectors so the generic
+            # extractor yields nothing rather than scraping page furniture.
+            selectors={},
             use_playwright=True,
             extractor_fn=None,
         ),
@@ -1217,13 +1682,10 @@ CHICAGO_VENUES = {
             event_page_url="https://lh-st.com/",
             category="music",
             address="2424 N Lincoln Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            selectors={},
             use_playwright=True,
-            extractor_fn=None,
+            extractor_fn=extract_lh_st,
+            
         ),
         VenueConfig(
             name="Kingston Mines",
@@ -1292,17 +1754,14 @@ CHICAGO_VENUES = {
         ),
         VenueConfig(
             name="Schubas Tavern",
-            website_url="https://www.schubastavern.com",
-            event_page_url="https://www.schubastavern.com/calendar",
+            website_url="https://lh-st.com",
+            event_page_url="https://lh-st.com",
             category="music",
             address="3159 N Southport Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            selectors={},
             use_playwright=True,
-            extractor_fn=None,
+            extractor_fn=extract_lh_st,
+            
         ),
     ],
 
@@ -1323,46 +1782,15 @@ CHICAGO_VENUES = {
         VenueConfig(
             name="Old Town School of Folk Music",
             website_url="https://www.oldtownschool.org",
-            event_page_url="https://www.oldtownschool.org/events",
+            event_page_url="https://www.oldtownschool.org/concerts",
             category="music",
             address="4544 N Lincoln Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            selectors={},
             use_playwright=True,
+            extractor_fn=extract_old_town_school,
         ),
     ],
 
-    "Lakeview": [
-        VenueConfig(
-            name="Schubas Tavern",
-            website_url="https://www.schubastavern.com",
-            event_page_url="https://www.schubastavern.com/events",
-            category="music",
-            address="3159 N Southport Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
-            use_playwright=True,
-        ),
-        VenueConfig(
-            name="The Vic Theatre",
-            website_url="https://www.thevictheatre.com",
-            event_page_url="https://www.thevictheatre.com/events",
-            category="music",
-            address="3145 N Sheffield Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
-            use_playwright=True,
-        ),
-    ],
 
     "River North": [
         VenueConfig(
@@ -1384,17 +1812,13 @@ CHICAGO_VENUES = {
     "Pilsen": [
         VenueConfig(
             name="Thalia Hall",
-            website_url="https://thaliahallchicago.com",
-            event_page_url="https://thaliahallchicago.com/events",
+            website_url="https://www.thaliahallchicago.com",
+            event_page_url="https://www.thaliahallchicago.com/shows",
             category="music",
             address="1807 S Allport St",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            selectors={},
             use_playwright=True,
-            extractor_fn=None,
+            extractor_fn=extract_eb_item,
         ),
     ],
 
@@ -1440,60 +1864,26 @@ CHICAGO_VENUES = {
     "Humboldt Park": [
         VenueConfig(
             name="Martyrs'",
-            website_url="https://www.martyrschicago.com",
-            event_page_url="https://www.martyrschicago.com/events",
+            website_url="https://martyrslive.com",
+            event_page_url="https://martyrslive.com/calendar",
             category="music",
             address="3855 N Lincoln Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            selectors={},
             use_playwright=True,
+            extractor_fn=extract_martyrs,
         ),
         VenueConfig(
             name="The Loft on Lake",
-            website_url="https://www.theloftonlake.com",
-            event_page_url="https://www.theloftonlake.com/events",
+            website_url="https://loftonlake.com",
+            event_page_url="https://loftonlake.com/calendar",
             category="music",
             address="3453 W Lake St",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            selectors={},
             use_playwright=True,
+            extractor_fn=extract_squarespace_eventlist,
         ),
     ],
 
-    "West Town": [
-        VenueConfig(
-            name="Morgan Manufacturing",
-            website_url="https://www.morganmanufacturing.com",
-            event_page_url="https://www.morganmanufacturing.com/events",
-            category="music",
-            address="401 N Spaulding Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
-            use_playwright=True,
-        ),
-        VenueConfig(
-            name="Morgan Ballroom",
-            website_url="https://www.morganballroom.com",
-            event_page_url="https://www.morganballroom.com/events",
-            category="music",
-            address="401 N Spaulding Ave",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
-            use_playwright=True,
-        ),
-    ],
 
     "West Loop": [
         VenueConfig(
@@ -1505,30 +1895,18 @@ CHICAGO_VENUES = {
             selectors={},
             use_playwright=True,
         ),
-        VenueConfig(
-            name="Morgan Manufacturing West",
-            website_url="https://www.morganmanufacturing.com",
-            event_page_url="https://www.morganmanufacturing.com/events",
-            category="music",
-            address="401 N Spaulding Ave",
-            selectors={},
-            use_playwright=True,
-        ),
     ],
 
     "Near West Side": [
         VenueConfig(
             name="United Center",
             website_url="https://www.unitedcenter.com",
-            event_page_url="https://www.unitedcenter.com/events/month/",
+            event_page_url="https://www.unitedcenter.com/events/",
             category="music",
             address="1901 W Madison St",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            selectors={},
             use_playwright=True,
+            extractor_fn=extract_united_center,
         ),
     ],
 
@@ -1630,13 +2008,9 @@ CHICAGO_VENUES = {
             event_page_url="https://www.brambleartsloft.com",
             category="arts",
             address="5545 N Clark St",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time'
-            },
+            selectors={},
             use_playwright=True,
-            extractor_fn=None,
+            extractor_fn=extract_bramble,
         ),
         VenueConfig(
             name="Patio Theater",
@@ -1673,13 +2047,49 @@ CHICAGO_VENUES = {
 }
 
 
-async def save_events_to_db(async_session_maker, config: VenueConfig, events: list[VenueEvent]) -> None:
+def venue_to_neighborhood() -> dict[str, str]:
+    """Map lowercased venue name -> canonical neighborhood name.
+
+    CHICAGO_VENUES is keyed by neighborhood, so it is the authoritative source
+    for which part of the city a venue sits in.
+    """
+    mapping: dict[str, str] = {}
+    for neighborhood, configs in CHICAGO_VENUES.items():
+        for config in configs:
+            mapping.setdefault(config.name.strip().lower(), canonical_neighborhood(neighborhood))
+    return mapping
+
+
+async def _url_taken(session, url: str) -> bool:
+    """True if some event row already claims this origination_url."""
+    result = await session.execute(
+        select(EventModel.id).where(EventModel.origination_url == url)
+    )
+    return result.scalars().first() is not None
+
+
+async def save_events_to_db(
+    async_session_maker,
+    config: VenueConfig,
+    events: list[VenueEvent],
+    neighborhood: Optional[str] = None,
+) -> None:
     """Save extracted events to database (upsert to avoid duplicates)."""
     if not events:
         return
 
     async with async_session_maker() as session:
         try:
+            # Which part of the city these events belong to, so the UI can
+            # offer neighborhoods as a filter.
+            neighborhood_id = await resolve_neighborhood_id(session, neighborhood)
+            # origination_url is UNIQUE in the schema, but venues routinely reuse a
+            # single URL across shows (a homepage fallback, or one tour page covering
+            # two nights). Track what this batch has claimed so a collision can be
+            # given a deterministic unique variant instead of raising - an IntegrityError
+            # here rolls back every event for the venue, not just the colliding one.
+            used_urls = set()
+
             # Add or update events
             for i, event in enumerate(events):
                 # Parse date string to datetime objects
@@ -1711,7 +2121,21 @@ async def save_events_to_db(async_session_maker, config: VenueConfig, events: li
                     existing_event.time = event.time
                     existing_event.time_end = event.time_end
                     existing_event.date_retrieved = datetime.utcnow()
+                    if neighborhood_id:
+                        existing_event.neighborhood_id = neighborhood_id
                 else:
+                    # Resolve a unique origination_url. The suffix is derived from the
+                    # event's identity (source + date + name), so a later rescrape of the
+                    # same event rebuilds the same URL and updates in place.
+                    base_url = event.url or config.website_url
+                    origination_url = base_url
+                    if base_url in used_urls or await _url_taken(session, base_url):
+                        date_key = parsed_date.strftime("%Y-%m-%d") if parsed_date else "nodate"
+                        origination_url = f"{base_url}#{source_name}-{date_key}-{event.name[:60]}"
+                        if origination_url in used_urls:
+                            origination_url = f"{origination_url}-{i}"
+                    used_urls.add(origination_url)
+
                     # Create new event
                     event_model = EventModel(
                         name=event.name,
@@ -1722,9 +2146,10 @@ async def save_events_to_db(async_session_maker, config: VenueConfig, events: li
                         category=event.category,
                         address=event.location,
                         venue_name=event.venue_name or config.name,
-                        origination_url=event.url or f"#venue-{config.name}-{i}",  # Make each event unique
+                        origination_url=origination_url,
                         source=source_name,
                         details=None,
+                        neighborhood_id=neighborhood_id,
                     )
                     session.add(event_model)
 
@@ -1757,13 +2182,19 @@ async def scrape_chicago_events() -> dict[str, list[VenueEvent]]:
             for config in venues:
                 try:
                     scraper = VenueScraper(config)
-                    events = await scraper.scrape(client)
+                    # Hard cap per venue: a site that never finishes loading (or a
+                    # browser that won't close) would otherwise stall the whole run.
+                    events = await asyncio.wait_for(
+                        scraper.scrape(client), timeout=VENUE_SCRAPE_TIMEOUT
+                    )
                     neighborhood_events.extend(events)
                     total_events += len(events)
 
                     # Save events to database
-                    await save_events_to_db(async_session, config, events)
+                    await save_events_to_db(async_session, config, events, neighborhood)
 
+                except asyncio.TimeoutError:
+                    logger.error(f"{config.name}: timed out after {VENUE_SCRAPE_TIMEOUT}s, skipping")
                 except Exception as e:
                     logger.error(f"Error scraping {config.name}: {e}")
 

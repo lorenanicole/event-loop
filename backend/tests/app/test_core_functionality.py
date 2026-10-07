@@ -7,7 +7,7 @@ import pytest
 import asyncio
 import sys
 from typing import AsyncGenerator
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Fixtures
@@ -15,14 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 async def async_client() -> AsyncGenerator[AsyncClient, None]:
     """Provide async HTTP client for testing."""
     from app.main import app
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
 
 @pytest.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """Provide database session for testing."""
-    from database import AsyncSessionLocal
+    from shared.database import AsyncSessionLocal
     async with AsyncSessionLocal() as session:
         yield session
 
@@ -98,7 +98,7 @@ class TestScraper:
     @pytest.mark.asyncio
     async def test_scraper_initialization(self):
         """Test scraper can be initialized."""
-        from scrapers.venue_scraper import VenueScraper, VenueConfig
+        from scrapers.custom.venue.venue_scraper import VenueScraper, VenueConfig
 
         config = VenueConfig(
             name="Test Venue",
@@ -116,7 +116,7 @@ class TestScraper:
     @pytest.mark.asyncio
     async def test_venue_config_validation(self):
         """Test VenueConfig validation."""
-        from scrapers.venue_scraper import VenueConfig
+        from scrapers.custom.venue.venue_scraper import VenueConfig
 
         # Should accept valid config
         config = VenueConfig(
