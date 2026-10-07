@@ -117,7 +117,7 @@ eventloop/
 - ⏳ **Exponential Backoff** - Retry transient failures smartly
 - 📊 **OpenTelemetry** - Counters, histograms, audit trails
 - 🔐 **Prompt Injection Defense** - Pattern detection, rate limiting, output validation
-- 🧪 **367 Tests** - Security, resilience, database, API, scraper coverage
+- 🧪 **384 Tests** - Security, resilience, database, API, scraper coverage
 
 ### **Production-Ready**
 - 🛡️ **Security** - Blocks prompt injections, validates outputs, sanitizes inputs
@@ -208,6 +208,12 @@ python venue_health.py
 # bot protection rather than a dead link; a 404 or DNS failure is real.
 python link_health.py
 python link_health.py --source chicago_venue_den_theatre
+
+# Remove events whose own page is gone. Only a 404 or 410 counts as gone;
+# bot protection, server errors and timeouts never do, and every URL is
+# confirmed twice before anything is deleted.
+python prune_dead_links.py --dry-run
+python prune_dead_links.py
 
 # Place Park District events without geocoding: the city's open data portal
 # publishes all 617 parks with boundary polygons, so one request replaces
