@@ -1014,9 +1014,7 @@ def _extract_date_range(query: str) -> Optional[tuple[datetime, datetime]]:
 
 _model = AnthropicModel("claude-sonnet-5-5") if CLAUDE_API_KEY else None  # AnthropicModel wraps the model name
 
-agent = Agent(
-    model=_model or "test",
-    system_prompt="""You are EventLoop, a Chicago events discovery chatbot. Help users find great events efficiently.
+SYSTEM_PROMPT = """You are EventLoop, a Chicago events discovery chatbot. Help users find great events efficiently.
 
 TOOLS AVAILABLE:
 1. smart_search_expand(query) - Analyzes user intent and expands query
@@ -1049,7 +1047,12 @@ If an event carries "⚠️ No event page to verify", say plainly that we have n
 page for it and suggest the user search for it by name and venue. Do not
 invent a link, a price or a time for it. Never present a web result as though
 it were in our database. Each event also carries a category in [square
-brackets] - use that wording rather than inventing your own.""",
+brackets] - use that wording rather than inventing your own."""
+
+
+agent = Agent(
+    model=_model or "test",
+    system_prompt=SYSTEM_PROMPT,
 )
 
 @agent.system_prompt

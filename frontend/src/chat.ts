@@ -25,6 +25,7 @@ class ChatWidget {
   private sendButton: HTMLButtonElement;
   private newChatButton: HTMLButtonElement;
   private threadId: string | null = null;
+  private conversationEnded = false;
   private isStreaming = false;
   private toolResults: Record<string, string> = {};
   private isCollapsed = true;
@@ -147,14 +148,22 @@ class ChatWidget {
   }
 
   private endConversation(): void {
-    this.inputField.disabled = true;
+    // The input stays usable so "start" can be typed. Disabling it was the
+    // only way out before, which meant the one thing a person naturally does
+    // at the end of a conversation - keep typing - did nothing at all.
     this.sendButton.style.display = "none";
     this.newChatButton.style.display = "inline-block";
+    this.conversationEnded = true;
+    this.inputField.disabled = false;
+    this.inputField.placeholder = 'Type "start" for a new chat...';
+    this.inputField.focus();
   }
 
   private startNewChat(): void {
     // Reset thread ID to start a new conversation
     this.threadId = null;
+    this.conversationEnded = false;
+    this.inputField.placeholder = "Ask about events...";
     this.inputField.disabled = false;
     this.sendButton.style.display = "inline-block";
     this.newChatButton.style.display = "none";
@@ -168,6 +177,25 @@ class ChatWidget {
   private async sendMessage(): Promise<void> {
     const message = this.inputField.value.trim();
     if (!message || this.isStreaming) return;
+
+    // After a conversation ends, "start" begins a fresh one. Accepted in the
+    // words people actually use, and only while ended - mid-chat, "start
+    // over" is a question about events somewhere, not a command.
+    if (this.conversationEnded) {
+      if (/^(start|start over|new|new chat|restart|again)[.!]?$/i.test(message)) {
+        this.inputField.value = "";
+        this.startNewChat();
+        return;
+      }
+      // Anything else: say what to do rather than silently doing nothing.
+      this.inputField.value = "";
+      this.addMessageToUI("user", message);
+      this.addMessageToUI(
+        "assistant",
+        'That one\'s done - type **start** (or hit **New Chat**) and I\'ll pick it up fresh.'
+      );
+      return;
+    }
 
     // Add user message to UI
     this.addMessageToUI("user", message);

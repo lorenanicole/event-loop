@@ -437,6 +437,19 @@ class ChatExecutor:
                     thread.status = "completed"
                     await db.commit()
 
+                await self._audit_log(
+                    "turn_completed",
+                    thread_id,
+                    "success",
+                    total_tokens,
+                    {
+                        "turn": thread.turn_count,
+                        "tool_calls": tool_calls_made,
+                        "remaining_turns": max(0, new_remaining_turns),
+                    },
+                    duration_ms=(time.time() - start_time) * 1000,
+                )
+
                 yield CompleteEvent(
                     thread_id=thread_id,
                     tokens_used=total_tokens,
@@ -505,9 +518,13 @@ class ChatExecutor:
         from pydantic_ai.messages import (
             ModelRequest,
             ModelResponse,
+            SystemPromptPart,
             TextPart,
             UserPromptPart,
         )
+
+        from app.ai.chatbot import SYSTEM_PROMPT, todays_date
+        from app.ai.persona import persona_prompt
 
         rows = (await db.execute(
             select(ChatMessageModel)
@@ -531,6 +548,29 @@ class ChatExecutor:
         # A history must not start with a reply to nothing.
         while history and isinstance(history[0], ModelResponse):
             history.pop(0)
+
+        if not history:
+            return history
+
+        # The system prompts have to be replayed into the history, because
+        # pydantic-ai does not re-apply the agent's own once `message_history`
+        # is given - it assumes the history already carries them.
+        #
+        # Measured, not guessed: with a history the run's messages contained
+        # UserPromptPart and TextPart and no SystemPromptPart at all, and
+        # asking "what is today's date" answered "Wednesday, October 7, 2026"
+        # on a first turn and "I don't have access to today's date" on a
+        # follow-up. So every turn after the first was losing the persona, the
+        # date and the brevity rules together - a regression introduced by
+        # adding history in the first place.
+        #
+        # The dynamic ones are evaluated now rather than stored, so a
+        # conversation spanning midnight does not keep yesterday's date.
+        history.insert(0, ModelRequest(parts=[
+            SystemPromptPart(content=SYSTEM_PROMPT),
+            SystemPromptPart(content=persona_prompt()),
+            SystemPromptPart(content=todays_date()),
+        ]))
         return history
 
     async def _run_agent_with_events(
@@ -606,7 +646,7 @@ class ChatExecutor:
                         f"Output validation failed - potential info disclosure: {leaked_pattern}"
                     )
                     response_text = OutputValidator.sanitize(response_text)
-                    self._audit_log(
+                    await self._audit_log(
                         "output_sanitized",
                         thread_id,
                         "success",
@@ -677,20 +717,48 @@ class ChatExecutor:
         return
 
 
-    def _audit_log(
+    async def _audit_log(
         self,
         operation: str,
-        thread_id: str,
+        thread_id: str | None,
         status: str,
         tokens: int,
         metadata: dict,
         duration_ms: float = 0.0,
         error_message: str | None = None,
     ):
-        """Record an audit log entry for observability (async migration pending)."""
-        # Audit logging disabled during async database migration
-        # Will be re-enabled when database layer is fully async
-        pass
+        """Record one line of what happened, for observability.
+
+        This was a `pass` with the note "disabled during async database
+        migration", and the migration finished long ago - so the audit_logs
+        table had 258 conversations' worth of nothing in it. There is no point
+        defining a table and then not writing to it.
+
+        Writes on its own short-lived session rather than the request's, for
+        two reasons: a failed turn has usually rolled its session back, and
+        holding the request's session means holding SQLite's write lock across
+        the agent run, which is the bug that made concurrent chats fail.
+
+        Never raises. Observability that can break the thing it observes is
+        worse than none.
+        """
+        from shared.database import AsyncSessionLocal
+        from shared.database.models import AuditLogModel
+
+        try:
+            async with AsyncSessionLocal() as session:
+                session.add(AuditLogModel(
+                    thread_id=thread_id,
+                    operation=operation,
+                    status=status,
+                    duration_ms=duration_ms,
+                    tokens_used=tokens,
+                    metadata=json.dumps(metadata) if metadata else None,
+                    error_message=error_message,
+                ))
+                await session.commit()
+        except Exception as exc:  # noqa: BLE001 - see docstring
+            logger.warning("audit log write failed: %s: %s", type(exc).__name__, exc)
 
 
 def sse_event_formatter(event: StreamEvent) -> str:
