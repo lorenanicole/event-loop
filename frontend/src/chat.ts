@@ -303,13 +303,27 @@ Let's find your next great event! ⚡`;
         break;
 
       case "complete":
-        const remaining = data.remaining_turns as number || 0;
+        // `?? -1` rather than `|| 0`. A missing field used to read as zero,
+        // which ended the whole conversation and blamed the token limit: the
+        // out-of-scope reply ("tell me a joke") sent no budget fields at all,
+        // so a single off-topic question killed the chat. -1 means "the
+        // server did not say", which is not a reason to stop.
+        const turnsLeft = (data.remaining_turns as number) ?? -1;
+        const tokensLeft = (data.remaining_tokens as number) ?? -1;
+        const exhausted = turnsLeft === 0 || tokensLeft === 0;
+
         this.showStatus(
-          remaining === 0
-            ? `✅ Chat complete (token limit reached)`
-            : `✅ Complete (${data.tokens_used} tokens)`
+          exhausted
+            // Name the limit actually reached. It said "token limit" either
+            // way, while the turn limit is the one that runs out first.
+            ? turnsLeft === 0
+              ? `✅ Chat complete - no more questions left. Start a new chat!`
+              : `✅ Chat complete - reply budget used up. Start a new chat!`
+            : turnsLeft > 0
+              ? `✅ Complete (${turnsLeft} question${turnsLeft === 1 ? "" : "s"} left)`
+              : `✅ Complete`
         );
-        if (remaining === 0) {
+        if (exhausted) {
           this.endConversation();
         }
         break;

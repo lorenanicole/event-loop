@@ -130,9 +130,24 @@ class ChatExecutor:
     Manages conversation state, database persistence, and event emission.
     """
 
-    # MVP Limits: Keep conversations focused and cost-efficient
-    MAX_TOKENS_PER_CONVERSATION = 4000
-    MAX_TURNS_PER_CONVERSATION = 5
+    # Budget per conversation, to keep it focused and cheap.
+    #
+    # The turn limit is the one that binds, and it was too tight. Measured
+    # over the stored threads, a turn spends 20-326 of these "tokens", so the
+    # old 4,000 could never be reached inside 5 turns - the conversation
+    # always ended on turns while telling the user it had run out of tokens.
+    #
+    # Five is also fewer than the conversation invites: the agent ends replies
+    # with "would you like me to narrow these by neighborhood?", and narrowing
+    # twice then asking about one event is already four. Twelve leaves room to
+    # actually plan an evening while still ending a runaway thread.
+    #
+    # Note what a "token" is here: `len(response.split()) * 1.3`, an estimate
+    # of the words in the reply. It counts neither the prompt, the system
+    # prompt, nor tool output, so it is a rough spend signal and not an API
+    # token count - which is why the ceiling is generous rather than tuned.
+    MAX_TOKENS_PER_CONVERSATION = 20000
+    MAX_TURNS_PER_CONVERSATION = 12
     TOKEN_WARNING_THRESHOLD = 0.75  # Warn when 75% of tokens used
 
     def __init__(self):
@@ -213,6 +228,12 @@ class ChatExecutor:
                             "out_of_scope": True,
                         },
                     )
+                    # The budget is reported even though this question spent
+                    # none of it. Leaving the fields out ended the whole
+                    # conversation: the UI read a missing `remaining_turns` as
+                    # zero and told the user "token limit reached" after a
+                    # single off-topic question. An out-of-scope answer costs
+                    # no turn, so the numbers are the ones going in.
                     yield CompleteEvent(
                         thread_id=thread_id,
                         tokens_used=0,
@@ -220,6 +241,14 @@ class ChatExecutor:
                             "thread_id": thread_id,
                             "tokens_used": 0,
                             "out_of_scope": True,
+                            "remaining_tokens": max(
+                                0,
+                                self.MAX_TOKENS_PER_CONVERSATION - thread.total_tokens,
+                            ),
+                            "remaining_turns": max(
+                                0,
+                                self.MAX_TURNS_PER_CONVERSATION - thread.turn_count,
+                            ),
                         },
                     )
                     return

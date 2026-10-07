@@ -1,0 +1,12 @@
+12:26:07  === run started 2026-10-07 12:26:07 ===
+12:26:07  before: 2859 upcoming, 987 priced
+
+12:26:07  external sources (4)
+
+12:26:21  ticketmaster                         61 new                        14s
+12:28:16  do312                               215 new                        116s
+12:35:02  chicago_park_district                 4 new                        406s
+12:35:12  broadway_in_chicago                   0 new                        10s
+
+12:35:12  after: 3139 upcoming (+280), 1064 priced (+77)
+12:35:12  Additive scrape complete
