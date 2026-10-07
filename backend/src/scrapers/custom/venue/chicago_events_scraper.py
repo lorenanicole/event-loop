@@ -1141,6 +1141,73 @@ _WEEKDAY_RE = re.compile(
 )
 
 
+def extract_songkick_venue(soup: BeautifulSoup, config: VenueConfig) -> list[VenueEvent]:
+    """Extract a venue's concerts from its Songkick venue page.
+
+    For venues that have no website at all. Several real Chicago music venues
+    are web-invisible - Los Globos and V-Live in Little Village both draw
+    touring regional Mexican acts but promote on Instagram and sell through
+    third-party ticketers - so a listing aggregator is the only way to see
+    them. Songkick emits a full ISO timestamp per concert, so dates are exact.
+    """
+    events = []
+    seen = set()
+
+    for item in soup.select("ul.event-listings li"):
+        stamp = item.select_one("time[datetime]")
+        link = item.select_one('a[href*="/concerts/"]')
+        if not stamp or not link:
+            continue
+        try:
+            when = datetime.fromisoformat((stamp.get("datetime") or "").strip())
+        except ValueError:
+            continue
+
+        # "Mazizo Musical / Los Globos, Chicago, IL, US / BUY TICKETS / ..."
+        title = None
+        for line in item.get_text("\n", strip=True).split("\n"):
+            line = line.strip()
+            low = line.lower()
+            if not line or len(line) < 3:
+                continue
+            if low.startswith(("buy tickets", "interested", "going", "don't miss",
+                               "dont miss", "tickets")):
+                continue
+            # The venue's own name and the date header are not the event.
+            if config.name.lower() in low or low.startswith(_WEEKDAY_PREFIXES):
+                continue
+            title = line
+            break
+        if not title:
+            continue
+
+        key = (when.date(), title.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+
+        href = link.get("href") or ""
+        url = href if href.startswith("http") else f"https://www.songkick.com{href}"
+
+        events.append(VenueEvent(
+            name=title[:200],
+            date=f"{when.strftime('%b')} {when.day}, {when.year}",
+            time=when.strftime("%-I:%M %p") if (when.hour or when.minute) else None,
+            location=f"{config.name}, {config.address}",
+            url=url,
+            venue_name=config.name,
+            category=config.category,
+        ))
+
+    logger.info(f"{config.name}: extracted {len(events)} events from Songkick")
+    return events
+
+
+_WEEKDAY_PREFIXES = (
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+)
+
+
 def _title_from(lines: list[str]) -> Optional[str]:
     """Pick the event title out of a card's text lines.
 
@@ -2785,6 +2852,16 @@ CHICAGO_VENUES = {
             use_playwright=True,
             extractor_fn=extract_tribe_events,
         ),
+        VenueConfig(
+            name="The Promontory",
+            website_url="https://www.songkick.com",
+            event_page_url="https://www.songkick.com/venues/2716303-promontory",
+            category="music",
+            address="5311 S Lake Park Ave W",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_songkick_venue,
+        ),
     ],
 
     "Albany Park": [
@@ -2826,6 +2903,73 @@ CHICAGO_VENUES = {
             selectors={},
             use_playwright=True,
             extractor_fn=extract_tribe_events,
+        ),
+        VenueConfig(
+            name="Room 43",
+            website_url="https://www.songkick.com",
+            event_page_url="https://www.songkick.com/venues/620356-room-43",
+            category="music",
+            address="1043 E 43rd St",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_songkick_venue,
+        ),
+        VenueConfig(
+            name="Bronzeville Winery",
+            website_url="https://www.songkick.com",
+            event_page_url="https://www.songkick.com/venues/4506126-bronzeville-winery",
+            category="music",
+            address="4420 S Cottage Grove Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_songkick_venue,
+        ),
+    ],
+
+    # Little Village's music venues are real but web-invisible: Los Globos and
+    # V-Live both book touring regional Mexican acts, and neither has a working
+    # site - Los Globos has none at all and vlivechicago.com refuses
+    # connections. Songkick carries both calendars.
+    "Little Village": [
+        VenueConfig(
+            name="Los Globos",
+            website_url="https://www.songkick.com",
+            event_page_url="https://www.songkick.com/venues/4345062-los-globos",
+            category="music",
+            address="3059 S Central Park Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_songkick_venue,
+        ),
+        VenueConfig(
+            name="V-Live",
+            website_url="https://www.songkick.com",
+            event_page_url="https://www.songkick.com/venues/498306-v-live",
+            category="music",
+            address="2501 S Kedzie Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_songkick_venue,
+        ),
+        VenueConfig(
+            name="Apollo's 2000",
+            website_url="https://www.songkick.com",
+            event_page_url="https://www.songkick.com/venues/49204-apollos-2000",
+            category="music",
+            address="2875 W Cermak Rd",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_songkick_venue,
+        ),
+        VenueConfig(
+            name="Cermak Hall",
+            website_url="https://www.songkick.com",
+            event_page_url="https://www.songkick.com/venues/4378690-cermak-hall",
+            category="music",
+            address="2701 W Cermak Rd",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_songkick_venue,
         ),
     ],
 
@@ -2901,6 +3045,56 @@ CHICAGO_VENUES = {
         ),
     ],
 
+
+
+    "South Shore": [
+        VenueConfig(
+            name="South Shore Cultural Center",
+            website_url="https://www.songkick.com",
+            event_page_url="https://www.songkick.com/venues/36861-south-shore-cultural-center",
+            category="music",
+            address="7059 S South Shore Dr",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_songkick_venue,
+        ),
+        VenueConfig(
+            name="Lee's Unleaded Blues",
+            website_url="https://www.songkick.com",
+            event_page_url="https://www.songkick.com/venues/532626-lees-unleaded-blues",
+            category="music",
+            address="7401 S South Chicago Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_songkick_venue,
+        ),
+    ],
+
+    "Grand Crossing": [
+        VenueConfig(
+            name="The New Apartment Lounge",
+            website_url="https://www.songkick.com",
+            event_page_url="https://www.songkick.com/venues/777551-new-apartment-lounge",
+            category="music",
+            address="504 E 75th St",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_songkick_venue,
+        ),
+    ],
+
+    "North Center": [
+        VenueConfig(
+            name="Constellation",
+            website_url="https://www.songkick.com",
+            event_page_url="https://www.songkick.com/venues/3028939-constellation-chicago",
+            category="music",
+            address="3111 N Western Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_songkick_venue,
+        ),
+    ],
 }
 
 

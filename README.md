@@ -87,7 +87,7 @@ eventloop/
   browse or type into; selecting is the search, so there is no submit step
 
 ### **Neighborhoods**
-- 🗺️ **Events placed in 76 Chicago neighborhoods** - 95% of upcoming events, North Side to South Side
+- 🗺️ **Events placed in 77 Chicago neighborhoods** - 95% of upcoming events, North Side to South Side
 - 📐 **Point-in-polygon, not geocoding** - the city's 98 neighborhood boundaries are
   stored in the database, so placing a venue is a local geometry test: no API calls,
   no rate limits, ~3 ms
@@ -96,7 +96,7 @@ eventloop/
   once, rate limited, and cached permanently in `geocode_cache`
 
 ### **Data at Scale**
-- 📊 **2,900+ upcoming events** - 7 external sources plus 55 venue scrapers
+- 📊 **2,900+ upcoming events** - 7 external sources plus 66 venue scrapers
 - 💵 **Prices where venues publish them** - one `parse_cost()` normalizes "$25",
   "$20-$25", "Starting at $64", "No cover" and "Donation", and rejects the
   near-misses ("21+", "Show 9:30PM")
@@ -117,7 +117,7 @@ eventloop/
 - ⏳ **Exponential Backoff** - Retry transient failures smartly
 - 📊 **OpenTelemetry** - Counters, histograms, audit trails
 - 🔐 **Prompt Injection Defense** - Pattern detection, rate limiting, output validation
-- 🧪 **221 Tests** - Security, resilience, database, API, scraper coverage
+- 🧪 **227 Tests** - Security, resilience, database, API, scraper coverage
 
 ### **Production-Ready**
 - 🛡️ **Security** - Blocks prompt injections, validates outputs, sanitizes inputs

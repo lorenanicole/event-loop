@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 
 from scrapers.custom.venue.chicago_events_scraper import (
     extract_dated_list_items,
+    extract_songkick_venue,
     extract_tribe_events,
 )
 from scrapers.custom.venue.venue_scraper import VenueConfig, parse_cost
@@ -235,6 +236,60 @@ class TestExtractDatedListItems:
     def test_card_with_only_a_date_is_skipped(self):
         html = '<ul><li class="a"><span>Oct 8</span><a href="/x">TICKETS</a></li></ul>'
         assert extract_dated_list_items(BeautifulSoup(html, "html.parser"), config()) == []
+
+
+class TestExtractSongkickVenue:
+    """For venues with no website of their own."""
+
+    HTML = """
+    <div class="component events-summary">
+      <ul class="event-listings">
+        <li class="with-date"><strong><time datetime="2026-10-10T21:00:00-0500">Saturday 10 October 2026</time></strong></li>
+        <li>
+          <time datetime="2026-10-10T21:00:00-0500"></time>
+          <a href="/concerts/43435793-mazizo-musical-at-los-globos">
+            <p class="artists">Mazizo Musical</p>
+            <p class="location">Los Globos, Chicago, IL, US</p>
+          </a>
+          <span>BUY TICKETS</span><span>INTERESTED</span><span>GOING</span>
+        </li>
+        <li>
+          <time datetime="2026-11-05T20:00:00-0600"></time>
+          <a href="/concerts/99999-rata-blanca">
+            <p class="artists">Rata Blanca</p>
+            <p class="location">Los Globos, Chicago, IL, US</p>
+          </a>
+        </li>
+      </ul>
+    </div>
+    """
+
+    def extracted(self):
+        config_ = config(name="Los Globos", address="3059 S Central Park Ave")
+        return extract_songkick_venue(BeautifulSoup(self.HTML, "html.parser"), config_)
+
+    def test_one_event_per_concert(self):
+        """The date-header <li> must not become a third event."""
+        assert len(self.extracted()) == 2
+
+    def test_artist_is_the_title(self):
+        assert [e.name for e in self.extracted()] == ["Mazizo Musical", "Rata Blanca"]
+
+    def test_date_and_time_from_the_iso_stamp(self):
+        event = self.extracted()[0]
+        assert event.date == "Oct 10, 2026"
+        assert event.time == "9:00 PM"
+
+    def test_handles_a_different_utc_offset(self):
+        assert self.extracted()[1].date == "Nov 5, 2026"
+
+    def test_url_is_made_absolute(self):
+        assert self.extracted()[0].url.startswith("https://www.songkick.com/concerts/")
+
+    def test_venue_name_and_address_are_ours_not_songkick_s(self):
+        event = self.extracted()[0]
+        assert event.venue_name == "Los Globos"
+        assert "3059 S Central Park Ave" in event.location
 
 
 class TestParkDistrictDates:
