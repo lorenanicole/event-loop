@@ -28,7 +28,7 @@ invoke info  # See all available commands
 - **pytest-cov** - Coverage reporting
 
 ### Security
-- **bandit** - Security vulnerability scanner
+- **ruff S rules** - Security scanning via flake8-bandit rules (built into ruff, no separate install)
 
 ## Common Development Tasks
 
@@ -102,7 +102,7 @@ After `invoke setup-hooks`, git hooks automatically run on commit:
    
 2. **Ruff formatting** - Ensures consistent formatting
 
-3. **Security check** - Scans for vulnerabilities (Bandit)
+3. **Security check** - Scans for vulnerabilities (ruff S rules)
 
 4. **Core tests** - Runs security + core tests
    - Stops commit if tests fail
@@ -116,7 +116,7 @@ $ git commit -m "Add new feature"
 # Git hooks run automatically:
 ✓ Ruff lint (auto-fix)     [0.2s]
 ✓ Ruff format               [0.1s]
-✓ Security check (Bandit)   [0.3s]
+✓ Security check (ruff S)   [0.1s]
 ✓ Security tests            [2.1s]
 ✓ Core functionality tests  [1.8s]
 
@@ -125,27 +125,30 @@ $ git commit -m "Add new feature"
 
 ## Ruff Configuration
 
-Ruff settings in `.ruff.toml`:
+Ruff settings live in `backend/pyproject.toml` under `[tool.ruff.lint]`:
 
-- **Target**: Python 3.15
+- **Target**: Python 3.14 (minimum declared; environment runs 3.15)
 - **Line length**: 100 chars
-- **Rules**: pycodestyle, Pyflakes, isort, modernization, bugbear, simplification
-- **Ignore**: E501 (line length), W503 (operator placement)
+- **Rules selected**: B, BLE, DTZ, E, EXE, F, G, LOG, PLW, RUF, S, SIM, W
+- **Globally ignored**: B008 (FastAPI Depends), BLE001 (deliberate broad except), EXE001 (scripts not chmod'd), G004 (f-string logging convention)
+- **Per-file overrides**: scrapers ignore DTZ (intentionally naive datetimes); tests ignore S and DTZ; scripts ignore S, T20, E501
 
-### Ruff Rules
+### Ruff commands
 
 ```bash
-# View all rules
-ruff rule E501
+cd backend
 
-# Check specific rule
-ruff check src/ --select E501
+# Check
+python3 -m ruff check src/ tests/ scripts/ eval/
 
-# Disable rule for a line
-# noqa: E501
+# Auto-fix safe issues
+python3 -m ruff check src/ tests/ scripts/ eval/ --fix
 
-# Disable rule for entire file
-# ruff: noqa: E501
+# Format
+python3 -m ruff format src/ tests/ scripts/ eval/
+
+# Suppress one line
+some_code  # noqa: E501
 ```
 
 ## Pre-Commit Configuration
@@ -161,7 +164,7 @@ Hooks defined in `.pre-commit-config.yaml`:
 | check-yaml | YAML syntax | ❌ No |
 | check-toml | TOML syntax | ❌ No |
 | debug-statements | Find debugger calls | ❌ No |
-| bandit | Security scan | ❌ No |
+| ruff (S rules) | Security scan | ✅ Yes (noqa comments) |
 | pytest-security | Security tests | ❌ No |
 | pytest-core | Core tests | ❌ No |
 
@@ -270,11 +273,10 @@ Git hook definitions:
 - Hook versions
 - Per-hook configuration
 
-### `.bandit`
-Security scanning config:
-- Tests to run
-- Severity levels
-- Exclusions
+### `pyproject.toml` — ruff security rules
+Security scanning uses ruff's `S` (flake8-bandit) rules configured in
+`[tool.ruff.lint]`. Per-file ignores suppress intentional patterns (e.g.
+`S104` for the dev server bind-all, `S311` for persona rotation).
 
 ### `tasks.py`
 Invoke task definitions:
@@ -304,7 +306,7 @@ invoke test-quick --fast
 ### Faster CI checks
 ```bash
 # Pre-commit already optimized, but you can:
-SKIP=bandit invoke pre-commit  # Skip security scan if trusted
+SKIP=ruff invoke pre-commit  # Skip linting if you need to commit WIP
 ```
 
 ### Debug a failing test
