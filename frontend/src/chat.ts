@@ -473,12 +473,23 @@ class ChatWidget {
     // inside a chat bubble.
     html = html.replace(/^\s{0,3}#{1,4}\s+(.+)$/gm, '<strong class="chat-heading">$1</strong>');
 
-    // The Chicago flag's four stars, in the flag's own red and centered.
-    // Matched before bold so the characters are not mistaken for markup.
-    html = html.replace(
-      /^\s*(\u2736(?:\s+\u2736){3})\s*$/gm,
-      '<div class="chat-flag-stars">$1</div>'
-    );
+    // The Chicago flag divider: two light-blue bars flanking four red SVG
+    // stars, matching the footer exactly. Matched before bold/italic so the
+    // ✶ characters are never mistaken for markdown markup.
+    // Inline styles are used because Tailwind classes are not available in
+    // dynamically-injected HTML.
+    const flagBar =
+      '<span style="display:inline-block;height:3px;width:48px;border-radius:9999px;background:#41B6E6;vertical-align:middle"></span>';
+    const flagStar =
+      '<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="display:inline-block;vertical-align:middle;fill:#C8102E">' +
+      '<path d="M12 1.5 15 8.1 22.2 8.1 16.3 12 19.1 18.8 12 14.6 4.9 18.8 7.7 12 1.8 8.1 9 8.1Z"/>' +
+      '</svg>';
+    const flagStars = Array(4).fill(flagStar).join('<span style="display:inline-block;width:6px"></span>');
+    const flagDivider =
+      `<div class="chat-flag-stars" style="display:flex;align-items:center;justify-content:center;gap:10px;margin:10px 0 4px">` +
+      flagBar + flagStars + flagBar +
+      `</div>`;
+    html = html.replace(/^\s*(\u2736(?:\s+\u2736){3})\s*$/gm, flagDivider);
 
     // Convert markdown bold to HTML
     html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
