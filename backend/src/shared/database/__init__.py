@@ -17,11 +17,16 @@ from .filters import feed_order, start_of_day, upcoming_events_filter
 from .utils import to_naive_utc
 from .models import Base, EventModel
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite+aiosqlite:///./data/events.db",
-)
+_raw_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/events.db")
 
+# Railway's Postgres plugin injects DATABASE_URL as `postgresql://...` (the
+# libpq/psycopg scheme). SQLAlchemy would route that to the sync psycopg
+# driver, which isn't installed. Rewrite it to `postgresql+asyncpg://` so
+# the async asyncpg driver is used instead.
+if _raw_url.startswith("postgresql://"):
+    _raw_url = _raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+DATABASE_URL = _raw_url
 IS_SQLITE = "sqlite" in DATABASE_URL
 
 # SQLite-only: how long a writer waits for the lock before giving up.
