@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
+from shared.database import to_naive_utc
 from shared.database.models import EventModel
 from shared.enrichment import extract_from_event_text
 from shared.schemas import EventCreate
@@ -264,7 +265,7 @@ class TimeoutChicagoScraper:
         current_year = now.year
 
         try:
-            parsed = datetime.fromisoformat(date_text)
+            parsed = to_naive_utc(datetime.fromisoformat(date_text))
             return parsed
         except ValueError, AttributeError:
             pass
@@ -348,7 +349,7 @@ class TimeoutChicagoScraper:
                     db.add(event)
                     saved_count += 1
                 else:
-                    existing.date_retrieved = datetime.now(timezone.utc)
+                    existing.date_retrieved = datetime.now(timezone.utc).replace(tzinfo=None)
 
             if is_async:
                 await db.commit()

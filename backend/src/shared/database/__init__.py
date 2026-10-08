@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from .filters import feed_order, start_of_day, upcoming_events_filter
+from .utils import to_naive_utc
 from .models import Base, EventModel
 
 DATABASE_URL = os.getenv(
@@ -89,5 +90,6 @@ __all__ = [
     "get_db",
     "init_db",
     "start_of_day",
+    "to_naive_utc",
     "upcoming_events_filter",
 ]

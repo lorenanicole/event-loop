@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
+from shared.database import to_naive_utc
 from shared.database.models import EventModel
 from shared.enrichment import extract_from_event_text
 from shared.geo import chicago_neighborhoods
@@ -138,12 +139,14 @@ class TicketmasterScraper:
             if start.get("localDate"):
                 stamp = f"{start['localDate']}T{start.get('localTime') or '00:00:00'}"
                 try:
-                    event_date = datetime.fromisoformat(stamp)
+                    event_date = to_naive_utc(datetime.fromisoformat(stamp))
                 except ValueError, TypeError:
                     event_date = None
             if event_date is None and start.get("dateTime"):
                 try:
-                    event_date = to_chicago_naive(datetime.fromisoformat(start["dateTime"]))
+                    event_date = to_chicago_naive(
+                        to_naive_utc(datetime.fromisoformat(start["dateTime"]))
+                    )
                 except ValueError, TypeError:
                     event_date = None
             if event_date is None:
@@ -360,7 +363,7 @@ class TicketmasterScraper:
                     db.add(event)
                     saved_count += 1
                 else:
-                    existing.date_retrieved = datetime.now(timezone.utc)
+                    existing.date_retrieved = datetime.now(timezone.utc).replace(tzinfo=None)
                     # Refresh location on rows stored before these fields were
                     # captured, so existing events gain a neighborhood too.
                     if event_data.latitude is not None:

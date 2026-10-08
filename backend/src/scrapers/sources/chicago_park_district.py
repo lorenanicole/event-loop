@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
+from shared.database import to_naive_utc
 from shared.database.models import EventModel
 from shared.geo import resolve_neighborhood
 from shared.geo.neighborhoods import load_boundaries, resolve_neighborhood_id
@@ -232,7 +233,7 @@ class ChicagoParkDistrictScraper:
             return None
         try:
             # "2026-10-31T18:00:00Z"; stored naive to match the other sources.
-            return datetime.fromisoformat(value).replace(tzinfo=None)
+            return to_naive_utc(datetime.fromisoformat(value).replace(tzinfo=None))
         except ValueError, AttributeError:
             return None
 
@@ -298,7 +299,7 @@ class ChicagoParkDistrictScraper:
                     db.add(event)
                     saved_count += 1
                 else:
-                    existing.date_retrieved = datetime.now(timezone.utc)
+                    existing.date_retrieved = datetime.now(timezone.utc).replace(tzinfo=None)
                     existing.date = event_data.date
                     existing.date_end = event_data.date_end
                     if event_data.address and not existing.address:

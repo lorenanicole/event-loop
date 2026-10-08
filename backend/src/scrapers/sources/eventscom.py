@@ -294,7 +294,7 @@ class EventsComScraper:
                     db.add(event)
                     saved_count += 1
                 else:
-                    existing.date_retrieved = datetime.now(timezone.utc)
+                    existing.date_retrieved = datetime.now(timezone.utc).replace(tzinfo=None)
 
             db.commit()
             logger.info(f"Saved {saved_count} new events from Events.com")

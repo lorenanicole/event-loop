@@ -281,7 +281,7 @@ class BroadwayInChicagoScraper:
                 else:
                     # Runs get extended and venues get reassigned mid-season,
                     # so refresh those without touching anything else.
-                    existing.date_retrieved = datetime.now(timezone.utc)
+                    existing.date_retrieved = datetime.now(timezone.utc).replace(tzinfo=None)
                     existing.date = event_data.date
                     existing.date_end = event_data.date_end
                     if event_data.venue_name and not existing.venue_name:

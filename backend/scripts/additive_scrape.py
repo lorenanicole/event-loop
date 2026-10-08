@@ -61,7 +61,7 @@ logging.basicConfig(level=logging.WARNING, format="%(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-DB_URL = "sqlite+aiosqlite:///data/events.db"
+DB_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///data/events.db")
 LOCK_PATH = "data/.scrape.lock"
 # Playwright venues are heavy; more than a handful at once thrashes the box and
 # starts tripping timeouts that look like venue failures.
@@ -83,6 +83,7 @@ EXTERNAL_SOURCES = [
         "ChicagoParkDistrictScraper",
     ),
     ("broadway_in_chicago", "scrapers.sources.broadway_in_chicago", "BroadwayInChicagoScraper"),
+    ("techinmotion", "scrapers.sources.techinmotion", "TechInMotionScraper"),
 ]
 
 

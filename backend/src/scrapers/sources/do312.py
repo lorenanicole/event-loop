@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from scrapers.venue.chicago_events_scraper import venue_to_neighborhood
+from shared.database import to_naive_utc
 from shared.database.models import EventModel
 from shared.enrichment import (
     extract_address,
@@ -102,7 +103,7 @@ class DO312Scraper:
 
             try:
                 clean_str = begin_date_str.replace("Z", "").split(".")[0]
-                event_date = datetime.fromisoformat(clean_str)
+                event_date = to_naive_utc(datetime.fromisoformat(clean_str))
             except Exception:
                 logger.debug(f"Date parse failed for {title}: {begin_date_str}")
                 return None
@@ -154,7 +155,9 @@ class DO312Scraper:
             end_str = data.get("tz_adjusted_end_date") or data.get("end_date")
             if end_str:
                 try:
-                    date_end = datetime.fromisoformat(end_str.replace("Z", "").split(".")[0])
+                    date_end = to_naive_utc(
+                        datetime.fromisoformat(end_str.replace("Z", "").split(".")[0])
+                    )
                 except TypeError, ValueError:
                     date_end = None
             if date_end and date_end.date() <= event_date.date():
@@ -259,7 +262,7 @@ class DO312Scraper:
                     db.add(event)
                     saved_count += 1
                 else:
-                    existing.date_retrieved = datetime.now(timezone.utc)
+                    existing.date_retrieved = datetime.now(timezone.utc).replace(tzinfo=None)
                     # Refresh rows stored before venue data was captured.
                     if event_data.latitude is not None:
                         existing.latitude = event_data.latitude

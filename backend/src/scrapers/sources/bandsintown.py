@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
+from shared.database import to_naive_utc
 from shared.database.models import EventModel
 from shared.enrichment import extract_from_event_text
 from shared.schemas import EventCreate
@@ -93,7 +94,7 @@ class BandsinTownScraper:
 
             try:
                 # BandsinTown returns ISO format datetime
-                event_date = datetime.fromisoformat(event_date_str)
+                event_date = to_naive_utc(datetime.fromisoformat(event_date_str))
             except ValueError, TypeError:
                 return None
 
@@ -177,7 +178,7 @@ class BandsinTownScraper:
                     db.add(event)
                     saved_count += 1
                 else:
-                    existing.date_retrieved = datetime.now(timezone.utc)
+                    existing.date_retrieved = datetime.now(timezone.utc).replace(tzinfo=None)
 
             if is_async:
                 await db.commit()
