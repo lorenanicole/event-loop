@@ -1,6 +1,6 @@
 # EventLoop: Chicago Events Chatbot
 
-**An event discovery app for Chicago, with a Python backend, SQLite event catalog, and a TypeScript/Vite frontend.** The backend and scrapers share one Python package and database; the current environment uses Python 3.15.
+**An event discovery app for Chicago, with a Python backend, PostgreSQL event catalog, and a TypeScript/Vite frontend.** The backend and scrapers share one Python package and database; the current environment uses Python 3.15 (API) and Python 3.14 (scraper/Playwright container).
 
 ## Project Structure
 
@@ -17,9 +17,12 @@ eventloop/
 |   |   `-- telemetry.py        # OpenTelemetry metrics
 |   |-- src/scrapers/
 |   |   |-- venue/              # VenueScraper engine, extractors, date/price parsing
-|   |   `-- sources/            # do312, eventbrite, ticketmaster, park district,
-|   |                           #   broadway, bandsintown, yourchicagoguide,
-|   |                           #   plus unscheduled: eventscom, timeoutchicago
+|   |   `-- sources/            # Scheduled: do312, ticketmaster (incl. Chicago sports),
+|   |                           #   chicago_park_district, broadway_in_chicago,
+|   |                           #   techinmotion, mahjongsociety, illinoisscience,
+|   |                           #   cuddlebunny
+|   |                           # Unscheduled: eventbrite, bandsintown, eventscom,
+|   |                           #   timeoutchicago, yourchicagoguide
 |   |-- src/shared/             # Used by both app and scrapers
 |   |   |-- database/           # SQLAlchemy models, engine, filters
 |   |   |-- geo/                # Neighborhood boundaries, resolver, alias tables
@@ -108,15 +111,16 @@ Required environment variables (copy `backend/.env.example` to `backend/.env`):
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
-DATABASE_URL=sqlite+aiosqlite:///./data/events.db
-ADMIN_KEY=...            # protects POST /api/venue-events/refresh
-SERPAPI_KEY=...          # optional: web search fallback
+DATABASE_URL=postgresql+asyncpg://user:pass@host/dbname
+ADMIN_KEY=...               # protects POST /api/venue-events/refresh
+SERPAPI_KEY=...             # optional: web search fallback
+TICKETMASTER_API_KEY=...    # required for sports + general Ticketmaster events
 LOG_LEVEL=INFO
 ```
 
 ## Deployment
 
-See **[DEPLOY.md](DEPLOY.md)** for the full Railway deployment guide (two services — API + scraper cron — sharing a persistent SQLite volume).
+See **[DEPLOY.md](DEPLOY.md)** for the full Railway deployment guide (two services — API + scraper cron — sharing a Railway Postgres database).
 
 ## Tests
 

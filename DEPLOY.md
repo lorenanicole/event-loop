@@ -1,11 +1,11 @@
 # Deploying EventLoop on Railway
 
-Two services share one persistent volume (the SQLite database):
+Two services share one Railway Postgres database:
 
 | Service | Dockerfile | Purpose |
 |---|---|---|
 | `api` | `backend/Dockerfile` | FastAPI + PydanticAI chat backend (Python 3.15) |
-| `scraper` | `backend/Dockerfile.scraper` | Playwright venue scraper cron (Python 3.14) |
+| `scraper` | `backend/Dockerfile.scraper` | Playwright venue scraper cron (Python 3.14, Playwright 1.63) |
 
 ---
 
@@ -25,27 +25,30 @@ railway init        # creates a new Railway project
 railway link        # link this directory to that project
 ```
 
-Or skip the CLI and connect via the Railway dashboard:
-**New Project → Deploy from GitHub repo → select `lorenanicole/event-loop`**
+Or skip the CLI: **New Project → Deploy from GitHub repo → select `lorenanicole/event-loop`**
+
+---
+
+## Add a Postgres database
+
+1. In the Railway dashboard: **+ Add → Database → PostgreSQL**
+2. Railway creates a Postgres service and exposes `${{Postgres.DATABASE_URL}}`
 
 ---
 
 ## Create the API service
 
-In the Railway dashboard:
-
 1. **+ Add → GitHub Repo** → pick this repo
 2. Service name: `api`
-3. **Settings → Source → Root Directory**: `/backend`
-   - Railway will find `backend/Dockerfile` automatically (it's named `Dockerfile`)
-   - It will also find `backend/railway.toml` for build/deploy config
+3. **Settings → Source → Root Directory**: `backend`
 4. **Settings → Variables** — add:
    ```
    ANTHROPIC_API_KEY=sk-ant-...
-   SERPAPI_KEY=...
+   DATABASE_URL=${{Postgres.DATABASE_URL}}
    ADMIN_KEY=something-secret
+   SERPAPI_KEY=...
+   TICKETMASTER_API_KEY=...
    LOG_LEVEL=INFO
-   DATABASE_URL=sqlite+aiosqlite:////data/events.db
    ```
 5. **Settings → Networking → Generate Domain** — gives you a public URL
 
@@ -53,42 +56,43 @@ In the Railway dashboard:
 
 ## Create the Scraper service
 
-1. **+ Add → GitHub Repo** → same repo, but create a **new service**
+1. **+ Add → GitHub Repo** → same repo, create a **new service**
 2. Service name: `scraper`
-3. **Settings → Source → Root Directory**: `/backend`
-4. **Settings → Source → Config File Path**: `/backend/railway.scraper.toml`
-   - This tells Railway to use `Dockerfile.scraper` and set the cron schedule
-5. **Settings → Variables** — add:
+3. **Settings → Source → Root Directory**: `backend`
+4. **Settings → Variables** — add:
    ```
-   DATABASE_URL=sqlite+aiosqlite:////data/events.db
+   DATABASE_URL=${{Postgres.DATABASE_URL}}
    ANTHROPIC_API_KEY=sk-ant-...
+   TICKETMASTER_API_KEY=...
    SERPAPI_KEY=...
    ```
-6. **Settings → Cron Schedule**: `0 */6 * * *` (every 6 hours)
-   - Verify this is set — the `railway.scraper.toml` sets it but the dashboard is the source of truth for cron services
+5. **Settings → Deploy → Start Command**:
+   ```
+   uv run python scripts/additive_scrape.py --only external
+   ```
+6. **Settings → Deploy → Cron Schedule**: `0 */6 * * *` (every 6 hours)
 
 ---
 
-## Create the shared volume
+## Seed the database (one-time)
 
-Both services read/write the same `events.db`. Railway volumes persist across deploys.
+After Postgres is provisioned, load local SQLite data into Railway Postgres:
 
-1. **+ Add → Volume**
-2. Name: `eventloop-data`
-3. Attach to the **api** service → mount path: `/data`
-4. Attach to the **scraper** service → mount path: `/data`
+```bash
+cd backend
+uv run python scripts/migrate_sqlite_to_postgres.py \
+  --sqlite data/events.db \
+  --postgres 'postgresql+asyncpg://<railway-public-postgres-url>'
+```
 
-> ⚠️ Do this before the first deploy. If the API starts without a volume, it
-> writes to ephemeral storage and the DB is lost on every redeploy.
+Get the Railway Postgres URL from: Postgres service → **Connect → Public URL**.
+Replace `postgresql://` with `postgresql+asyncpg://`.
 
 ---
 
 ## Deploy
 
-Once everything is configured, deploy both services:
-
 ```bash
-# From the repo root
 git push origin main
 ```
 
@@ -103,24 +107,22 @@ railway up --service api
 ## Verify
 
 ```bash
-# Check the API is up
 curl https://your-railway-domain.up.railway.app/health
-# → {"status": "healthy"}
+# -> {"status": "healthy"}
 
-# Check the docs
 open https://your-railway-domain.up.railway.app/docs
 ```
 
 ---
 
-## Cost estimate (Railway Hobby plan, $5/mo)
+## Cost estimate (Railway Hobby plan)
 
 | | Notes |
 |---|---|
-| API service | Always-on, ~$2–4/mo depending on traffic |
-| Scraper service | Cron only — runs ~4×/day, minimal cost |
-| Volume (10GB) | $0.25/GB/mo → ~$2.50/mo |
-| **Total** | **~$5–8/mo** |
+| API service | Always-on, ~$2-4/mo depending on traffic |
+| Scraper service | Cron only - runs 4x/day, minimal cost |
+| Postgres (1GB) | ~$5/mo on Hobby plan |
+| **Total** | **~$10-12/mo** |
 
 Anthropic API (Claude) costs are billed separately at pay-per-token rates.
 
@@ -132,5 +134,20 @@ Anthropic API (Claude) costs are billed separately at pay-per-token rates.
 railway logs --service api          # tail API logs
 railway logs --service scraper      # tail scraper logs
 railway shell --service api         # open a shell in the running container
-railway run --service api -- python scripts/health.py  # run a one-off script
+railway run --service scraper -- uv run python scripts/health.py
 ```
+
+---
+
+## Scraper sources (8 active)
+
+| Source | Method | Notes |
+|---|---|---|
+| `ticketmaster` | API | General Chicago events + sports teams (Sky, Fire, Stars, Cubs, Sox, Bears, Bulls, Blackhawks). Requires `TICKETMASTER_API_KEY` |
+| `do312` | API | Chicago music and nightlife |
+| `chicago_park_district` | Playwright | Park District events calendar |
+| `broadway_in_chicago` | Playwright | Broadway shows |
+| `techinmotion` | httpx | Tech in Motion Chicago events |
+| `mahjongsociety` | httpx | The Mahjong Society Chicago events |
+| `illinoisscience` | Playwright | Illinois Science Council events |
+| `cuddlebunny` | Playwright | Cuddle Bunny CCC (Lakeview rabbit cafe) |

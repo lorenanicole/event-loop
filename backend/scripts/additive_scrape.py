@@ -86,6 +86,7 @@ EXTERNAL_SOURCES = [
     ("techinmotion", "scrapers.sources.techinmotion", "TechInMotionScraper"),
     ("mahjongsociety", "scrapers.sources.mahjongsociety", "MahjongSocietyScraper"),
     ("illinoisscience", "scrapers.sources.illinoisscience", "IllinoisScienceScraper"),
+    ("cuddlebunny", "scrapers.sources.cuddlebunny", "CuddleBunnyScraper"),
 ]
 
 
