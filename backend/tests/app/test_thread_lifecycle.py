@@ -5,7 +5,7 @@ because the one transition that existed - to "completed" - fires only when a
 conversation exhausts its budget, and almost nobody does that.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
@@ -28,7 +28,7 @@ async def make_thread(session, *, turns=1, age_hours=0, status=ACTIVE):
     thread = ChatThreadModel(
         status=status,
         turn_count=turns,
-        updated_at=datetime.utcnow() - timedelta(hours=age_hours),
+        updated_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=age_hours),
     )
     session.add(thread)
     await session.commit()
