@@ -5,15 +5,13 @@
 
 FROM python:3.15-slim
 
-# uv – fast installer, no pip needed
-COPY --from=ghcr.io/astral-sh/uv:0.12.23 /uv /uvx /usr/local/bin/
-
 WORKDIR /app
 
-# System deps: gcc for any C extensions, curl for health probes
+# System deps + uv in one layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     curl \
+    && pip install --no-cache-dir uv==0.12.23 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency manifests first so Docker caches this layer
