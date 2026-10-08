@@ -23,6 +23,10 @@ export interface Event {
   date_retrieved: string
   venue_name?: string | null
   address?: string | null
+  // The suburb, when the event is not in Chicago. null for almost everything.
+  // do312 covers the whole metro, so without showing this a Naperville show
+  // sits under a headline reading "anywhere in Chicago".
+  locality?: string | null
   cost?: string | null
   age_range?: string | null
 }

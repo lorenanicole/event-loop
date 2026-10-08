@@ -612,7 +612,14 @@ export class SearchApp {
           ${location ? `
             <div class="flex items-start text-gray-600 text-sm">
               <span class="mr-2 shrink-0">📍</span>
-              <span>${this.escapeHtml(location)}</span>
+              <span>
+                ${this.escapeHtml(location)}
+                ${event.locality ? `
+                  <span class="chat-suburb" title="Outside Chicago">${
+                    this.escapeHtml(event.locality)
+                  }</span>
+                ` : ''}
+              </span>
             </div>
           ` : ''}
 

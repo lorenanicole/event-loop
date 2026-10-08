@@ -200,6 +200,29 @@ class RateLimiter:
 rate_limiter = RateLimiter()
 
 
+# ---------------------------------------------------------------------------
+# Admin key dependency
+# ---------------------------------------------------------------------------
+
+import os
+
+from fastapi import Header, HTTPException
+
+
+async def require_admin_key(x_admin_key: str = Header(..., alias="X-Admin-Key")) -> None:
+    """
+    FastAPI dependency that enforces a static admin API key.
+
+    Attach with:  dependencies=[Depends(require_admin_key)]
+
+    The expected key is read from the ADMIN_API_KEY environment variable.
+    Returns 403 if the header is missing, empty, or does not match.
+    """
+    expected = os.getenv("ADMIN_API_KEY", "")
+    if not expected or x_admin_key != expected:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
 def validate_and_sanitize(user_input: str, thread_id: str) -> tuple[bool, str, str | None]:
     """
     Full security check: injection detection + sanitization + rate limiting.
@@ -214,7 +237,7 @@ def validate_and_sanitize(user_input: str, thread_id: str) -> tuple[bool, str, s
         return False, "", "Invalid input format"
 
     # 3. Prompt injection detection
-    is_suspicious, pattern = PromptInjectionDetector.detect(user_input)
+    is_suspicious, _pattern = PromptInjectionDetector.detect(user_input)
     if is_suspicious:
         if not rate_limiter.record_injection_attempt(thread_id):
             return False, "", "Too many suspicious attempts"

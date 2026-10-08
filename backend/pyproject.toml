@@ -63,8 +63,6 @@ all = [
     "beautifulsoup4>=4.12.0",
     "python-dateutil>=2.8.0",
     "playwright>=1.48.0",
-    "nltk>=3.8.1",
-    "scikit-learn>=1.3.0",
     # Static embeddings for semantic event search. Deliberately not
     # sentence-transformers: this has no torch dependency and encodes by
     # table lookup, so queries cost well under a millisecond on CPU.
@@ -75,7 +73,7 @@ all = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "app/tests", "parser/tests"]
+testpaths = ["tests"]
 asyncio_mode = "auto"
 
 [tool.black]

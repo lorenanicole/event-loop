@@ -8,8 +8,8 @@ theirs - a Google card read as though it were a confirmed venue listing.
 
 import pytest
 
-from app.ai import chatbot
-from app.ai.chatbot import EventResult
+from app.chat import chatbot, web_search
+from app.chat.web_search import EventResult
 
 
 class FakeResponse:
@@ -41,13 +41,13 @@ class FakeClient:
 
 @pytest.fixture
 def serpapi(monkeypatch):
-    monkeypatch.setattr(chatbot, "SERPAPI_KEY", "test-key")
+    monkeypatch.setattr(web_search, "SERPAPI_KEY", "test-key")
     # Persistence is a background task and irrelevant to the text under test.
-    monkeypatch.setattr(chatbot, "_spawn_background", lambda coro: coro.close())
+    monkeypatch.setattr(web_search, "_spawn_background", lambda coro: coro.close())
 
     def _install(events):
         payload = {"events_results": events}
-        monkeypatch.setattr(chatbot.httpx, "AsyncClient", lambda **kw: FakeClient(payload))
+        monkeypatch.setattr(web_search.httpx, "AsyncClient", lambda **kw: FakeClient(payload))
 
     return _install
 
@@ -65,26 +65,26 @@ LINKLESS = [
 class TestWebResultProvenance:
     async def test_every_event_is_tagged_not_just_the_header(self, serpapi):
         serpapi(LINKLESS * 2)
-        text = await chatbot.search_google_events(None, "family events")
+        text = await web_search.search_google_events(None, "family events")
         # One tag per event, so the label survives being merged with DB rows.
         assert text.count("📌") == 2, text
 
     async def test_the_tag_names_the_live_web_search(self, serpapi):
         serpapi(LINKLESS)
-        text = await chatbot.search_google_events(None, "family events")
+        text = await web_search.search_google_events(None, "family events")
         assert "Live web search" in text
 
     async def test_an_event_with_no_link_is_flagged_as_unverifiable(self, serpapi):
         """Google's event cards carry no URL, so there is nothing to check."""
         serpapi(LINKLESS)
-        text = await chatbot.search_google_events(None, "family events")
+        text = await web_search.search_google_events(None, "family events")
         assert "No event page to verify" in text
         assert "not saved to our database" in text
         assert "View Event" not in text
 
     async def test_an_event_with_a_link_gets_the_link_not_the_warning(self, serpapi):
         serpapi([{**LINKLESS[0], "link": "https://example.com/e"}])
-        text = await chatbot.search_google_events(None, "family events")
+        text = await web_search.search_google_events(None, "family events")
         assert "https://example.com/e" in text
         assert "No event page to verify" not in text
 
@@ -109,10 +109,10 @@ class TestWebResultProvenance:
         async def fake_persist(events):
             persisted.extend(events)
 
-        monkeypatch.setattr(chatbot, "_persist_events_to_db", fake_persist)
-        monkeypatch.setattr(chatbot, "_spawn_background", spawned.append)
+        monkeypatch.setattr(web_search, "_persist_events_to_db", fake_persist)
+        monkeypatch.setattr(web_search, "_spawn_background", spawned.append)
 
-        text = await chatbot.search_google_events(None, "fall fest")
+        text = await web_search.search_google_events(None, "fall fest")
         for coro in spawned:
             await coro
         assert "Lincoln Park Zoo, Chicago, IL" in text

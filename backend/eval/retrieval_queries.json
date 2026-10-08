@@ -1,0 +1,160 @@
+{
+  "_comment": [
+    "Hand-labelled retrieval queries for evaluating search_local_db().",
+    "Each entry has:",
+    "  query         - natural language string as a user would type it",
+    "  must_match    - keywords / phrases that SHOULD appear in at least one",
+    "                  of the top-5 results (event name or category). At least",
+    "                  one must match for the query to pass.",
+    "  must_not_match- keywords that must NOT appear in any top-5 result name.",
+    "                  Used to catch category bleed (basketball filed under Music).",
+    "  min_results   - minimum number of results expected back (0 = sparse OK).",
+    "  notes         - human reasoning for the label.",
+    "",
+    "Labelled from real queries observed in the audit log and from known",
+    "failure modes documented in RAG_PIPELINE.md. Update after each scrape",
+    "refresh if the expected events have expired."
+  ],
+  "queries": [
+    {
+      "query": "jazz tonight",
+      "must_match": ["jazz", "music", "blues"],
+      "must_not_match": ["basketball", "sports"],
+      "min_results": 1,
+      "notes": "Most common query type. Local DB always has jazz/blues listings."
+    },
+    {
+      "query": "free things to do this weekend",
+      "must_match": ["free", "festival", "community", "arts"],
+      "must_not_match": [],
+      "min_results": 3,
+      "notes": "Date + cost filter. Should surface free events in the weekend window."
+    },
+    {
+      "query": "comedy in Pilsen",
+      "must_match": ["comedy", "pilsen"],
+      "must_not_match": [],
+      "min_results": 0,
+      "notes": "Neighborhood filter. Pilsen comedy is thin; 0 results is valid."
+    },
+    {
+      "query": "live music in Wicker Park",
+      "must_match": ["music", "wicker park"],
+      "must_not_match": [],
+      "min_results": 1,
+      "notes": "Neighborhood + category. Wicker Park is dense with music venues."
+    },
+    {
+      "query": "plant workshops",
+      "must_match": ["plant", "garden", "workshop", "foraging", "botanic"],
+      "must_not_match": [],
+      "min_results": 0,
+      "notes": "Semantic catch: no keyword overlap with foraging/gardening titles."
+    },
+    {
+      "query": "blues this weekend",
+      "must_match": ["blues", "music"],
+      "must_not_match": [],
+      "min_results": 1,
+      "notes": "Date + category. Blues calendar is dense Thu-Sat."
+    },
+    {
+      "query": "theater in the loop",
+      "must_match": ["theater", "theatre", "loop"],
+      "must_not_match": [],
+      "min_results": 1,
+      "notes": "Neighborhood + category. Loop has Broadway houses + small stages."
+    },
+    {
+      "query": "something for the kids this weekend",
+      "must_match": ["family", "kids", "children", "community"],
+      "must_not_match": [],
+      "min_results": 1,
+      "notes": "Vague query. Should resolve to family/community events."
+    },
+    {
+      "query": "improv comedy shows",
+      "must_match": ["comedy", "improv"],
+      "must_not_match": [],
+      "min_results": 1,
+      "notes": "Second City / iO / Annoyance should appear."
+    },
+    {
+      "query": "food and drink events tonight",
+      "must_match": ["food", "drink", "tasting", "dinner"],
+      "must_not_match": [],
+      "min_results": 1,
+      "notes": "Category filter for Food & Drink on today."
+    },
+    {
+      "query": "art gallery openings this month",
+      "must_match": ["arts", "gallery", "exhibition", "opening"],
+      "must_not_match": [],
+      "min_results": 1,
+      "notes": "Date window = this month. Should find opening receptions."
+    },
+    {
+      "query": "outdoor concerts",
+      "must_match": ["music", "outdoor", "festival", "park"],
+      "must_not_match": [],
+      "min_results": 1,
+      "notes": "Outdoor flag or park venues should appear."
+    },
+    {
+      "query": "jazz at the Green Mill",
+      "must_match": ["green mill", "jazz", "music"],
+      "must_not_match": [],
+      "min_results": 1,
+      "notes": "Specific venue query. Green Mill is in the DB with nightly jazz."
+    },
+    {
+      "query": "free museum events",
+      "must_match": ["free", "museum", "arts", "community"],
+      "must_not_match": [],
+      "min_results": 0,
+      "notes": "Museum free days are infrequent; 0 results is valid."
+    },
+    {
+      "query": "trivia night this week",
+      "must_match": ["trivia", "karaoke"],
+      "must_not_match": [],
+      "min_results": 1,
+      "notes": "Category: Karaoke/Trivia/Open Mics. Happens most nights."
+    },
+    {
+      "query": "halloween events in Logan Square",
+      "must_match": ["halloween", "holiday", "logan square"],
+      "must_not_match": [],
+      "min_results": 0,
+      "notes": "Seasonal + neighborhood. Only valid in October."
+    },
+    {
+      "query": "drag shows",
+      "must_match": ["lgbtq", "drag", "cabaret", "comedy"],
+      "must_not_match": [],
+      "min_results": 1,
+      "notes": "Should surface LGBTQ category events."
+    },
+    {
+      "query": "open mic nights",
+      "must_match": ["open mic", "karaoke", "music"],
+      "must_not_match": [],
+      "min_results": 1,
+      "notes": "Category: Karaoke/Trivia/Open Mics. Very common listing type."
+    },
+    {
+      "query": "classical music concerts next week",
+      "must_match": ["music", "orchestra", "symphony", "classical"],
+      "must_not_match": [],
+      "min_results": 1,
+      "notes": "Date window = next week. CSO and chamber groups should appear."
+    },
+    {
+      "query": "21 plus events tonight",
+      "must_match": ["music", "food", "bar"],
+      "must_not_match": [],
+      "min_results": 1,
+      "notes": "Age filter. Most evening events are 21+; at least 1 expected."
+    }
+  ]
+}

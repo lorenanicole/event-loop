@@ -447,22 +447,26 @@ _TITLE_CATEGORY_RULES: list[tuple[str, str]] = [
     # rule outranks the venue default, which is the point of these.
     (
         "Sports",
-        r"(?:\b(?:volleyball|basketball|soccer|hockey|baseball|football|lacrosse"
-        r"|rugby|softball|tennis|wrestling"
-        r"|bulls|blackhawks|bears|cubs|white sox|sky|fire|red stars|sting)\b"
-        r"(?=.*\bv(?:s\.?)?\b))"
-        r"|(?:\bv(?:s\.?)?\b(?=.*\b(?:volleyball|basketball|soccer|hockey"
-        r"|baseball|football|lacrosse|rugby|softball|tennis|wrestling"
-        r"|bulls|blackhawks|bears|cubs|white sox|sky|fire|red stars|sting)\b))",
+        (
+            r"(?:\b(?:volleyball|basketball|soccer|hockey|baseball|football|lacrosse"
+            r"|rugby|softball|tennis|wrestling"
+            r"|bulls|blackhawks|bears|cubs|white sox|sky|fire|red stars|sting)\b"
+            r"(?=.*\bv(?:s\.?)?\b))"
+            r"|(?:\bv(?:s\.?)?\b(?=.*\b(?:volleyball|basketball|soccer|hockey"
+            r"|baseball|football|lacrosse|rugby|softball|tennis|wrestling"
+            r"|bulls|blackhawks|bears|cubs|white sox|sky|fire|red stars|sting)\b))"
+        ),
     ),
     ("Comedy", r"\bcomedy\b|\bstand[- ]?up\b|\bimprov\b"),
     ("Karaoke/Trivia/Open Mics", r"\b(karaoke|trivia|bingo|open[- ]mic)\b"),
     ("Arts & Crafts", r"\b(sewing|knit|crochet|quilt|pottery|ceramics?|life drawing)\b"),
     (
         "Food & Drink",
-        r"\b(wine wednesday|happy hour|bottomless|drag brunch|supper club)\b"
-        r"|\bhalf[- ]price[d]?\s+(wine|beer|drink)"
-        r"|\b(beer|whiskey|wine) tasting\b",
+        (
+            r"\b(wine wednesday|happy hour|bottomless|drag brunch|supper club)\b"
+            r"|\bhalf[- ]price[d]?\s+(wine|beer|drink)"
+            r"|\b(beer|whiskey|wine) tasting\b"
+        ),
     ),
 ]
 

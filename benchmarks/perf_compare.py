@@ -4,18 +4,18 @@ Performance Benchmark: Python 3.14 vs 3.15 RC3
 Measures startup time, request latency, scraping speed, and JIT impact
 """
 
-import sys
-import time
 import asyncio
 import json
-from pathlib import Path
+import sys
+import time
 from dataclasses import dataclass
-from typing import Dict, List
+from pathlib import Path
 
 
 @dataclass
 class BenchmarkResult:
     """Result of a single benchmark."""
+
     name: str
     python_version: str
     duration_ms: float
@@ -31,23 +31,20 @@ class Benchmarks:
     """Suite of performance benchmarks."""
 
     def __init__(self):
-        self.results: List[BenchmarkResult] = []
-        self.python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        self.results: list[BenchmarkResult] = []
+        self.python_version = (
+            f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        )
 
     def benchmark_startup_time(self) -> BenchmarkResult:
         """Measure module import time (lazy imports benefit)."""
         start = time.perf_counter()
 
         # Simulate lazy imports
-        import json
-        import asyncio
-        from fastapi import FastAPI
 
         duration_ms = (time.perf_counter() - start) * 1000
         result = BenchmarkResult(
-            name="startup_imports",
-            python_version=self.python_version,
-            duration_ms=duration_ms
+            name="startup_imports", python_version=self.python_version, duration_ms=duration_ms
         )
         self.results.append(result)
         return result
@@ -70,7 +67,7 @@ class Benchmarks:
             name="dict_operations",
             python_version=self.python_version,
             duration_ms=duration_ms,
-            iterations=iterations
+            iterations=iterations,
         )
         self.results.append(result)
         return result
@@ -90,7 +87,7 @@ class Benchmarks:
             name="list_comprehension",
             python_version=self.python_version,
             duration_ms=duration_ms,
-            iterations=iterations
+            iterations=iterations,
         )
         self.results.append(result)
         return result
@@ -113,7 +110,7 @@ class Benchmarks:
             name="async_operations",
             python_version=self.python_version,
             duration_ms=duration_ms,
-            iterations=iterations
+            iterations=iterations,
         )
         self.results.append(result)
         return result
@@ -138,26 +135,21 @@ class Benchmarks:
             name="json_operations",
             python_version=self.python_version,
             duration_ms=duration_ms,
-            iterations=iterations
+            iterations=iterations,
         )
         self.results.append(result)
         return result
 
-    def run_all(self) -> List[BenchmarkResult]:
+    def run_all(self) -> list[BenchmarkResult]:
         """Run all benchmarks."""
-        print(f"\n{'='*70}")
-        print(f"Performance Benchmarks - Python {self.python_version}")
-        print(f"{'='*70}\n")
 
         # Sync benchmarks
-        print("Running synchronous benchmarks...")
         self.benchmark_startup_time()
         self.benchmark_dict_operations()
         self.benchmark_list_comprehension()
         self.benchmark_json_operations()
 
         # Async benchmarks
-        print("Running async benchmarks...")
         asyncio.run(self.benchmark_async_operations())
 
         return self.results
@@ -165,20 +157,18 @@ class Benchmarks:
     def report(self) -> str:
         """Generate human-readable report."""
         lines = [
-            "\n" + "="*70,
+            "\n" + "=" * 70,
             "BENCHMARK RESULTS",
-            "="*70 + "\n",
+            "=" * 70 + "\n",
             f"{'Benchmark':<30} {'Duration (ms)':<15} {'Ops/Sec':<15}",
             "-" * 70,
         ]
 
         for result in self.results:
             ops_sec = f"{result.ops_per_sec:.0f}" if result.ops_per_sec else "N/A"
-            lines.append(
-                f"{result.name:<30} {result.duration_ms:>12.2f}ms {ops_sec:>14}"
-            )
+            lines.append(f"{result.name:<30} {result.duration_ms:>12.2f}ms {ops_sec:>14}")
 
-        lines.append("\n" + "="*70)
+        lines.append("\n" + "=" * 70)
         return "\n".join(lines)
 
     def to_json(self) -> str:
@@ -193,7 +183,7 @@ class Benchmarks:
                     "ops_per_sec": r.ops_per_sec,
                 }
                 for r in self.results
-            ]
+            ],
         }
         return json.dumps(data, indent=2)
 
@@ -201,10 +191,9 @@ class Benchmarks:
 def main():
     """Run benchmarks and save results."""
     benchmarks = Benchmarks()
-    results = benchmarks.run_all()
+    benchmarks.run_all()
 
     # Print report
-    print(benchmarks.report())
 
     # Save JSON results
     results_dir = Path(__file__).parent / "results"
@@ -214,7 +203,6 @@ def main():
     output_file = results_dir / f"benchmark_{version_tag}.json"
     output_file.write_text(benchmarks.to_json())
 
-    print(f"\nResults saved to: {output_file}\n")
 
 
 if __name__ == "__main__":

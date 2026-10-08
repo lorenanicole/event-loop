@@ -74,10 +74,9 @@ stuff near me this weekend") while the data is structured.
 
 | Step | Where | What it does |
 |---|---|---|
-| Intent gate | `app/ai/intent_classifier.py` | What is this message *doing* - asking about Chicago events, asking about the city, signing off, or off-topic? One LLM call returning an intent and a confidence. Off-topic and farewell never reach retrieval at all. |
-| Query expansion | `smart_search_expand` in `app/ai/chatbot.py` | An agent tool that restates the question and names what the user seems to want, so the agent reasons about the request before searching for it. |
+| Intent gate | `app/ai/intent_classifier.py` | What is this message *doing*? Explicit Chicago event requests skip the model entirely (regex fast path). Ambiguous messages go to **claude-haiku-4-5** (switched from Sonnet — ~10× cheaper, same accuracy on 4-category classification). Confidence drives three-tier routing: ≥0.85 non-event → hard redirect in Loopara's voice; 0.65–0.84 non-event → agent runs with a clarification hint injected; anything else → normal agent run. The confidence score was previously read, logged, and discarded after a binary 0.7 threshold. Off-topic and farewell never reach retrieval. |
 | Keyword extraction | `_extract_keywords` | Strips filler to content words. "I'd like to go to a family friendly outdoor event" → the words that can actually match. |
-| Neighborhood resolution | `_extract_neighborhoods` | Matched against the neighborhoods **in the database**, not a hardcoded list, so it stays in step with coverage. 77 community areas plus local names. |
+| Neighborhood resolution | `_extract_neighborhoods`, `shared/database/neighborhoods.py` | Exact neighborhood names and aliases resolve against rows in the database; selected broad regions (Northwest, North, West, South Side, downtown) expand through a curated map, intersected with existing rows. |
 | Category mapping | `shared/categories.py` | Maps the words a person uses to the stored vocabulary: "blues", "salsa" and "symphony" all become `Music`. See `CATEGORY_TAXONOMY` for the parent/subtag scheme. |
 | Date resolution | `_extract_date_range` | "tonight", "this weekend", "in October" become a real date window, in `America/Chicago`. |
 | Temporal grounding | `todays_date` system prompt | Injects today's date, the timezone and the coming weekend's two dates per run. Without it the model had no idea what day it was and said so mid-answer. |
@@ -94,10 +93,21 @@ It is also not keyword matching. Farewells were a regex for exactly one round
 intent the model judges. It now handles "aight imma head out" and "merci!"
 without either being written down anywhere.
 
+The chatbot does not make a separate query-expansion model/tool call before
+search. The database search already extracts dates, neighborhoods, categories
+and keywords from the original request; requiring a second analysis step added
+latency without changing the SQL query.
+
+The persona prompt also stays compact: the stable voice and safety rules are
+always present, while a category fact and brief seasonal guidance are added
+only when relevant. Retrieved events carry their database neighborhood, and a
+transit cue is included only for a small curated set of neighborhood-to-stop
+mappings; the assistant is told not to infer transit details otherwise.
+
 **What's missing:** no query rewriting or HyDE, and no synonym expansion beyond
-the category vocabulary. One concrete gap: Chicago's informal regions — "South
-Side", "Northwest Side" — are not mapped to the community areas they contain,
-so the agent reasons about them in prose while the SQL filter ignores them.
+the category vocabulary. The regional map is intentionally curated and not an
+authoritative boundary definition; several local subregions and ambiguous
+phrases still fall back to a citywide search.
 
 ---
 
@@ -197,7 +207,15 @@ ablation showed removing the keywords drops the hybrid from 58% to 42%.
   `MIN_SIMILARITY = 0.25`) were set by hand and have never been swept, unlike the
   categorization floor.
 
-**What covers it in the meantime.** 490 unit tests, and this is the honest part:
+**A retrieval harness now exists.** `backend/evaluate_retrieval.py` runs 20
+hand-labelled queries through the exact search path the chat agent uses and
+reports pass/fail. Baseline on first run: **18/20 (90%)**. The two failures
+are documented data-side gaps — sparse `age_range` field and a date-window
+edge case at Thursday run time — not scoring bugs. Run this before and after
+changing `LOCAL_CONFIDENCE_FLOOR`, `MIN_SIMILARITY`, or the SQL candidate
+limit. Those numbers were previously set by hand and had never been validated.
+
+**What covers it in the meantime.** 580 collected tests, and this is the honest part:
 they did not catch the bugs that mattered. The agent not knowing the date, a
 basketball game filed under Music, replies lost to an SSE parsing bug, and the
 chat ending after one question were all found by *using the thing*. Every one was
@@ -211,16 +229,21 @@ tests are end-to-end, not more unit tests.
 ```
 POST /api/chat
   │
-  ├─ intent gate ─────────── off-topic? answer and stop (no retrieval, no cost)
+  ├─ intent gate (Haiku) ──── explicit Chicago event request? skip classifier (regex fast path)
+  │                           confidence ≥ 0.85 + non-event  → redirect in Loopara's voice
+  │                           confidence 0.65–0.84 + non-event → inject [AMBIGUOUS_INTENT] hint
+  │                           anything else                   → run agent normally
   │
   ├─ load conversation history (last 6 messages of the thread)
+  │     turn ≥ 8: prepend one-sentence Haiku summary so earlier context survives the window
   │
-  ├─ agent run (PydanticAI, ReAct) with three tools:
-  │     smart_search_expand   restate the request
-  │     search_local_db       structured SQL → semantic scoring/fallback
-  │     search_google_events  paid, gated on local result count and relevance
+  ├─ agent run (PydanticAI, ReAct, claude-sonnet-5-5) with two tools:
+  │     search_local_db       SQL (100 rows if neighborhood-constrained, 50 otherwise)
+  │                           → semantic rerank → top-5 ScoredEvents
+  │     search_google_events  at most once, only after sparse/low-confidence local results
+  │     per-turn caps         4 model requests, 3 tool calls, 4,000 output tokens/run
   │
   ├─ stream events over SSE: thinking → tool_call → response → complete
   │
-  └─ persist the turn, decrement the conversation budget
+  └─ record provider-reported classifier and agent usage; decrement the 20,000-agent-token / 12-turn budget
 ```

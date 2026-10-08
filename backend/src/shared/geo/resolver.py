@@ -50,9 +50,7 @@ def looks_like_address(text: str) -> bool:
     if len(text.split()) > MAX_ADDRESS_WORDS:
         return False
     # Prose gives itself away with sentence punctuation.
-    if any(mark in text for mark in ("?", "!", ";")) or text.count(".") > 2:
-        return False
-    return True
+    return not (any(mark in text for mark in ("?", "!", ";")) or text.count(".") > 2)
 
 
 def normalize_address(address: str | None, venue_name: str | None = None) -> str | None:

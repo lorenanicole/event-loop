@@ -1,31 +1,25 @@
 import re
-from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import telemetry
-from app.ai.executor import ChatExecutor, sse_event_formatter
+from app.chat.search_query import extract_date_range as _extract_date_range
+from app.chat.search_query import extract_keywords as _extract_keywords
+from app.api.analytics import router as analytics_router  # noqa: F401 — re-exported via __init__
+from app.api.chat import router as chat_router
 from app.logging import get_logger
-from app.security import rate_limiter
+from app.security import require_admin_key
 from shared.categories import category_filter, extract_category_concepts
 from shared.database import feed_order, get_db, start_of_day, upcoming_events_filter
-from shared.database.models import (
-    AuditLogModel,
-    ChatThreadModel,
-    EventModel,
-    NeighborhoodModel,
-)
-from shared.models import Event, EventSearch
+from shared.database.models import EventModel, NeighborhoodModel
+from shared.schemas import Event, EventSearch
 
 logger = get_logger(__name__)
 # No router-level tags: each endpoint declares its own, and a tag here
 # would be added on top, listing every operation twice in /docs.
 router = APIRouter(prefix="/api")
-analytics_router = APIRouter(prefix="")
+router.include_router(chat_router)
 
 
 # Reusable OpenAPI response blocks. FastAPI generates a schema-shaped example
@@ -102,6 +96,49 @@ def _category_matches(label: str):
         func.trim(EventModel.category).ilike(wanted),
         cast(EventModel.categories, String).ilike(f'%"{wanted}"%'),
     )
+
+
+@router.post(
+    "/venue-events/refresh",
+    summary="Fetch and persist venue events",
+    include_in_schema=False,
+    dependencies=[Depends(require_admin_key)],
+    responses={
+        **_ok(
+            {"status": "success", "new_events": 43},
+            "Scrape finished. `new_events` counts added event rows.",
+        ),
+        500: {
+            "description": "The scrape failed.",
+            "content": {"application/json": {"example": {"detail": "venue refresh failed"}}},
+        },
+    },
+    description="Scrape configured Chicago venues and add their events to the database.",
+    tags=["Admin"],
+)
+async def refresh_venue_events(db: AsyncSession = Depends(get_db)):
+    """Run the configured venue scrapers and report how many rows were added."""
+    from scrapers.venue.chicago_events_scraper import scrape_chicago_events
+
+    before = await db.scalar(select(func.count(EventModel.id))) or 0
+    await db.commit()
+    try:
+        await scrape_chicago_events()
+        after = await db.scalar(select(func.count(EventModel.id))) or 0
+        inserted = max(0, after - before)
+
+        if inserted:
+            try:
+                from app.chat.semantic_index import event_index
+
+                await event_index.rebuild(db)
+            except Exception as exc:
+                logger.warning("Semantic index refresh failed: %s", exc)
+
+        return {"status": "success", "new_events": inserted}
+    except Exception as exc:
+        logger.error("Venue events refresh failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Venue event refresh failed") from exc
 
 
 @router.get(
@@ -705,631 +742,9 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
     }
 
 
-def _extract_keywords(query: str) -> list[str]:
-    """Extract search keywords from query"""
-    # Shares the chatbot's stop list so UI search and the chat agent agree on
-    # what counts as a search term - filler like "would"/"see" and temporal
-    # words like "weekend" (already handled by _extract_date_range) are dropped.
-    from app.ai.chatbot import STOP_WORDS
-
-    words = [w.strip(".,!?;:'\"()") for w in query.lower().split()]
-    keywords = [w for w in words if w and w not in STOP_WORDS and len(w) > 2]
-    return list(dict.fromkeys(keywords))[:5]  # Limit to 5 keywords
-
-
-def _extract_date_range(query: str) -> tuple[datetime, datetime] | None:
-    """Extract date range from natural language query"""
-    now = datetime.now()
-    query_lower = query.lower()
-
-    # Check for "this weekend"
-    if (
-        "this weekend" in query_lower
-        or "this saturday" in query_lower
-        or "this sunday" in query_lower
-    ):
-        days_until_saturday = (5 - now.weekday()) % 7
-        if days_until_saturday == 0:
-            days_until_saturday = 7
-        saturday = now + timedelta(days=days_until_saturday)
-        sunday = saturday + timedelta(days=1)
-        return (saturday, sunday.replace(hour=23, minute=59, second=59))
-
-    # Check for "this week"
-    if "this week" in query_lower:
-        days_until_monday = (7 - now.weekday()) % 7
-        if days_until_monday == 0:
-            days_until_monday = 7
-        end_of_week = now + timedelta(days=7)
-        return (now, end_of_week)
-
-    # Check for "this month"
-    if "this month" in query_lower:
-        end_of_month = now.replace(day=1) + timedelta(days=32)
-        end_of_month = end_of_month.replace(day=1) - timedelta(days=1)
-        return (now, end_of_month.replace(hour=23, minute=59, second=59))
-
-    # Check for "next week"
-    if "next week" in query_lower:
-        start = now + timedelta(days=7)
-        end = start + timedelta(days=7)
-        return (start, end)
-
-    # Check for "tonight" or "today"
-    if "tonight" in query_lower or "today" in query_lower:
-        end = now.replace(hour=23, minute=59, second=59)
-        return (now, end)
-
-    return None
-
-
-class ChatMessage(BaseModel):
-    message: str
-    thread_id: str | None = None
-
-
-class ChatStreamRequest(BaseModel):
-    """Body for POST /api/chat."""
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "examples": [
-                {"message": "comedy in Pilsen this weekend"},
-                {"message": "plant workshops in Logan Square, Humboldt Park"},
-                {"message": "free jazz tonight"},
-                {
-                    "message": "anything else that night?",
-                    "thread_id": "3f9a1c84-7b2e-4d51-9a6f-1e2d3c4b5a60",
-                },
-            ]
-        }
-    )
-
-    message: str = Field(
-        ...,
-        max_length=2000,
-        description="A natural language question about Chicago events. A "
-        "neighborhood, category or date phrase in here becomes a real filter.",
-    )
-    thread_id: str | None = Field(
-        None,
-        description="Thread id from a previous `complete` frame, to continue "
-        "that conversation. Omit to start a new one.",
-    )
-
-
-@router.post(
-    "/chat/{thread_id}/close",
-    summary="End a conversation",
-    description=(
-        "Marks a conversation finished, so it stops counting as active.\n\n"
-        "Called when somebody starts a new chat. Without it a thread only ever "
-        "ended by exhausting its budget, which almost nobody does - 270 "
-        "conversations sat open, some of them days old.\n\n"
-        "Idempotent: closing an already-closed thread is a no-op, and an "
-        "unknown thread id is not an error. Nothing here is worth failing a "
-        "page load over."
-    ),
-    responses={
-        200: {
-            "content": {
-                "application/json": {"example": {"thread_id": "6782dca6-...", "closed": True}}
-            }
-        }
-    },
-)
-async def close_chat_thread(thread_id: str, db: AsyncSession = Depends(get_db)):
-    from app.ai.threads import close_thread
-
-    try:
-        changed = await close_thread(db, thread_id)
-    except Exception:
-        changed = False
-    return {"thread_id": thread_id, "closed": changed}
-
-
-@router.get(
-    "/chat/greeting",
-    summary="The assistant's opening message",
-    description=(
-        "The first message a new chat shows: who the assistant is, a Chicago "
-        "fact, some example questions and what it is built on.\n\n"
-        "Served from the API rather than hardcoded in the UI so the persona and "
-        "the facts live in one place - `app.ai.persona` - and can change "
-        "without a frontend rebuild. The fact rotates per request, so opening "
-        "two chats does not show the same one."
-    ),
-    responses={
-        200: {
-            "description": "Markdown, ready to render.",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "name": "Loopara",
-                        "greeting": "🏙️ **Loopara** here - your Chicago events guide...",
-                    }
-                }
-            },
-        }
-    },
-)
-async def chat_greeting(db: AsyncSession = Depends(get_db)):
-    from app.ai.persona import (
-        ASSISTANT_NAME,
-        data_facts,
-        greeting,
-        whats_on_tonight,
-    )
-
-    # Real events, so the opener names things that are actually on rather than
-    # describing a generic city. A failure here loses the examples, not the
-    # greeting - the chat still has to open.
-    try:
-        tonight = await whats_on_tonight(db)
-    except Exception:
-        tonight = None
-
-    # Facts counted from the database, added to the written ones. They are the
-    # only facts that change on their own.
-    try:
-        counted = await data_facts(db)
-    except Exception:
-        counted = []
-
-    return {
-        "name": ASSISTANT_NAME,
-        "greeting": greeting(tonight=tonight, extra_facts=counted),
-    }
-
-
-@router.post(
-    "/chat",
-    summary="Ask Loopara (streaming)",
-    description=(
-        "Natural language event discovery, streamed as Server-Sent Events.\n\n"
-        "**This is a stream, so 'Try it out' in this page will show raw SSE "
-        "frames rather than JSON.** Each frame is `data: {...}` with an `event` "
-        "field: `thinking` while the agent works, `events` when results are "
-        "found, `response` for the written answer, `complete` with the token "
-        "count, or `error`.\n\n"
-        "Out-of-scope questions are rejected before any expensive call: an "
-        "intent classifier runs first, and anything not about Chicago events "
-        "comes back as a `response` frame with `out_of_scope: true`.\n\n"
-        "A neighborhood named in the message is applied as a real filter, the "
-        "same join `POST /api/search` uses, so 'comedy in Pilsen' constrains by "
-        "location rather than searching for the word 'Pilsen' in event titles. "
-        "Several can be named at once; naming none searches the whole city.\n\n"
-        "Pass `thread_id` from a previous `complete` frame to continue a "
-        "conversation. Threads are capped on both turns and tokens; once either "
-        "runs out the reply says so instead of failing."
-    ),
-    tags=["Chat"],
-    responses={
-        200: {
-            "description": "An SSE stream (`text/event-stream`). Frames arrive in order: one or "
-            "more `thinking`, then optionally `events`, then `response`, then "
-            "`complete`.",
-            "content": {
-                "text/event-stream": {
-                    "example": 'data: {"event":"thinking","data":{"status":"Analyzing your question..."}}\n\n'
-                    'data: {"event":"events","data":{"events":[{"id":1247,'
-                    '"name":"Comedy Open Mic","date":"2026-10-07T00:00:00",'
-                    '"venue_name":"Cole\'s Bar","cost":"Free"}]}}\n\n'
-                    'data: {"event":"response","data":{"message":"There is a free comedy '
-                    'open mic at Cole\'s Bar tonight.","tokens":312}}\n\n'
-                    'data: {"event":"complete","data":{"thread_id":"a3f...","tokens_used":312}}\n\n'
-                }
-            },
-        },
-        **_VALIDATION_ERROR,
-    },
-)
-async def chat_endpoint(request: ChatStreamRequest):
-    """
-    **Stream AI-powered event search via SSE (Server-Sent Events)**
-
-    Establishes a real-time streaming connection that emits events as the REACT agent reasons through:
-    1. **chat_started** - Session initialized
-    2. **thinking** - Agent analyzing query
-    3. **tool_call** - Executing search (smart_search, db_search, or external API)
-    4. **tool_result** - Received results
-    5. **response** - Final answer with matched events
-    6. **complete** - Session ended
-
-    Supports multi-turn conversation with **thread_id** for context persistence.
-
-    **Request body:**
-    ```json
-    {
-      "message": "Music events this weekend under $50",
-      "thread_id": null
-    }
-    ```
-
-    **Stream output (SSE format):**
-    ```
-    event: chat_started
-    data: {"thread_id": "chatb_abc123"}
-
-    event: thinking
-    data: {"status": "Analyzing query for music events..."}
-
-    event: tool_call
-    data: {"tool": "smart_search_expand", "args": {"query": "music events weekend"}}
-
-    event: tool_result
-    data: {"tool": "search_local_db", "result_count": 12, "snippet": "Found 12 music events"}
-
-    event: response
-    data: {"message": "🎵 Found 5 great music events this weekend..."}
-
-    event: complete
-    data: {"tokens_used": 1247, "remaining_turns": 4}
-    ```
-
-    **Token budget:** 4,000 tokens per session, 5 turns maximum
-    **Rate limit:** 3 attempts before rate limiting
-    """
-
-    async def event_generator():
-        executor = ChatExecutor()
-        async for event in executor.execute(request.message, thread_id=request.thread_id):
-            yield sse_event_formatter(event)
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@analytics_router.get(
-    "/analytics/telemetry",
-    summary="OpenTelemetry metrics",
-    responses=_ok(
-        {
-            "timestamp": "2026-10-07T11:45:18.810877",
-            "metrics_data": "MetricsData(resource_metrics=[...])",
-        },
-        "Counters and histograms as OpenTelemetry's own repr, not "
-        "parsed JSON - intended for eyeballing, not for machines.",
-    ),
-    description="Get current metrics snapshot for observability",
-    tags=["Analytics"],
-)
-def get_telemetry():
-    """
-    **Get current OpenTelemetry metrics snapshot**
-
-    Returns aggregated metrics about application performance and usage.
-
-    **Example response:**
-    ```json
-    {
-      "timestamp": "2026-10-01T13:53:43.067825Z",
-      "message": "Metrics endpoint available (OpenTelemetry SDK configured)"
-    }
-    ```
-    """
-    return telemetry.get_metrics_snapshot()
-
-
-@analytics_router.get(
-    "/analytics/audit",
-    summary="Query audit logs",
-    responses={
-        **_ok(
-            {
-                "logs": [
-                    {
-                        "id": 1,
-                        "action": "chat_question",
-                        "detail": "comedy in Pilsen",
-                        "created_at": "2026-10-07T11:45:18",
-                    }
-                ],
-                "count": 1,
-            },
-            "Matching audit entries, newest first. `logs` is empty when nothing matches.",
-        ),
-        **_VALIDATION_ERROR,
-    },
-    description="Retrieve audit trail of operations with filtering",
-    tags=["Analytics"],
-)
-async def get_audit_logs(
-    operation: str | None = Query(
-        None, description="Filter by operation type (e.g., 'chat', 'search', 'security_blocked')"
-    ),
-    status: str | None = Query(None, description="Filter by status (e.g., 'success', 'error')"),
-    limit: int = Query(100, ge=1, le=1000, description="Maximum logs to return (1-1000)"),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    **Get audit logs with optional filtering**
-
-    Retrieves audit trail for security, performance, and usage analysis.
-
-    **Filters:**
-    - **operation**: Type of operation (chat, search_db, search_google, security_blocked, etc.)
-    - **status**: Operation status (success, error)
-    - **limit**: Number of logs to return (default: 100, max: 1000)
-
-    **Example response:**
-    ```json
-    {
-      "logs": [
-        {
-          "id": 1,
-          "thread_id": "chatb_xyz",
-          "operation": "chat",
-          "status": "success",
-          "duration_ms": 1247,
-          "tokens_used": 342,
-          "created_at": "2026-10-01T13:52:00Z"
-        }
-      ],
-      "count": 1
-    }
-    ```
-    """
-    query = select(AuditLogModel)
-
-    if operation:
-        query = query.filter(AuditLogModel.operation == operation)
-    if status:
-        query = query.filter(AuditLogModel.status == status)
-
-    query = query.order_by(AuditLogModel.created_at.desc()).limit(limit)
-    result = await db.execute(query)
-    logs = result.scalars().all()
-    return {"logs": logs, "count": len(logs)}
-
-
-@analytics_router.get(
-    "/analytics/summary",
-    summary="Analytics dashboard summary",
-    responses=_ok(
-        {
-            "total_sessions": 118,
-            "completed_sessions": 0,
-            "active_sessions": 118,
-            "total_turns": 118,
-            "total_tokens": 18163,
-            "avg_tokens_per_session": 0,
-            "avg_turns_per_session": 0,
-            "operations": [],
-        },
-        "Counters since the process started. A session counts as "
-        "active until it is explicitly completed, so a restart "
-        "leaves them active.",
-    ),
-    description="Get aggregate statistics for observability dashboard",
-    tags=["Analytics"],
-)
-async def get_analytics_summary(db: AsyncSession = Depends(get_db)):
-    """
-    **Get summary statistics for observability dashboard**
-
-    Provides high-level metrics about sessions, tokens, and operations.
-
-    **Example response:**
-    ```json
-    {
-      "total_sessions": 42,
-      "completed_sessions": 38,
-      "active_sessions": 4,
-      "total_turns": 156,
-      "total_tokens": 45821,
-      "avg_tokens_per_session": 1206.34,
-      "avg_turns_per_session": 4.1,
-      "operations": [
-        {"operation": "chat", "count": 156},
-        {"operation": "search_db", "count": 320},
-        {"operation": "search_google", "count": 12}
-      ]
-    }
-    ```
-    """
-    total_sessions_result = await db.execute(select(func.count(ChatThreadModel.id)))
-    total_sessions = total_sessions_result.scalar()
-
-    completed_sessions_result = await db.execute(
-        select(func.count(ChatThreadModel.id)).filter(ChatThreadModel.status == "completed")
-    )
-    completed_sessions = completed_sessions_result.scalar()
-
-    total_turns_result = await db.execute(select(func.sum(ChatThreadModel.turn_count)))
-    total_turns = total_turns_result.scalar() or 0
-
-    total_tokens_result = await db.execute(select(func.sum(ChatThreadModel.total_tokens)))
-    total_tokens = total_tokens_result.scalar() or 0
-
-    avg_tokens_per_session = total_tokens / completed_sessions if completed_sessions > 0 else 0
-    avg_turns_per_session = total_turns / completed_sessions if completed_sessions > 0 else 0
-
-    # Get operation counts from audit logs
-    operations_result = await db.execute(
-        select(AuditLogModel.operation, func.count(AuditLogModel.id)).group_by(
-            AuditLogModel.operation
-        )
-    )
-    operations = operations_result.all()
-
-    return {
-        "total_sessions": total_sessions,
-        "completed_sessions": completed_sessions,
-        "active_sessions": total_sessions - completed_sessions,
-        "total_turns": total_turns,
-        "total_tokens": total_tokens,
-        "avg_tokens_per_session": round(avg_tokens_per_session, 2),
-        "avg_turns_per_session": round(avg_turns_per_session, 2),
-        "operations": [{"operation": op, "count": cnt} for op, cnt in operations],
-    }
-
-
-@analytics_router.get(
-    "/analytics/security",
-    summary="Security metrics dashboard",
-    responses=_ok(
-        {
-            "security_events": {
-                "blocked_requests": 0,
-                "outputs_sanitized": 0,
-                "out_of_scope_questions": 0,
-            },
-            "active_injection_attempts": {},
-            "blocked_sessions": [],
-            "recent_blocks": [],
-        },
-        "Prompt-injection and sanitization counters. All zero means "
-        "nothing has been blocked since startup.",
-    ),
-    description="Real-time security monitoring and threat detection metrics",
-    tags=["Analytics"],
-)
-async def get_security_summary(db: AsyncSession = Depends(get_db)):
-    """
-    **Get security metrics and suspicious activity summary**
-
-    Monitors prompt injection attempts, output sanitization, and threat metrics.
-
-    **Metrics include:**
-    - **blocked_requests**: Requests blocked by security filters
-    - **outputs_sanitized**: Responses sanitized to remove sensitive data
-    - **out_of_scope_questions**: Questions rejected as out of scope
-    - **active_injection_attempts**: Real-time threat tracking
-    - **blocked_sessions**: Sessions blocked due to rate limiting
-    - **recent_blocks**: Last 10 blocked requests
-
-    **Example response:**
-    ```json
-    {
-      "security_events": {
-        "blocked_requests": 3,
-        "outputs_sanitized": 5,
-        "out_of_scope_questions": 12
-      },
-      "active_injection_attempts": {
-        "session_xyz": 2
-      },
-      "blocked_sessions": [],
-      "recent_blocks": [
-        {
-          "timestamp": "2026-10-01T13:50:00Z",
-          "thread_id": "chatb_123",
-          "reason": "SQL injection pattern detected"
-        }
-      ]
-    }
-    ```
-    """
-    # Get security events from audit logs
-    blocked_result = await db.execute(
-        select(func.count(AuditLogModel.id)).filter(AuditLogModel.operation == "security_blocked")
-    )
-    blocked = blocked_result.scalar()
-
-    sanitized_result = await db.execute(
-        select(func.count(AuditLogModel.id)).filter(AuditLogModel.operation == "output_sanitized")
-    )
-    sanitized = sanitized_result.scalar()
-
-    out_of_scope_result = await db.execute(
-        select(func.count(AuditLogModel.id)).filter(
-            AuditLogModel.operation == "out_of_scope_question"
-        )
-    )
-    out_of_scope = out_of_scope_result.scalar()
-
-    # Get recent blocked requests
-    recent_blocks_result = await db.execute(
-        select(AuditLogModel)
-        .filter(AuditLogModel.operation == "security_blocked")
-        .order_by(AuditLogModel.created_at.desc())
-        .limit(10)
-    )
-    recent_blocks = recent_blocks_result.scalars().all()
-
-    return {
-        "security_events": {
-            "blocked_requests": blocked,
-            "outputs_sanitized": sanitized,
-            "out_of_scope_questions": out_of_scope,
-        },
-        "active_injection_attempts": dict(rate_limiter.injection_attempts),
-        "blocked_sessions": [
-            session_id
-            for session_id, count in rate_limiter.injection_attempts.items()
-            if count >= rate_limiter.BLOCK_THRESHOLD
-        ],
-        "recent_blocks": [
-            {
-                "timestamp": log.created_at.isoformat(),
-                "thread_id": log.thread_id,
-                "reason": log.metadata,
-            }
-            for log in recent_blocks
-        ],
-    }
-
-
-@router.post(
-    "/venue-events/refresh",
-    summary="Fetch and persist venue events",
-    responses={
-        **_ok(
-            {"status": "success", "new_events": 43},
-            "Scrape finished. `new_events` counts rows inserted; events "
-            "already stored are updated in place and not counted.",
-        ),
-        500: {
-            "description": "The scrape or the database write failed; the "
-            "message carries the underlying error.",
-            "content": {"application/json": {"example": {"detail": "database is locked"}}},
-        },
-    },
-    description="Scrape entertainment venues and persist their events to the database",
-    tags=["Admin"],
-)
-async def refresh_venue_events(db: AsyncSession = Depends(get_db)):
-    """
-    **Fetch events from entertainment venues and persist to database**
-
-    This endpoint triggers a scrape of all registered venue websites (Second City,
-    Steppenwolf, iO Theater, etc.) and persists new events to the database.
-
-    - Only adds new events that don't already exist
-    - Respects API rate limits
-    - Returns count of new events added
-
-    **Example:**
-    ```bash
-    curl -X POST http://localhost:8000/api/venue-events/refresh
-    ```
-    """
-    from scrapers.venue_events_persist import fetch_and_persist_venue_events
-
-    logger.info("Starting venue events refresh")
-    try:
-        count = await fetch_and_persist_venue_events(db)
-        logger.info(f"Venue refresh complete: {count} new events")
-
-        # Re-embed so the new events are semantically searchable. A full
-        # rebuild takes well under a second, so there is nothing to optimize.
-        if count:
-            try:
-                from app.ai.semantic_index import event_index
-
-                await event_index.rebuild(db)
-            except Exception as e:
-                logger.warning(f"Semantic index refresh failed: {e}")
-
-        return {"status": "success", "new_events": count}
-    except Exception as e:
-        logger.error(f"Venue events refresh failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+# _extract_keywords and _extract_date_range are imported from app.chat.search_query
+# at the top of this file. The local copies that used to live here have been
+# removed: they duplicated logic that already existed there and diverged silently
+# (missing contraction stripping, a stale STOP_WORDS import, slightly different
+# date handling). Using the shared versions keeps the UI/API search and the chat
+# agent consistent.

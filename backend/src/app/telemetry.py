@@ -55,6 +55,24 @@ tokens_used = meter.create_counter(
     unit="1",
 )
 
+model_input_tokens = meter.create_counter(
+    name="chat.model.input_tokens",
+    description="Provider-reported model input tokens",
+    unit="1",
+)
+
+model_output_tokens = meter.create_counter(
+    name="chat.model.output_tokens",
+    description="Provider-reported model output tokens",
+    unit="1",
+)
+
+model_requests = meter.create_counter(
+    name="chat.model.requests",
+    description="Provider model requests made during chat runs",
+    unit="1",
+)
+
 # Histograms
 session_duration = meter.create_histogram(
     name="chat.session.duration",
@@ -97,6 +115,16 @@ def record_session_completed(tokens: int, question_count: int, duration_ms: floa
 def record_question_asked():
     """Record a question asked."""
     questions_asked.add(1, {})
+
+
+def record_model_usage(input_tokens: int, output_tokens: int, requests: int) -> None:
+    """Record provider-reported usage for one completed agent run."""
+    if input_tokens:
+        model_input_tokens.add(input_tokens, {})
+    if output_tokens:
+        model_output_tokens.add(output_tokens, {})
+    if requests:
+        model_requests.add(requests, {})
 
 
 def record_tool_call(operation: str, duration_ms: float, tokens: int = 0):

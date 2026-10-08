@@ -9,7 +9,7 @@ itself was guesswork.
 
 from datetime import datetime, timedelta
 
-from app.ai.chatbot import todays_date
+from app.chat.chatbot import todays_date
 from shared.localtime import CHICAGO
 
 
@@ -45,7 +45,7 @@ class TestTodaysDate:
     def test_it_is_evaluated_per_call_not_frozen(self):
         """A server started on Friday must not still believe it is Friday a
         week later, which a string baked into the static prompt would."""
-        from app.ai import chatbot
+        from app.chat import chatbot
 
         assert callable(chatbot.todays_date)
         # Registered as a dynamic system prompt rather than concatenated in.

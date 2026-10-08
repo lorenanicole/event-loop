@@ -155,7 +155,7 @@ class ChatWidget {
     this.newChatButton.style.display = "inline-block";
     this.conversationEnded = true;
     this.inputField.disabled = false;
-    this.inputField.placeholder = 'Type "start" for a new chat...';
+    this.inputField.placeholder = 'Type "start" or use New Chat below...';
     this.inputField.focus();
   }
 
@@ -350,6 +350,7 @@ class ChatWidget {
       case "response": {
         this.clearStatus();
         let message = data.message as string;
+        const responseDetails = (data.data as Record<string, unknown> | undefined) ?? {};
 
         // If we have tool results and the message is generic, prepend formatted results
         if (Object.keys(this.toolResults).length > 0 && message.includes("Something went wrong")) {
@@ -362,24 +363,30 @@ class ChatWidget {
 
         appendMessage(message);
         this.toolResults = {}; // Reset for next message
+        if (responseDetails.conversation_ended === true || data.conversation_ended === true) {
+          this.endConversation();
+          this.showStatus("✶ Chat ended. Start a new chat with the button below.");
+        }
         break;
       }
 
-      case "conversation_status":
-        if (data.status === "limit_approaching") {
+      case "conversation_status": {
+        const statusDetails = (data.data as Record<string, unknown> | undefined) ?? {};
+        const status = (statusDetails.status ?? data.status) as string | undefined;
+        if (status === "limit_approaching") {
           this.showStatus(
-            `⏳ One more question available (${data.remaining_turns} turns left)`
+            `⏳ One more question available (${statusDetails.remaining_turns ?? data.remaining_turns} turns left)`
           );
-        } else if (data.status === "limit_reached") {
+        } else if (status === "limit_reached") {
           // The goodbye itself arrives as a response event and is already on
           // screen; this only needs to close the input. It used to be the
           // only notice the user got, as a grey chip reading "token limit
           // reached" - jargon, and the wrong jargon when turns ran out.
-          const why = data.reason === "tokens" ? "reply budget" : "questions";
-          this.showStatus(`\u2736 Out of ${why} - hit New Chat to keep going`);
+          this.showStatus("✶ Chat ended. Start a new chat with the button below.");
           this.endConversation();
         }
         break;
+      }
 
       case "complete":
         // `?? -1` rather than `|| 0`. A missing field used to read as zero,
@@ -387,8 +394,11 @@ class ChatWidget {
         // out-of-scope reply ("tell me a joke") sent no budget fields at all,
         // so a single off-topic question killed the chat. -1 means "the
         // server did not say", which is not a reason to stop.
-        const turnsLeft = (data.remaining_turns as number) ?? -1;
-        const tokensLeft = (data.remaining_tokens as number) ?? -1;
+        const completionDetails = (data.data as Record<string, unknown> | undefined) ?? {};
+        const turnsLeft = (completionDetails.remaining_turns as number) ??
+          (data.remaining_turns as number) ?? -1;
+        const tokensLeft = (completionDetails.remaining_tokens as number) ??
+          (data.remaining_tokens as number) ?? -1;
         const exhausted = turnsLeft === 0 || tokensLeft === 0;
 
         // Never the bare word "Complete" for a turn that finished normally -
@@ -399,11 +409,11 @@ class ChatWidget {
           exhausted
             // Name the limit actually reached. It said "token limit" either
             // way, while the turn limit is the one that runs out first.
-            ? data.reason === "goodbye"
-              ? `✶ Chat ended - type "start" for a new one`
+            ? (completionDetails.reason ?? data.reason) === "goodbye"
+              ? "✶ Chat ended. Start a new chat with the button below."
               : turnsLeft === 0
-                ? `✶ That's the last question - type "start" to keep going`
-                : `✶ Reply budget used up - type "start" to keep going`
+                ? "✶ That was the last question. Start a new chat below to keep going."
+                : "✶ This chat's reply budget is used up. Start a new one below to keep going."
             : turnsLeft > 0
               ? `✓ ${turnsLeft} question${turnsLeft === 1 ? "" : "s"} left`
               : ``

@@ -41,7 +41,7 @@ async def startup_event():
     # timer: a restart is a natural moment to tidy, and a sweep that only ran
     # while the app was up could never reach threads left by the previous run.
     try:
-        from app.ai.threads import sweep_stale_threads
+        from app.chat.threads import sweep_stale_threads
         from shared.database import AsyncSessionLocal
 
         async with AsyncSessionLocal() as session:
@@ -62,7 +62,7 @@ async def startup_event():
 async def _warm_semantic_index() -> None:
     """Build the event embedding index without blocking startup."""
     try:
-        from app.ai.semantic_index import event_index
+        from app.chat.semantic_index import event_index
 
         async with AsyncSessionLocal() as session:
             count = await event_index.rebuild(session)

@@ -84,6 +84,16 @@ class TestEventsEndpoints:
 class TestChatEndpoints:
     """Test chat/SSE endpoints."""
 
+    def test_split_routers_preserve_public_paths(self, client):
+        paths = set(app.openapi()["paths"])
+        assert "/api/chat" in paths
+        assert "/api/chat/greeting" in paths
+        assert "/api/chat/{thread_id}/close" in paths
+        # /api/venue-events/refresh is intentionally hidden from the public schema (include_in_schema=False)
+        assert "/api/venue-events/refresh" not in paths
+        assert "/analytics/summary" in paths
+        assert "/analytics/security" in paths
+
     def test_chat_endpoint_exists(self, client):
         """POST /api/chat endpoint exists."""
         # This will likely fail quickly since no LLM, but test endpoint
@@ -174,6 +184,51 @@ class TestAnalyticsEndpoints:
         assert "security_events" in data
         assert "blocked_requests" in data["security_events"]
         assert "blocked_sessions" in data
+
+
+class TestVenueRefreshProtection:
+    """The venue-refresh endpoint must be protected and hidden from public docs."""
+
+    def test_refresh_hidden_from_openapi(self, client):
+        """Route does not appear in the public OpenAPI schema."""
+        paths = set(app.openapi()["paths"])
+        assert "/api/venue-events/refresh" not in paths
+
+    def test_refresh_blocked_without_key(self, client):
+        """POST without X-Admin-Key header is rejected (422 missing header or 403 wrong key)."""
+        response = client.post("/api/venue-events/refresh")
+        # FastAPI returns 422 when a required header is absent; 403 when it is present but wrong.
+        # Either way the request must not succeed.
+        assert response.status_code in (403, 422)
+
+    def test_refresh_blocked_with_wrong_key(self, client):
+        """POST with an incorrect key returns 403."""
+        response = client.post(
+            "/api/venue-events/refresh",
+            headers={"X-Admin-Key": "wrong-key"},
+        )
+        assert response.status_code == 403
+
+    def test_refresh_allowed_with_correct_key(self, client, monkeypatch):
+        """POST with the correct key is accepted (scraper itself is not invoked)."""
+        monkeypatch.setenv("ADMIN_API_KEY", "test-secret")
+
+        async def _fake_scrape():
+            pass
+
+        monkeypatch.setattr(
+            "scrapers.venue.chicago_events_scraper.scrape_chicago_events",
+            _fake_scrape,
+            raising=False,
+        )
+        # We only care that the key check passes (200); the scraper mock prevents
+        # actual network calls.
+        response = client.post(
+            "/api/venue-events/refresh",
+            headers={"X-Admin-Key": "test-secret"},
+        )
+        # 200 = key accepted; 500 = key accepted but scraper path error (still not 403)
+        assert response.status_code != 403
 
 
 class TestErrorHandling:

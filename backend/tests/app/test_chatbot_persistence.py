@@ -7,7 +7,7 @@ so these pin down both what is rejected and what must not be.
 
 import pytest
 
-from app.ai.chatbot import _looks_like_an_event
+from app.chat.chatbot import _looks_like_an_event
 
 
 class TestLooksLikeAnEvent:

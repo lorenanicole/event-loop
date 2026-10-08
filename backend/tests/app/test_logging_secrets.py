@@ -47,7 +47,7 @@ class TestHttpxIsQuiet:
         # Asserting the effective level would really be testing basicConfig,
         # which is a no-op once handlers exist. What matters is that this
         # module never sets a level on application loggers.
-        assert logging.getLogger("app.ai.chatbot").level == logging.NOTSET
+        assert logging.getLogger("app.chat.chatbot").level == logging.NOTSET
 
     def test_debug_level_does_not_reopen_the_leak(self):
         """Turning the app up to DEBUG is a normal thing to do while

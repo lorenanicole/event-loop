@@ -10,12 +10,14 @@ from datetime import datetime, timedelta
 import pytest
 from sqlalchemy import select
 
-from app.ai.threads import (
+from app.chat.threads import (
     ABANDONED,
     ACTIVE,
     CLOSED,
+    SUMMARY_TRIGGER_TURN,
     close_thread,
     count_by_status,
+    maybe_summarise_thread,
     sweep_stale_threads,
 )
 from shared.database import AsyncSessionLocal
@@ -97,3 +99,75 @@ class TestSweep:
             counts = await count_by_status(session)
             assert isinstance(counts, dict)
             assert all(isinstance(v, int) for v in counts.values())
+
+
+class TestContextSummary:
+    """maybe_summarise_thread() must not fire before the trigger turn,
+    must return None gracefully when the API is unavailable, and must
+    return the cached summary on subsequent calls without re-calling the API."""
+
+    @pytest.mark.asyncio
+    async def test_short_thread_returns_none_without_api_call(self, monkeypatch):
+        """Threads under SUMMARY_TRIGGER_TURN should return None immediately."""
+        called = []
+
+        async def fake_api(*a, **kw):
+            called.append(True)
+
+        monkeypatch.setattr("anthropic.AsyncAnthropic", lambda **kw: None)
+
+        async with AsyncSessionLocal() as session:
+            tid = await make_thread(session, turns=SUMMARY_TRIGGER_TURN - 1)
+            result = await maybe_summarise_thread(session, tid, SUMMARY_TRIGGER_TURN - 1)
+
+        assert result is None
+        assert called == [], "API must not be called for short threads"
+
+    @pytest.mark.asyncio
+    async def test_api_failure_returns_none_without_raising(self, monkeypatch):
+        """A network error or missing key must not crash the conversation."""
+
+        class BrokenClient:
+            async def messages_create(self, *a, **kw):
+                raise RuntimeError("network down")
+
+        class BrokenAnthropic:
+            def __init__(self, **kw):
+                pass
+
+            @property
+            def messages(self):
+                return BrokenClient()
+
+        monkeypatch.setattr("anthropic.AsyncAnthropic", BrokenAnthropic)
+
+        async with AsyncSessionLocal() as session:
+            tid = await make_thread(session, turns=SUMMARY_TRIGGER_TURN + 2)
+            # Should not raise
+            result = await maybe_summarise_thread(session, tid, SUMMARY_TRIGGER_TURN + 2)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_cached_summary_returned_without_second_api_call(self, monkeypatch):
+        """Once stored, context_summary is returned without another API call."""
+        from sqlalchemy import update
+
+        from shared.database.models import ChatThreadModel
+
+        api_calls = []
+
+        async with AsyncSessionLocal() as session:
+            tid = await make_thread(session, turns=SUMMARY_TRIGGER_TURN + 2)
+            # Pre-populate the summary
+            await session.execute(
+                update(ChatThreadModel)
+                .where(ChatThreadModel.id == tid)
+                .values(context_summary="User wants free jazz in Pilsen this weekend.")
+            )
+            await session.commit()
+
+            result = await maybe_summarise_thread(session, tid, SUMMARY_TRIGGER_TURN + 2)
+
+        assert result == "User wants free jazz in Pilsen this weekend."
+        assert api_calls == [], "Cached summary must not trigger another API call"

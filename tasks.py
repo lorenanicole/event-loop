@@ -24,24 +24,18 @@ BOLD = "\033[1m"
 
 def print_header(msg):
     """Print a formatted header."""
-    print(f"\n{BOLD}{GREEN}{'=' * 60}{RESET}")
-    print(f"{BOLD}{GREEN}{msg}{RESET}")
-    print(f"{BOLD}{GREEN}{'=' * 60}{RESET}\n")
 
 
 def print_success(msg):
     """Print success message."""
-    print(f"{GREEN}✓ {msg}{RESET}")
 
 
 def print_error(msg):
     """Print error message."""
-    print(f"{RED}✗ {msg}{RESET}")
 
 
 def print_warning(msg):
     """Print warning message."""
-    print(f"{YELLOW}⚠ {msg}{RESET}")
 
 
 @task(help={"file": "Specific test file to run (e.g., 'security')"})
@@ -49,7 +43,7 @@ def test(c, file=None):
     """Run unit tests with pytest."""
     print_header("Running Tests")
 
-    cmd = "cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/"
+    cmd = "cd backend && PYTHONPATH=src:. .venv/bin/python -m pytest tests/"
 
     if file:
         cmd += f"/test_{file}.py"
@@ -70,7 +64,7 @@ def test_quick(c, fast=False):
     """Run tests quickly (no coverage report)."""
     print_header("Quick Test Run")
 
-    cmd = "cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/ -v --tb=short"
+    cmd = "cd backend && PYTHONPATH=src:. .venv/bin/python -m pytest tests/ -v --tb=short"
 
     if fast:
         cmd += " -x"  # Stop on first failure
@@ -124,7 +118,6 @@ def pre_commit(c):
     print_header("Pre-Commit Checks")
 
     # First lint
-    print("\n1️⃣  Linting...")
     lint_result = c.run("ruff check backend/src backend/tests", warn=True)
 
     if not lint_result.ok:
@@ -134,15 +127,14 @@ def pre_commit(c):
     print_success("Linting passed!")
 
     # Then test
-    print("\n2️⃣  Testing...")
     test_result = c.run(
-        "cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/ -v --tb=short --co -q",  # Just collect, don't run
+        "cd backend && PYTHONPATH=src:. .venv/bin/python -m pytest tests/ -v --tb=short --co -q",  # Just collect, don't run
         warn=True,
     )
 
     # Run actual tests
     test_result = c.run(
-        "cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/ -x --tb=short",  # Stop on first failure
+        "cd backend && PYTHONPATH=src:. .venv/bin/python -m pytest tests/ -x --tb=short",  # Stop on first failure
         warn=True,
     )
 
@@ -167,10 +159,6 @@ def setup_hooks(c):
     c.run("pre-commit install", warn=True)
 
     print_success("Git hooks installed!")
-    print("\nHooks will run on 'git commit':")
-    print("  • Ruff linting")
-    print("  • Unit tests (security + core tests)")
-    print("  • File formatting")
 
 
 @task
@@ -203,7 +191,7 @@ def coverage(c):
     print_header("Coverage Report")
 
     c.run(
-        "cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/ --cov=src --cov-report=html --cov-report=term-missing -v"
+        "cd backend && PYTHONPATH=src:. .venv/bin/python -m pytest tests/ --cov=src --cov-report=html --cov-report=term-missing -v"
     )
 
     print_success("Coverage report generated in htmlcov/index.html")
@@ -215,7 +203,7 @@ def test_category(c, category):
     print_header(f"Running {category.title()} Tests")
 
     result = c.run(
-        f"cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/ -k {category} -v --tb=short",
+        f"cd backend && PYTHONPATH=src:. .venv/bin/python -m pytest tests/ -k {category} -v --tb=short",
         warn=True,
     )
 
@@ -228,15 +216,13 @@ def security_audit(c):
     """Run security-focused tests."""
     print_header("Security Audit")
 
-    print("\n1️⃣  Security tests...")
     c.run(
-        "cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/app/test_security.py -v",
+        "cd backend && PYTHONPATH=src:. .venv/bin/python -m pytest tests/app/test_security.py -v",
         warn=True,
     )
 
-    print("\n2️⃣  Resilience tests...")
     c.run(
-        "cd backend && PYTHONPATH=src .venv/bin/python -m pytest tests/app/test_resilience.py -v",
+        "cd backend && PYTHONPATH=src:. .venv/bin/python -m pytest tests/app/test_resilience.py -v",
         warn=True,
     )
 
@@ -247,10 +233,8 @@ def security_audit(c):
 def scrape(c):
     """Scrape events from all Chicago sources and populate database."""
     print_header("Scraping Events from All Sources")
-    print(f"{YELLOW}Sources: DO312, BandsinTown, EventBrite, Ticketmaster,")
-    print(f"          TimeoutChicago, YourChicagoGuide{RESET}\n")
     c.run(
-        "cd backend && PYTHONPATH=src .venv/bin/python additive_scrape.py",
+        "cd backend && PYTHONPATH=src:. .venv/bin/python scripts/additive_scrape.py",
         pty=True,
     )
 
@@ -259,9 +243,8 @@ def scrape(c):
 def dev(c):
     """Run backend server with uv."""
     print_header("Starting Backend (EventLoop API)")
-    print(f"{YELLOW}Running: uvicorn app.main:app on :8000{RESET}\n")
     c.run(
-        "cd backend && PYTHONPATH=src .venv/bin/python -m uvicorn app.main:app "
+        "cd backend && PYTHONPATH=src:. .venv/bin/python -m uvicorn app.main:app "
         "--reload --reload-dir src --port 8000",
         pty=True,
     )
@@ -271,7 +254,6 @@ def dev(c):
 def frontend(c):
     """Run frontend dev server."""
     print_header("Starting Frontend (Vite)")
-    print(f"{YELLOW}Running: npm run dev{RESET}\n")
     c.run("cd frontend && npm run dev", pty=True)
 
 
@@ -280,46 +262,6 @@ def info(c):
     """Show project info and commands."""
     print_header("Chicago Events Chatbot - Development")
 
-    print(f"""
-{BOLD}Development:{RESET}
-  invoke scrape            # Scrape from 6 event sources into database
-  invoke dev               # Start backend with uv (port 8000)
-  invoke frontend          # Start frontend dev server (port 5173)
-
-{BOLD}Quick Commands:{RESET}
-  invoke test              # Run all tests
-  invoke test --file security  # Run security tests
-  invoke lint              # Check code style
-  invoke format            # Format code
-  invoke pre-commit        # Pre-commit checks
-  invoke setup-hooks       # Install git hooks
-  invoke clean             # Clean build artifacts
-  invoke coverage          # Generate coverage report
-
-{BOLD}Test Categories:{RESET}
-  invoke test-category --category security   # Security tests
-  invoke test-category --category database   # Database tests
-  invoke test-category --category api        # API tests
-  invoke test-category --category scraper    # Scraper tests
-
-{BOLD}Code Quality:{RESET}
-  invoke security-audit    # Security + resilience tests
-  invoke lint --fix        # Auto-fix linting issues
-  invoke format            # Format all code
-
-{BOLD}Dependencies:{RESET}
-  Install with: uv pip install -e ".[dev,test]"
-    • pytest: Testing framework
-    • ruff: Fast linter + formatter
-    • invoke: Task automation
-    • pre-commit: Git hooks
-
-{BOLD}Git Workflow:{RESET}
-  1. Make changes
-  2. Run 'invoke pre-commit' (or let git hooks do it)
-  3. Git commit
-  4. Push!
-""")
 
 
 # Create command collection

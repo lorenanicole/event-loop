@@ -126,10 +126,7 @@ Tests for FastAPI endpoints, request validation, and response formats.
 ```python
 def test_search_events(client):
     """POST /api/search filters events."""
-    response = client.post(
-        "/api/search",
-        json={"query": "jazz", "limit": 10}
-    )
+    response = client.post("/api/search", json={"query": "jazz", "limit": 10})
     assert response.status_code == 200
     assert isinstance(response.json(), list)
 ```
@@ -255,19 +252,20 @@ def test_with_events(sample_events):
 import pytest
 from src.my_module import my_function
 
+
 class TestMyFeature:
     """Test my new feature."""
-    
+
     def test_basic_functionality(self):
         """Test basic case."""
         result = my_function("input")
         assert result == "expected_output"
-    
+
     def test_edge_case(self, mock_event):
         """Test edge case with fixture."""
         result = my_function(mock_event)
         assert result is not None
-    
+
     @pytest.mark.asyncio
     async def test_async_function(self):
         """Test async function."""

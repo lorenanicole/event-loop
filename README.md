@@ -1,75 +1,26 @@
 # 🏙️ EventLoop: Chicago Events Chatbot
 
-**An AI-powered event discovery platform for Chicago, built with dual Python versions (3.15 + 3.14) showcasing modern async patterns, lazy imports, and production-grade resilience.**
-
-This project demonstrates real-world Python 3.15 adoption:
-- **Backend**: Python 3.15 with lazy imports, upgraded JIT compiler (+10% performance)
-- **Parser**: Python 3.14 stable for proven scraping reliability  
-- **Communication**: Shared database for seamless data integration
-
-**Blog post theme**: "Python 3.15 in Production: Real Performance Gains & Dual-Version Architecture" - with measured benchmarks, dual-version patterns, and comprehensive testing at scale.
+**An event discovery app for Chicago, with a Python backend, SQLite event catalog, and a TypeScript/Vite frontend.** The backend and scrapers share one Python package and database; the checked-in backend environment currently uses Python 3.15.0rc3.
 
 ## 📁 Project Structure
 
 ```
 eventloop/
-├── backend/                    # Python Backend (3.15 + 3.14)
-│   ├── src/
-│   │   ├── app/               # FastAPI (Python 3.15)
-│   │   │   ├── main.py        # Entry point
-│   │   │   ├── api/           # REST endpoints
-│   │   │   ├── ai/            # Chat agent, search, enrichment
-│   │   │   ├── logging.py
-│   │   │   ├── security.py
-│   │   │   ├── telemetry.py
-│   │   │   └── resilience.py
-│   │   ├── shared/            # Cross-cutting
-│   │   │   ├── database/      # Models, filters, neighborhoods
-│   │   │   ├── geo/           # Boundary lookup + geocoding resolver
-│   │   │   └── models/
-│   │   ├── scrapers/          # Data collection
-│   │   │   ├── external/      # Third-party APIs (5)
-│   │   │   │   ├── do312.py
-│   │   │   │   ├── ticketmaster.py
-│   │   │   │   ├── eventbrite.py
-│   │   │   │   ├── bandsintown.py
-│   │   │   │   └── yourchicagoguide.py
-│   │   │   └── custom/        # Custom web scrapers
-│   │   │       ├── venue/     # Venue scraper framework (15 files)
-│   │   │       │   ├── venue_scraper.py     # Base class
-│   │   │       │   ├── chicago_events_scraper.py
-│   │   │       │   └── ...
-│   │   │       ├── eventscom.py
-│   │   │       ├── timeoutchicago.py
-│   │   │       └── venue_*.py
-│   │   └── shared/            # Shared Models & Database
-│   │       ├── database/      # SQLAlchemy ORM
-│   │       ├── models/        # Pydantic schemas
-│   │       └── __init__.py
-│   ├── tests/                 # Unit & integration tests
-│   │   ├── app/               # FastAPI tests
-│   │   ├── parser/            # Scraper tests
-│   │   └── shared/            # Database tests
-│   └── pyproject.toml
-│
-├── frontend/                  # React UI (Vite)
-│   ├── src/
-│   │   ├── app.ts
-│   │   ├── chat.ts
-│   │   ├── api.ts
-│   │   └── main.ts
-│   ├── package.json
-│   └── vite.config.js
-│
-├── benchmarks/                # Performance tests
-│   ├── perf_compare.py
-│   └── results/
-│
-├── scripts/                   # Utilities
-│   └── backfill_*.py
-│
-└── data/
-    └── events.db             # SQLite database (4,959 events)
+├── backend/
+│   ├── src/app/                # FastAPI API, chatbot, retrieval, security
+│   ├── src/scrapers/           # External APIs and venue scrapers
+│   ├── src/shared/             # Database, schemas, categories, geo helpers
+│   ├── tests/                  # App, scraper, and shared tests
+│   ├── data/                   # Local SQLite database and boundary data
+│   ├── additive_scrape.py      # Additive scrape runner
+│   └── pyproject.toml          # Backend dependencies and test config
+├── frontend/                  # TypeScript + Vite browser application
+├── benchmarks/                # Small interpreter microbenchmarks
+├── tasks.py                   # Invoke development tasks
+├── DEVELOPMENT.md
+├── PROJECT_STRUCTURE.md
+├── RAG_PIPELINE.md
+└── README.md
 ```
 
 ## 📐 How retrieval works
@@ -102,7 +53,7 @@ does not yet cover retrieval.
   browse or type into; selecting is the search, so there is no submit step
 
 ### **Neighborhoods**
-- 🗺️ **Events placed in 77 Chicago neighborhoods** - 95% of upcoming events, North Side to South Side
+- 🗺️ **Neighborhood-aware event search** - event locations are assigned from stored boundaries, coordinates, venue mappings, and cached geocoding where needed
 - 📐 **Point-in-polygon, not geocoding** - the city's 98 neighborhood boundaries are
   stored in the database, so placing a venue is a local geometry test: no API calls,
   no rate limits, ~3 ms
@@ -111,7 +62,7 @@ does not yet cover retrieval.
   once, rate limited, and cached permanently in `geocode_cache`
 
 ### **Data at Scale**
-- 📊 **2,900+ upcoming events** - 7 external sources plus 76 venue scrapers
+- 📊 **SQLite event catalog** - event and source totals change as data is refreshed
 - 💵 **Prices where venues publish them** - one `parse_cost()` normalizes "$25",
   "$20-$25", "Starting at $64", "No cover" and "Donation", and rejects the
   near-misses ("21+", "Show 9:30PM")
@@ -125,21 +76,21 @@ does not yet cover retrieval.
   venue that fails or gets bot-blocked on a run costs nothing
 - 💾 **Safe rescrapes** - `db_safety.py` snapshots the database and diffs counts by
   source and neighborhood afterwards, flagging any source that *lost* events
-- ⚡ **Real-time SSE** - Server-Sent Events for streaming chat responses
+- ⚡ **SSE chat transport** - Server-Sent Events carry chat progress and completed responses
 
 ### **Resilience & Observability**
 - 🔌 **Circuit Breaker** - Automatic fallback when LLM/DB fails
 - ⏳ **Exponential Backoff** - Retry transient failures smartly
 - 📊 **OpenTelemetry** - Counters, histograms, audit trails
 - 🔐 **Prompt Injection Defense** - Pattern detection, rate limiting, output validation
-- 🧪 **393 Tests** - Security, resilience, database, API, scraper coverage
+- 🧪 **Backend test suite** - app, security, resilience, database, scraper and chatbot coverage
 
 ### **Production-Ready**
 - 🛡️ **Security** - Blocks prompt injections, validates outputs, sanitizes inputs
-- 🎯 **Intent Classification** - Rejects out-of-scope requests ("Tell me a joke" → polite decline)
+- 🎯 **Intent Classification** - Clear Chicago event searches use a no-model fast path; ambiguous and contextual requests retain model classification
 - 💰 **Cost Optimization** - DB-first search minimizes Claude API calls
-- ✅ **Quality Gating** - Git hooks run tests + linting before commit
-- 📈 **Token Budgets** - 4,000 tokens/session, 5 turns max (focused chats)
+- ✅ **Development tasks** - Invoke tasks are defined in the root `tasks.py`
+- 📈 **Usage Limits** - Provider-reported model usage; 20,000 agent tokens and 12 turns per conversation, with per-turn request, tool-call and output caps
 
 ## 🚀 Quick Start (5 minutes)
 
@@ -153,30 +104,22 @@ does not yet cover retrieval.
 
 **Terminal 1: Backend (Python 3.15)**
 ```bash
-# Navigate to backend directory
 cd backend
 
-# Create Python 3.15 environment
-uv venv --python 3.15
-
-# Activate virtual environment
+# Reuse the existing local environment when present. To recreate it instead:
+# uv sync --all-extras
 source .venv/bin/activate
 
-# Install dependencies
-uv pip install -e ".[dev,test,all]"
+# Configure ANTHROPIC_API_KEY in the environment or backend/.env.
+# SERPAPI_KEY is optional and enables online event fallback.
 
-# Setup environment variables
-cp ../.env.example .env
-# Edit .env and add ANTHROPIC_API_KEY
-
-# Initialize database
-python -c "from app.main import app; import asyncio; asyncio.run(app.lifespan.__aenter__())"
-
-# Start backend server
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+PYTHONPATH=src python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-**Terminal 2: Frontend (React + Vite)**
+The app initializes its SQLite schema on startup. The default database path is
+`backend/data/events.db`.
+
+**Terminal 2: Frontend (TypeScript + Vite)**
 ```bash
 # From project root, navigate to frontend
 cd frontend
@@ -201,75 +144,100 @@ npm run dev
 All run from `backend/`.
 
 ```bash
-# Snapshot the database before a scrape, and diff it afterwards.
-# `compare` flags any source that LOST events - a scrape that silently drops a
-# venue looks fine in the logs and obvious here.
-python db_safety.py backup
+# Snapshot the database before a scrape, and compare after.
+.venv/bin/python db_safety.py backup
 
 # Refresh every venue in parallel. Additive: matched events are updated in
 # place, new ones inserted, nothing deleted - so a venue that fails or gets
 # bot-blocked leaves its existing events alone. Prefer this to clean_rescrape.py,
 # which deletes a venue's rows before reinserting them.
-python additive_scrape.py                   # all venues
-python additive_scrape.py Metro Thalia      # only venues matching these names
+.venv/bin/python additive_scrape.py                   # venues and external sources
+.venv/bin/python additive_scrape.py Metro Thalia      # only matching venues
+.venv/bin/python additive_scrape.py --only external    # external source set
 
-python db_safety.py compare
-python db_safety.py restore data/backups/events-<stamp>.db   # if needed
+.venv/bin/python db_safety.py compare
+.venv/bin/python db_safety.py restore data/backups/events-<stamp>.db   # if needed
 
-# Which venues are actually yielding events, one line each.
-python venue_health.py
+# Report stored venue coverage, or probe configured venue pages live.
+.venv/bin/python health.py venues --db
+.venv/bin/python health.py venues
 
-# Do the stored "Learn more" links actually resolve? 401/403/406 are usually
-# bot protection rather than a dead link; a 404 or DNS failure is real.
-python link_health.py
-python link_health.py --source chicago_venue_den_theatre
+# Check one sample link per source, or all links for one source.
+.venv/bin/python health.py links
+.venv/bin/python health.py links --source chicago_venue_den_theatre
 
 # Remove events whose own page is gone. Only a 404 or 410 counts as gone;
 # bot protection, server errors and timeouts never do, and every URL is
 # confirmed twice before anything is deleted.
-python prune_dead_links.py --dry-run
-python prune_dead_links.py
-
-# One-off repairs. Ticketmaster publishes UTC and Rosa'"'"'s publishes an offset;
-# both were stored as if local, which moved every evening show forward a day.
-python repair_event_times.py --dry-run
-python repair_event_times.py
+.venv/bin/python prune_dead_links.py --dry-run
+.venv/bin/python prune_dead_links.py
 
 # Collapse rows that are the same event stored twice. Identity is source +
 # name + date + time; undated rows are skipped because nothing distinguishes
 # them, and cross-source overlaps are reported rather than merged.
-python dedupe_events.py --dry-run
-python dedupe_events.py
+.venv/bin/python dedupe_events.py --dry-run
+.venv/bin/python dedupe_events.py
 
 # Place Park District events without geocoding: the city's open data portal
 # publishes all 617 parks with boundary polygons, so one request replaces
 # hundreds of rate-limited geocodes.
-python place_park_district.py
+.venv/bin/python place_park_district.py
 
 # One-time: load Chicago's neighborhood boundaries into the database.
 # After this, placing a coordinate is a local point-in-polygon test.
-python load_neighborhood_boundaries.py
+.venv/bin/python load_neighborhood_boundaries.py
 
 # Place any events still missing a neighborhood.
-python backfill_neighborhoods.py            # coordinates + known venues only
-python backfill_neighborhoods.py --geocode  # also geocode unknown addresses
+.venv/bin/python backfill_neighborhoods.py            # coordinates + known venues only
+.venv/bin/python backfill_neighborhoods.py --geocode  # also geocode unknown addresses
 ```
 
 Backups and the boundary cache live in `backend/data/backups/`, which is gitignored.
 
+To smoke-test only the first DO312 API page without saving anything, run from
+`backend/`:
+
+```bash
+PYTHONPATH=src .venv/bin/python - <<'PY'
+import asyncio
+import httpx
+from scrapers.external.do312 import DO312Scraper
+
+async def main():
+  scraper = DO312Scraper()
+  async with httpx.AsyncClient(timeout=scraper.REQUEST_TIMEOUT,
+                 follow_redirects=True) as client:
+    response = await client.get(
+      scraper.API_ENDPOINT,
+      params={"page": 1},
+      headers={"User-Agent": scraper.USER_AGENT},
+    )
+    response.raise_for_status()
+    events = response.json().get("events", [])[:10]
+  parsed = [scraper._parse_event_data(item) for item in events]
+  print(f"parsed {sum(event is not None for event in parsed)} of {len(events)}")
+
+asyncio.run(main())
+PY
+```
+
+This verifies the live fetch and parser only. `additive_scrape.py` writes to the
+local database; it supports venue-name matching and the `--only external` group,
+not a single external-source selector.
+
 ### **Alternative: Using Invoke Task Automation**
 
 ```bash
-cd backend
+# Run from the repository root; tasks.py invokes the backend .venv for tests.
 
 # List available tasks
-inv --list
+uv run --with invoke invoke --list
 
 # Common tasks:
-inv test              # Run all tests
-inv lint              # Check code style  
-inv format            # Auto-format code
-inv coverage          # Generate coverage report
+uv run --with invoke invoke test
+uv run --with invoke invoke lint
+uv run --with invoke invoke format
+uv run --with invoke invoke coverage
 ```
 
 ## 📦 Dependencies & Architecture
@@ -278,12 +246,12 @@ inv coverage          # Generate coverage report
 - **FastAPI** - REST API framework
 - **SQLAlchemy** - Async ORM
 - **PydanticAI** - LLM agent framework
-- **Playwright** - Browser automation for JS-heavy sites
-- **BeautifulSoup4** - HTML parsing
-- **httpx** - Async HTTP client
+- **model2vec** - Local static event embeddings
+- **httpx** - Async HTTP client for APIs and scrapers
 
 ### **Scrapers (scrapers/)**
-- **External APIs**: Ticketmaster, Eventbrite, Bandsintown, DO312, Your Chicago Guide (WordPress)
+- **External sources run by `additive_scrape.py`**: Ticketmaster, DO312, Chicago Park District, Broadway In Chicago
+- **Additional scraper modules**: Eventbrite, Bandsintown, and Your Chicago Guide are present, but are not in the scheduled source list
 - **Multi-venue sources**: Broadway In Chicago, which programs five Loop-area
   theaters that publish no calendar of their own; the Chicago Park District,
   which is the broadest source on the South and West Sides where commercial
@@ -294,9 +262,9 @@ inv coverage          # Generate coverage report
   events only exist after JS runs (lazy lists, calendar pagination)
 
 ### **Database (shared/)**
-- **EventModel**: Event records (4,959 total)
-- **VenueModel**: Venue information (68 venues)
-- **NeighborhoodModel**: Chicago neighborhoods (28 total)
+- **EventModel**: Event records; totals change with refreshes
+- **VenueModel**: Venue configuration and information
+- **NeighborhoodModel**: Boundary and neighborhood records
 - **ChatThreadModel**: Conversation sessions
 - **AuditLogModel**: Security events
 
@@ -305,10 +273,10 @@ inv coverage          # Generate coverage report
 ### **Run All Tests**
 ```bash
 cd backend
-pytest                           # Run all tests
-pytest tests/app -v              # Run app tests with verbose output
-pytest tests/app/test_api.py     # Run specific test file
-pytest --cov=src/app             # Run with coverage report
+.venv/bin/python -m pytest                           # Run all tests
+.venv/bin/python -m pytest tests/app -v              # Run app tests with verbose output
+.venv/bin/python -m pytest tests/app/test_api.py     # Run specific test file
+.venv/bin/python -m pytest --cov=src/app             # Run with coverage report
 ```
 
 ### **Test Coverage**
@@ -321,24 +289,18 @@ pytest --cov=src/app             # Run with coverage report
 
 ## 📊 Performance Benchmarks
 
-### **Python 3.15 vs 3.14**
-```
-Benchmark                    3.14         3.15        Improvement
-─────────────────────────────────────────────────────────────────
-Startup (imports)           45.2ms       38.1ms      ↓15.5%
-Dict operations            125.3ms      119.2ms      ↓4.9%
-List comprehension          89.4ms       59.1ms      ↓33.8%
-Async operations           234.5ms      216.3ms      ↓7.7%
-JSON encode/decode         145.2ms      106.4ms      ↓26.8%
+The repository includes small interpreter microbenchmarks for imports, basic
+dictionary/list operations, JSON serialization, and async task scheduling.
+They are not chatbot, database, or scraper benchmarks. The checked-in JSON
+files are individual historical runs, not repeated or controlled measurements;
+they do not support a general Python 3.15 performance claim.
 
-Average Improvement:                              +10.1%
-```
-
-Run benchmarks:
+Run from the repository root, with the requested interpreters available to `uv`:
 ```bash
 cd backend
-uv run --python 3.15 benchmarks/perf_compare.py
-uv run --python 3.14 benchmarks/perf_compare.py
+uv run --python 3.14 ../benchmarks/perf_compare.py
+uv run --python 3.15 ../benchmarks/perf_compare.py
+cd ..
 python benchmarks/compare_results.py
 ```
 
@@ -346,11 +308,11 @@ python benchmarks/compare_results.py
 
 ### **Code Organization**
 
-**App code** (Python 3.15):
+**App code**:
 ```python
 from app.main import app
 from app.api import router
-from app.ai.chatbot import create_event_search_agent
+from app.ai.executor import ChatExecutor
 from app.logging import get_logger
 ```
 
@@ -380,6 +342,7 @@ async def get_events_by_category(category: str, db: AsyncSession = Depends(get_d
 2. Include router in `backend/src/app/main.py`:
 ```python
 from app.api import router
+
 app.include_router(router)
 ```
 
@@ -390,7 +353,7 @@ app.include_router(router)
 1. For API-based scraper: Create `backend/src/scrapers/external/newsource.py`
 2. For website scraper: Create `backend/src/scrapers/custom/newsource.py`
 3. Implement scraper class with `fetch_events()` method
-4. Write tests in `backend/tests/app/test_scrapers.py`
+4. Write tests in `backend/tests/parser/test_scrapers.py`
 
 ## 🗄️ Database
 
@@ -401,38 +364,45 @@ python -c "from app.main import app; import asyncio; asyncio.run(app.lifespan.__
 ```
 
 ### **Schema**
-- **events** (4,959 rows): event_id, name, date, category, details, venue_name, source, etc.
-- **venues** (68 rows): venue_id, name, neighborhood_id, address, website_url
-- **neighborhoods** (28 rows): neighborhood_id, name
+- **events**: event name, dates, category, source, price, location, and related fields
+- **venues**: venue configuration and neighborhood/address information
+- **neighborhoods**: neighborhood names and boundary data
+- **chat_threads / chat_messages**: conversation state and history
+- **audit_logs / metrics / geocode_cache**: operational records and cached lookups
+
+Event and neighborhood counts are data-snapshot-dependent; query the local
+database for current totals rather than relying on fixed README numbers.
 
 ### **Querying**
 ```python
+import asyncio
+
 from shared.database import AsyncSessionLocal
 from shared.database.models import EventModel
 from sqlalchemy import select
 
-async with AsyncSessionLocal() as session:
-    result = await session.execute(select(EventModel))
-    events = result.scalars().all()
+
+async def main():
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(EventModel))
+        events = result.scalars().all()
+        print(f"loaded {len(events)} events")
+
+
+asyncio.run(main())
 ```
 
 ## 🚢 Deployment
 
-### **Docker**
-```bash
-# Build backend
-docker build -t eventloop-backend:latest backend/
-docker run -p 8000:8000 eventloop-backend:latest
-
-# Build frontend
-docker build -t eventloop-frontend:latest frontend/
-docker run -p 5173:5173 eventloop-frontend:latest
-```
+No Dockerfiles or deployment manifests are currently included. For a local
+production-style frontend build, run `npm run build` from `frontend/`; run the
+backend with Uvicorn and configure its environment variables in the deployment
+environment.
 
 ### **Environment Variables**
 ```
 ANTHROPIC_API_KEY=sk-...
-DATABASE_URL=sqlite:///./data/events.db
+DATABASE_URL=sqlite+aiosqlite:///./data/events.db
 LOG_LEVEL=INFO
 ```
 
@@ -442,12 +412,9 @@ MIT License - See LICENSE file for details
 
 ## 👥 Contributing
 
-1. Create a feature branch: `git checkout -b feature/my-feature`
-2. Make changes and write tests
-3. Run `inv test` to verify
-4. Commit: `git commit -m "feat: description"`
-5. Push: `git push origin feature/my-feature`
-6. Open a Pull Request
+1. Make changes and write tests.
+2. Run `cd backend && .venv/bin/python -m pytest` to verify.
+3. Commit and open a pull request through the project’s normal workflow.
 
 ## 📧 Contact
 

@@ -7,7 +7,7 @@ nothing. These cover the translation step.
 
 import pytest
 
-from app.ai.chatbot import (
+from app.chat.chatbot import (
     _extract_keywords,
     _extract_neighborhoods,
     _normalize_place,
@@ -50,6 +50,14 @@ class FakeDB:
         "Near South Side",
         "Chicago Lawn",
         "South Chicago",
+        "Avondale",
+        "Albany Park",
+        "Portage Park",
+        "Irving Park",
+        "Jefferson Park",
+        "Hermosa",
+        "Belmont Cragin",
+        "Dunning",
     ]
 
     async def execute(self, _stmt):
@@ -113,6 +121,25 @@ class TestExtractNeighborhoods:
     async def test_no_duplicate_when_name_appears_twice(self, db):
         assert await _extract_neighborhoods(db, "pilsen events in pilsen") == ["Pilsen"]
 
+    async def test_northwest_side_expands_to_neighborhoods_in_database(self, db):
+        found = await _extract_neighborhoods(db, "Halloween events on the Northwest Side")
+        assert found == [
+            "Albany Park",
+            "Avondale",
+            "Belmont Cragin",
+            "Dunning",
+            "Hermosa",
+            "Irving Park",
+            "Jefferson Park",
+            "Logan Square",
+            "Portage Park",
+        ]
+
+    async def test_side_phrase_can_be_combined_with_a_named_neighborhood(self, db):
+        found = await _extract_neighborhoods(db, "music on the Northwest Side and Pilsen")
+        assert "Avondale" in found
+        assert "Pilsen" in found
+
 
 class TestStripNeighborhoods:
     def test_removes_the_neighborhood_words(self):
@@ -132,6 +159,14 @@ class TestStripNeighborhoods:
     def test_does_not_strip_a_word_that_is_also_a_subject(self):
         """ "park" belongs to the name here, but "music" never does."""
         assert "music" in _strip_neighborhoods(["music", "park"], ["Humboldt Park"])
+
+    def test_removes_side_words_from_title_keywords(self):
+        kept = _strip_neighborhoods(
+            ["halloween", "party", "northwest", "side"],
+            ["Avondale", "Logan Square"],
+            query="Halloween party on the Northwest Side",
+        )
+        assert kept == ["halloween", "party"]
 
 
 class TestKeywordsUnaffected:

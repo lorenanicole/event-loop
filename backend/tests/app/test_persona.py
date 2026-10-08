@@ -10,7 +10,7 @@ import random
 
 import pytest
 
-from app.ai.persona import (
+from app.chat.persona import (
     ASSISTANT_NAME,
     CHICAGO_FACTS,
     GENERAL_FACTS,
@@ -20,6 +20,8 @@ from app.ai.persona import (
     greeting,
     persona_prompt,
     reads_like_a_title,
+    seasonal_guidance,
+    transit_for_neighborhood,
 )
 
 
@@ -27,39 +29,31 @@ class TestCharacterAndKnowledge:
     def test_it_describes_who_the_guide_is(self):
         assert "WHO YOU ARE:" in persona_prompt()
 
-    def test_it_knows_the_city_geography(self):
+    def test_default_prompt_omits_the_full_city_guide(self):
         prompt = persona_prompt()
-        for side in ("North Side", "South Side", "Northwest Side", "West Side"):
-            assert side in prompt, side
+        assert "Northwest Side" not in prompt
+        assert "Christkindlmarket" not in prompt
+        assert "OPTIONAL LOCAL DETAIL" not in prompt
 
-    @pytest.mark.parametrize(
-        "line,neighborhood",
-        [
-            ("Blue", "Logan Square"),
-            ("Blue", "Wicker Park"),
-            ("Brown", "Lincoln Square"),
-            ("Pink", "Pilsen"),
-            ("Red", "Uptown"),
-            ("Orange", "Bridgeport"),
-        ],
-    )
-    def test_it_knows_which_l_line_serves_where(self, line, neighborhood):
-        """Naming the line and stop is what makes an answer local. Three
-        different stations are called Damen, so a line without its stop - or a
-        stop without its line - is worse than saying nothing."""
-        prompt = persona_prompt()
-        assert line in prompt and neighborhood in prompt
+    def test_category_adds_one_relevant_fact(self):
+        prompt = persona_prompt("Music", random.Random(0))
+        assert "OPTIONAL LOCAL DETAIL" in prompt
+        assert any(fact in prompt for fact in CHICAGO_FACTS["Music"])
+        assert "Deep-dish dates" not in prompt
 
-    def test_it_knows_the_season(self):
-        """What is on in Chicago depends heavily on the month."""
-        prompt = persona_prompt()
-        assert "October is Halloween" in prompt
-        assert "Christkindlmarket" in prompt
+    def test_unknown_category_does_not_add_general_filler(self):
+        assert "OPTIONAL LOCAL DETAIL" not in persona_prompt("unknown")
 
-    def test_it_knows_how_rooms_behave(self):
-        prompt = persona_prompt()
-        assert "Doors at 8" in prompt
-        assert "21+" in prompt
+    def test_seasonal_guidance_is_injected_only_for_matching_queries(self):
+        guidance = seasonal_guidance("Halloween events this weekend")
+        assert guidance is not None
+        assert "requested dates" in persona_prompt(seasonal_context=guidance)
+        assert seasonal_guidance("jazz in Wicker Park") is None
+
+    def test_transit_context_is_limited_to_curated_neighborhoods(self):
+        assert transit_for_neighborhood("Wicker Park") == "Blue Line at Damen"
+        assert transit_for_neighborhood("Pilsen") == "Pink Line at 18th"
+        assert transit_for_neighborhood("Unknown") is None
 
 
 class TestTheRulesSurvive:
@@ -132,7 +126,8 @@ class TestGreetingAndFarewell:
 
     def test_the_farewell_says_why_and_how_to_continue(self):
         text = farewell("turns")
-        assert "start" in text.lower() or "New Chat" in text
+        assert "New Chat" in text
+        assert "below" in text
         assert "questions" in text.lower()
 
     def test_the_farewell_names_the_right_limit(self):

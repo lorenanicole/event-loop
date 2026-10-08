@@ -11,7 +11,7 @@ import gc
 
 import pytest
 
-from app.ai.chatbot import _background_tasks, _spawn_background
+from app.chat.web_search import _background_tasks, _spawn_background
 
 
 @pytest.mark.asyncio
@@ -54,11 +54,11 @@ class TestSpawnBackground:
     async def test_a_failure_is_logged_rather_than_swallowed(self, monkeypatch):
         """A bare task holds its exception and never reports it, so a failure
         to persist looked exactly like having nothing to persist."""
-        from app.ai import chatbot
+        from app.chat import web_search
 
         logged = []
         monkeypatch.setattr(
-            chatbot.logger,
+            web_search.logger,
             "error",
             lambda msg, *a, **k: logged.append(str(msg) % a if a else str(msg)),
         )
@@ -74,9 +74,9 @@ class TestSpawnBackground:
         assert any("persistence exploded" in line for line in logged), logged
 
     async def test_a_failure_does_not_leak_the_task(self, monkeypatch):
-        from app.ai import chatbot
+        from app.chat import web_search
 
-        monkeypatch.setattr(chatbot.logger, "error", lambda *a, **k: None)
+        monkeypatch.setattr(web_search.logger, "error", lambda *a, **k: None)
 
         async def boom():
             raise ValueError("x")
