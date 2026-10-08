@@ -308,10 +308,76 @@ class TicketmasterScraper:
 
         return money(low) if low == high else f"{money(low)}-{money(high)}"
 
+    # Ticketmaster attraction IDs for Chicago sports teams.
+    # Looked up once via /discovery/v2/attractions?keyword=<team>.
+    CHICAGO_SPORTS_ATTRACTIONS = {
+        "Chicago Sky": "K8vZ9175zE0",  # WNBA
+        "Chicago Fire FC": "K8vZ9171b3f",  # MLS
+        "Chicago Stars FC": "K8vZ917GfQ0",  # NWSL
+        "Chicago Cubs": "K8vZ9171oAf",  # MLB
+        "Chicago White Sox": "K8vZ9171ok0",  # MLB
+        "Chicago Bears": "K8vZ9171ou7",  # NFL
+        "Chicago Bulls": "K8vZ91718X0",  # NBA
+        "Chicago Blackhawks": "K8vZ9171oz0",  # NHL
+    }
+
+    async def fetch_sports_events(self, days_ahead: int = 90) -> list[EventCreate]:
+        """Fetch Chicago sports team home games via Ticketmaster attraction IDs.
+
+        Uses a wider look-ahead than the general search (90 days vs 30) because
+        sports schedules are published months in advance and fans plan ahead.
+        """
+        import asyncio as _asyncio
+
+        start_date = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+        end_date = (datetime.now() + timedelta(days=days_ahead)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        all_events: list[EventCreate] = []
+
+        async with httpx.AsyncClient(timeout=self.REQUEST_TIMEOUT) as client:
+            for team_name, attraction_id in self.CHICAGO_SPORTS_ATTRACTIONS.items():
+                params = {
+                    "apikey": self.api_key,
+                    "attractionId": attraction_id,
+                    "startDateTime": start_date,
+                    "endDateTime": end_date,
+                    "sort": "date,asc",
+                    "size": 100,
+                }
+                try:
+                    resp = await client.get(
+                        f"{self.BASE_URL}/events",
+                        params=params,
+                        headers={"User-Agent": self.USER_AGENT},
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    team_events = data.get("_embedded", {}).get("events", [])
+                    for ev in team_events:
+                        parsed = self._parse_event(ev)
+                        if parsed:
+                            # Tag sports events with their team name for richer search
+                            if parsed.details:
+                                parsed.details = f"{team_name} | {parsed.details}"
+                            else:
+                                parsed.details = team_name
+                            all_events.append(parsed)
+                    logger.info("Ticketmaster sports: %s → %d events", team_name, len(team_events))
+                except Exception as exc:
+                    logger.warning("Ticketmaster sports fetch failed for %s: %s", team_name, exc)
+                # Be polite to the API
+                await _asyncio.sleep(0.25)
+
+        logger.info("Ticketmaster sports: %d total events fetched", len(all_events))
+        return all_events
+
     async def scrape_and_save(self, db: Session | AsyncSession, days_ahead: int = 30) -> int:
         """Fetch and save events (sync or async)"""
         try:
             events = await self.fetch_events(days_ahead=days_ahead)
+            sports = await self.fetch_sports_events(days_ahead=90)
+            # Merge; de-duplication by URL happens below
+            events = events + sports
             saved_count = 0
             seen_urls = set()
 
