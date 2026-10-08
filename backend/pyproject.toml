@@ -9,6 +9,7 @@ description = "Multi-version AI Chat Bot for Real-time Chicago Event Discovery -
 readme = "README.md"
 authors = [{name = "Lorena Mesa", email = "me@lorenamesa.com"}]
 requires-python = ">=3.14"
+dependencies = []
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -18,15 +19,18 @@ app = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "pydantic>=2.8.0",
-    "pydantic-ai>=0.1.0",
+    "pydantic-ai>=2.50.0",
     "anthropic>=0.45.0",
     "python-dotenv>=1.0.0",
     "httpx>=0.28.0",
+    "httpx2>=0.28.0",
     "sqlalchemy[asyncio]>=2.0.0",
     "aiosqlite>=0.19.0",
     "opentelemetry-api>=1.21.0",
     "opentelemetry-sdk>=1.21.0",
     "structlog>=24.1.0",
+    "model2vec>=0.9.0",
+    "numpy>=1.26.0",
 ]
 parser = [
     "beautifulsoup4>=4.12.0",
@@ -53,7 +57,7 @@ all = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "pydantic>=2.8.0",
-    "pydantic-ai>=0.1.0",
+    "pydantic-ai>=2.50.0",
     "anthropic>=0.45.0",
     "python-dotenv>=1.0.0",
     "httpx>=0.28.0",
