@@ -440,8 +440,10 @@ class ChatWidget {
     const contentEl = document.createElement("div");
     contentEl.className = "chat-content";
 
-    // Check if content contains formatted event results or markdown
-    if (content.includes("**") || content.includes("📍") || content.includes("🎉") || content.includes("[")) {
+    // Route through the markdown parser for any content that needs rendering.
+    // ✶ catches the goodbye sign-off (flag stars); ** catches bold; [ catches links.
+    if (content.includes("**") || content.includes("📍") || content.includes("🎉") ||
+        content.includes("[") || content.includes("\u2736")) {
       contentEl.innerHTML = this.parseMarkdownAndEvents(content);
     } else {
       contentEl.textContent = content;
