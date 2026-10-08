@@ -126,7 +126,7 @@ async def get_security_summary(db: AsyncSession = Depends(get_db)):
             {
                 "timestamp": record.created_at.isoformat(),
                 "thread_id": record.thread_id,
-                "reason": record.metadata,
+                "reason": record.extra_metadata,
             }
             for record in recent_blocks
         ],

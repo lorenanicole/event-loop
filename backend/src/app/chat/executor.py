@@ -742,7 +742,7 @@ class ChatExecutor:
                         status=status,
                         duration_ms=duration_ms,
                         tokens_used=tokens,
-                        metadata=json.dumps(metadata) if metadata else None,
+                        extra_metadata=json.dumps(metadata) if metadata else None,
                         error_message=error_message,
                     )
                 )

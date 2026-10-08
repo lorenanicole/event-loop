@@ -217,7 +217,7 @@ class AuditLogModel(Base):
     status = Column(String(20), index=True)  # "success", "failure", "timeout"
     duration_ms = Column(Float)  # Operation duration in milliseconds
     tokens_used = Column(Integer, default=0)
-    metadata = Column(Text)  # JSON string with extra context
+    extra_metadata = Column("metadata", Text)  # JSON string with extra context
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 

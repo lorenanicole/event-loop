@@ -87,7 +87,7 @@ def mock_audit_log():
         "status": "success",
         "duration_ms": 100.0,
         "tokens_used": 50,
-        "metadata": '{"message": "What events?"}',
+        "extra_metadata": '{"message": "What events?"}',
         "error_message": None,
         "created_at": datetime.now(),
     }
