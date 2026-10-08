@@ -10,6 +10,7 @@ WORKDIR /app
 # System deps + uv in one layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    libc6-dev \
     curl \
     && pip install --no-cache-dir uv==0.12.23 \
     && rm -rf /var/lib/apt/lists/*
