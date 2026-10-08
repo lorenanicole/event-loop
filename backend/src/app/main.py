@@ -95,14 +95,19 @@ app = FastAPI(
 )
 
 # CORS middleware
-# FRONTEND_URL can be set to the Railway frontend domain to restrict CORS.
-# Falls back to wildcard so the API works before the frontend is deployed.
-_frontend_url = os.getenv("FRONTEND_URL", "")
-_cors_origins = [_frontend_url] if _frontend_url else ["*"]
+# FRONTEND_URL can be a comma-separated list of explicit origins.
+# We always also allow any *.up.railway.app subdomain (covers Railway preview
+# deployments) and localhost for local dev.
+# allow_credentials requires explicit origins — not compatible with ["*"].
+_raw_frontend = os.getenv("FRONTEND_URL", "")
+_explicit_origins = [o.strip() for o in _raw_frontend.split(",") if o.strip()]
+# Always include localhost for local dev
+_explicit_origins += ["http://localhost:5173", "http://localhost:3000"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins,
+    allow_origins=_explicit_origins,
+    allow_origin_regex=r"https://.*\.up\.railway\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
