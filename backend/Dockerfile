@@ -15,13 +15,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency manifests first so Docker caches this layer
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 
-# Install app dependencies only (no parser/playwright group here)
-RUN uv sync --frozen --extra app --no-dev
+# Install third-party dependencies only — skip building the local package
+# so Docker can cache this layer independently of source changes.
+RUN uv sync --frozen --extra app --no-dev --no-install-project
 
-# Copy source
+# Copy source (after deps so the cache layer above stays valid on src changes)
 COPY src/ ./src/
+
+# Now install the local eventloop package itself
+RUN uv sync --frozen --extra app --no-dev
 
 # The data directory is where Railway will mount the persistent volume.
 # Create it so the app can start without a volume attached (e.g. local dev).
