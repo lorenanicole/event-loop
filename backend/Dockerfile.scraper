@@ -6,7 +6,7 @@
 # start command: python scripts/additive_scrape.py
 # ─────────────────────────────────────────────────────────────────────────────
 
-FROM mcr.microsoft.com/playwright/python:v1.48.0-jammy
+FROM mcr.microsoft.com/playwright/python:v1.63.0-jammy
 
 WORKDIR /app
 

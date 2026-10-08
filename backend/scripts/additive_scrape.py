@@ -156,6 +156,7 @@ async def scrape_external(session_maker) -> int:
     import importlib
 
     saved_total = 0
+    ran_ok = 0
     for name, module_path, class_name in EXTERNAL_SOURCES:
         started = time.monotonic()
         try:
@@ -164,13 +165,15 @@ async def scrape_external(session_maker) -> int:
             async with session_maker() as session:
                 saved = await scraper.scrape_and_save(session)
             saved_total += saved or 0
+            ran_ok += 1
             log(
                 f"{name[:34]:34} {saved or 0:4} new"
                 f"                        {time.monotonic() - started:.0f}s"
             )
         except Exception as exc:
             log(f"{name[:34]:34}    - {type(exc).__name__}: {str(exc)[:48]}")
-    return saved_total
+    # Return (saved, ran_ok) so main() can distinguish "up to date" from "all failed"
+    return saved_total, ran_ok
 
 
 async def scrape_one(config, hood, sem, client):
@@ -273,8 +276,10 @@ async def main(args) -> int:
             log()
             log(f"external sources ({len(EXTERNAL_SOURCES)})")
             log()
-            saved = await scrape_external(session_maker)
-            scraped_any = scraped_any or saved > 0
+            saved, ran_ok = await scrape_external(session_maker)
+            # A run is successful if at least one source ran without an exception,
+            # even if it returned 0 new events (the DB is simply up to date).
+            scraped_any = scraped_any or ran_ok > 0
 
         after = await snapshot(session_maker)
         log()
@@ -290,7 +295,7 @@ async def main(args) -> int:
     # should notice. Individual venues failing is routine and additive, so it
     # is not an error.
     if not scraped_any:
-        log("nothing was scraped - every source failed")
+        log("every source failed — no scraper completed without an exception")
         return 1
     return 0
 
