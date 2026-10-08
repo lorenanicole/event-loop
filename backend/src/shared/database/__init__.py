@@ -16,49 +16,37 @@ from sqlalchemy.orm import sessionmaker
 from .filters import feed_order, start_of_day, upcoming_events_filter
 from .models import Base, EventModel
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/events.db")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "sqlite+aiosqlite:///./data/events.db",
+)
 
 IS_SQLITE = "sqlite" in DATABASE_URL
 
-# How long a writer waits for the lock before giving up.
-#
-# The default is to fail instantly, which surfaced as "database is locked" in
-# the API and a failed reply in the chat window whenever a scrape was running.
-# WAL (below) fixes readers; this covers writer-against-writer, which SQLite
-# serializes no matter what.
-#
-# 30s rather than 10s, measured: at 10s, eight `INSERT INTO chat_threads` -
-# the first write of a chat turn - still failed under six concurrent chats
-# during an external scrape. Each external source commits once after adding
-# several hundred events, so that single transaction can hold the write lock
-# for a long stretch while its existence checks run.
+# SQLite-only: how long a writer waits for the lock before giving up.
+# Not needed for Postgres which handles concurrent writers natively.
 BUSY_TIMEOUT_MS = 30_000
+
+_connect_args = {"check_same_thread": False} if IS_SQLITE else {}
 
 engine = create_async_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False} if IS_SQLITE else {},
+    connect_args=_connect_args,
     echo=False,
 )
 
 
 def apply_sqlite_pragmas(target_engine) -> None:
-    """Attach the connection pragmas to any engine.
+    """Attach WAL + busy_timeout pragmas to a SQLite engine.
 
-    Exported because the scripts build their own engines — the scraper is the
-    other writer, so it is the one that most needs the busy timeout.
+    No-op (and not called) when running against Postgres.
+    Exported because scraper scripts build their own engines and need this too.
     """
+    if "sqlite" not in str(target_engine.url):
+        return
 
     @event.listens_for(target_engine.sync_engine, "connect")
     def _sqlite_pragmas(dbapi_connection, _record):
-        """Make SQLite survive a reader and a writer at the same time.
-
-        WAL fixes the common case: readers no longer block and are not blocked,
-        and only writer-against-writer contends. `busy_timeout` covers what is
-        left by making that writer wait rather than fail on the spot.
-
-        Both are per-connection pragmas, so they are set on every connect
-        rather than once at startup.
-        """
         cursor = dbapi_connection.cursor()
         try:
             cursor.execute("PRAGMA journal_mode=WAL")

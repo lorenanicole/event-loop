@@ -106,8 +106,8 @@ class EventModel(Base):
     name = Column(String(255), index=True)
     date = Column(DateTime, index=True)  # Event start date
     date_end = Column(DateTime, nullable=True, index=True)  # Event end date (for multi-day events)
-    time = Column(String(50), nullable=True)  # Start time (e.g., "7:30 PM")
-    time_end = Column(String(50), nullable=True)  # End time (e.g., "10:00 PM")
+    time = Column(String(100), nullable=True)  # Start time (e.g., "7:30 PM")
+    time_end = Column(String(100), nullable=True)  # End time (e.g., "10:00 PM")
     # The label shown on a tile and in a result card. One event genuinely
     # belongs to more than one, so this is the primary of several rather than
     # the only one - see `categories`.
@@ -134,7 +134,7 @@ class EventModel(Base):
     cost = Column(String(100), nullable=True)  # "Free", "$25", "$15-30", "Donation", etc.
     age_range = Column(String(100), nullable=True)  # "All ages", "18+", "21+", "13+", etc.
     is_outdoor = Column(String(20), nullable=True)  # "outdoor", "indoor", "hybrid"
-    address = Column(String(255), nullable=True)  # Street address or location
+    address = Column(Text, nullable=True)  # Street address or location (no length cap)
     venue_name = Column(String(255), nullable=True)
     # The suburb, when an event is not actually in Chicago. NULL means it is
     # in the city, which is almost everything. do312 covers the whole metro,
