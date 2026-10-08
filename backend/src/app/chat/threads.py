@@ -18,7 +18,7 @@ real exchange.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import or_, select, update
 
@@ -38,7 +38,7 @@ async def close_thread(session, thread_id: str, status: str = CLOSED) -> bool:
     result = await session.execute(
         update(ChatThreadModel)
         .where(ChatThreadModel.id == thread_id, ChatThreadModel.status == ACTIVE)
-        .values(status=status, updated_at=datetime.utcnow())
+        .values(status=status, updated_at=datetime.now(timezone.utc))
     )
     await session.commit()
     return bool(result.rowcount)
@@ -51,7 +51,7 @@ async def sweep_stale_threads(session, hours: int = STALE_THREAD_HOURS) -> int:
     natural moment to tidy, and a sweep that only runs while the app is up
     would never reach the threads left by the previous run.
     """
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     result = await session.execute(
         update(ChatThreadModel)
         .where(
@@ -274,7 +274,7 @@ async def load_thread_history(
                         content=f"Context from earlier in this conversation: {summary}"
                     )
                 )
-    except Exception as exc:  # noqa: BLE001 - history must not fail a turn
+    except Exception as exc:
         logger.warning("Context summary lookup failed: %s", exc)
 
     history.insert(0, ModelRequest(parts=system_parts))

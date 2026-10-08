@@ -16,7 +16,7 @@ the split is invisible to them.
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 from sqlalchemy import select
@@ -150,7 +150,7 @@ async def save_events_to_db(
                     existing_event.date_end = final_date_end
                     existing_event.time = event.time
                     existing_event.time_end = event.time_end
-                    existing_event.date_retrieved = datetime.utcnow()
+                    existing_event.date_retrieved = datetime.now(timezone.utc)
                     # Only fill a price in, never blank one out: a venue that
                     # stops printing the price on its listing page should not
                     # erase a price already collected.

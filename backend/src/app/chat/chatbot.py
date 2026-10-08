@@ -13,8 +13,10 @@ from app.chat.search_query import (
     extract_keywords as _extract_keywords,
 )
 from app.chat.search_query import (
-    normalize_place as _normalize_place,
+    normalize_place as _normalize_place,  # noqa: F401 — re-exported for test_chatbot_neighborhoods
     extract_neighborhoods as _extract_neighborhoods,
+)
+from app.chat.search_query import (
     strip_neighborhoods as _strip_neighborhoods,
 )
 from app.chat.search_ranking import (
@@ -109,7 +111,7 @@ class SearchPolicy:
 
 # EventResult and the SerpAPI pipeline have moved to web_search.py.
 # Re-exported here so any code that still imports from chatbot keeps working.
-from app.chat.web_search import (  # noqa: F401
+from app.chat.web_search import (  # noqa: F401, E402
     EventResult,
     _background_tasks,
     _looks_like_an_event,
@@ -265,7 +267,8 @@ async def search_local_db(context: RunContext[SearchPolicy], query: str) -> str:
             # Build response with event details
             from app.chat.persona import transit_for_neighborhood
 
-            results_text = f"📍 **Found {len(top_events)} great match{'es' if len(top_events) != 1 else ''}:**\n\n"
+            n = len(top_events)
+            results_text = f"📍 **Found {n} great match{'es' if n != 1 else ''}:**\n\n"
             for i, event in enumerate(top_events, 1):
                 # Category label
                 category_tag = f" `{event.category}`" if event.category else ""
@@ -334,7 +337,7 @@ async def search_local_db(context: RunContext[SearchPolicy], query: str) -> str:
 # discovery feed.
 # _NOT_AN_EVENT, _looks_like_an_event, _background_tasks, _spawn_background,
 # _persist_events_to_db, search_google_events -> moved to web_search.py.
-from app.chat.web_search import search_google_events  # noqa: F401
+from app.chat.web_search import search_google_events  # noqa: F401, E402
 
 
 async def _ensure_semantic_index(db) -> bool:

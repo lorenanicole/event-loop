@@ -22,8 +22,9 @@ from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, "src")
 
-from shared.database.models import EventModel
 from shared.database.neighborhoods import load_boundaries, resolve_neighborhood_id
+
+from shared.database.models import EventModel
 from shared.geo import chicago_neighborhoods
 
 DB_URL = "sqlite+aiosqlite:///data/events.db"

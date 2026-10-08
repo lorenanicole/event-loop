@@ -85,7 +85,7 @@ def parse_date_range(date_str: str | None) -> tuple[datetime | None, datetime | 
             except ValueError:
                 pass
 
-        # Try two-month range: "Oct 1 – Nov 4, 2026"
+        # Try two-month range: "Oct 1 - Nov 4, 2026"
         multi_month = re.search(
             r"(\w+)\s+(\d{1,2})\s*[-–]\s*(\w+)\s+(\d{1,2}),?\s+(\d{4})", date_str
         )
@@ -323,7 +323,7 @@ def _card_lines(el) -> list[str]:
     between the title and the date: "EPIK HIGH NORTH AMERICAN TOURWed Oct 7,
     2026Buy Tickets". Splitting that around the date recovers the title.
     """
-    lines = [l.strip() for l in el.get_text("\n", strip=True).split("\n") if l.strip()]
+    lines = [ln.strip() for ln in el.get_text("\n", strip=True).split("\n") if ln.strip()]
     if len(lines) == 1:
         match = _ONE_RE.search(lines[0])
         if match:

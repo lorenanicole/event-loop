@@ -26,7 +26,6 @@ def compare_results(py314: dict, py315: dict) -> None:
     benchmarks_314 = {b["name"]: b for b in py314["benchmarks"]}
     benchmarks_315 = {b["name"]: b for b in py315["benchmarks"]}
 
-
     total_improvement = 0
     improvements = []
 
@@ -51,13 +50,11 @@ def compare_results(py314: dict, py315: dict) -> None:
         else:
             pass
 
-
     avg_improvement = total_improvement / len(benchmarks_314)
 
     if improvements:
         for name, _pct in sorted(improvements, key=lambda x: x[1], reverse=True):
             pass
-
 
     # Insights
 
@@ -73,7 +70,6 @@ def compare_results(py314: dict, py315: dict) -> None:
         pass
     else:
         pass
-
 
 
 def main():

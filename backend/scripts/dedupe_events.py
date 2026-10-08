@@ -47,7 +47,7 @@ def main() -> None:
     # Keep the lowest id - the first time the event was seen - so whatever
     # else references it keeps working.
     doomed = []
-    for source, name, date, time, count, ids in groups:
+    for _source, _name, _date, _time, _count, ids in groups:
         _keep, *rest = sorted(int(i) for i in ids.split(","))
         doomed.extend(rest)
 

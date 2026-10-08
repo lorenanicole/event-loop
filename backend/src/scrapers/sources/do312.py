@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 from sqlalchemy import select
@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from scrapers.venue.chicago_events_scraper import venue_to_neighborhood
 from shared.database.models import EventModel
-from shared.geo.neighborhoods import load_boundaries, resolve_neighborhood_id
 from shared.enrichment import (
     extract_address,
     extract_from_event_text,
@@ -16,6 +15,7 @@ from shared.enrichment import (
     extract_venue_name,
 )
 from shared.geo import resolve_neighborhood
+from shared.geo.neighborhoods import load_boundaries, resolve_neighborhood_id
 from shared.schemas import EventCreate
 
 logger = logging.getLogger(__name__)
@@ -259,7 +259,7 @@ class DO312Scraper:
                     db.add(event)
                     saved_count += 1
                 else:
-                    existing.date_retrieved = datetime.utcnow()
+                    existing.date_retrieved = datetime.now(timezone.utc)
                     # Refresh rows stored before venue data was captured.
                     if event_data.latitude is not None:
                         existing.latitude = event_data.latitude

@@ -47,7 +47,7 @@ def configure_logging(level: str = "INFO") -> None:
     # after this was believed fixed. A prefix sweep covers the next vendored
     # copy too, and these libraries have nothing to say at INFO that is worth
     # the risk of a credential in a query string.
-    for name in list(logging.root.manager.loggerDict) + ["httpx", "httpcore"]:
+    for name in [*logging.root.manager.loggerDict, "httpx", "httpcore"]:
         if name.startswith(("httpx", "httpcore")):
             logging.getLogger(name).setLevel(logging.WARNING)
     # Registered after this runs, so set unconditionally as well.

@@ -1,15 +1,9 @@
 """Tests for how a failing online search is reported.
 
-A read timeout stringifies to the empty string, so the log read "SerpAPI
-error: " with nothing after it and the user was told "API error" - neither
-said what had happened or whether retrying was worth it.
-"""
-
-"""Tests for how a failing online search is reported.
-
 Patching targets are in web_search (where httpx, SERPAPI_KEY, logger, and
 search_google_events actually live) rather than chatbot (where they used to
-be before the extraction in #9).
+be before the extraction in #9). A read timeout stringifies to the empty
+string, so the log read "SerpAPI error: " — that's why the type is logged.
 """
 
 import httpx

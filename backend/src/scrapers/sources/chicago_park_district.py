@@ -11,7 +11,7 @@ against the neighborhood boundaries already in the database - no geocoding.
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 from bs4 import BeautifulSoup
 from sqlalchemy import select
@@ -19,8 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from shared.database.models import EventModel
-from shared.geo.neighborhoods import load_boundaries, resolve_neighborhood_id
 from shared.geo import resolve_neighborhood
+from shared.geo.neighborhoods import load_boundaries, resolve_neighborhood_id
 from shared.schemas import EventCreate
 
 logger = logging.getLogger(__name__)
@@ -298,7 +298,7 @@ class ChicagoParkDistrictScraper:
                     db.add(event)
                     saved_count += 1
                 else:
-                    existing.date_retrieved = datetime.utcnow()
+                    existing.date_retrieved = datetime.now(timezone.utc)
                     existing.date = event_data.date
                     existing.date_end = event_data.date_end
                     if event_data.address and not existing.address:

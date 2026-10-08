@@ -204,6 +204,5 @@ def main():
     output_file.write_text(benchmarks.to_json())
 
 
-
 if __name__ == "__main__":
     main()

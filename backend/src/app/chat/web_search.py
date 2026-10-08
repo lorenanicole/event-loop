@@ -151,7 +151,7 @@ async def _persist_events_to_db(events: list[EventResult]) -> None:
             if "database is locked" in str(e) and attempt < max_retries - 1:
                 retry_delay *= 2
             else:
-                logger.error("Failed to persist events: %s", e, exc_info=True)
+                logger.exception("Failed to persist events: %s", e)
                 return
 
 
@@ -237,7 +237,10 @@ async def search_google_events(context: RunContext[SearchPolicy], query: str) ->
             lines.append(
                 f"   🔗 [View Event]({ev.url})"
                 if ev.url
-                else "   ⚠️ No event page to verify - not saved to our database, so tell the user to search for it themselves"
+                else (
+                    "   ⚠️ No event page to verify - not saved to our database,"
+                    " so tell the user to search for it themselves"
+                )
             )
             lines.append("")
         return "\n".join(lines)
@@ -252,5 +255,5 @@ async def search_google_events(context: RunContext[SearchPolicy], query: str) ->
         logger.error("SerpAPI %s: %s", type(e).__name__, str(e) or "(no message)")
         return "Could not search online (API error)"
     except Exception as e:
-        logger.error("Search error: %s: %s", type(e).__name__, e, exc_info=True)
+        logger.exception("Search error: %s: %s", type(e).__name__, e)
         return f"Error: {e!s}"

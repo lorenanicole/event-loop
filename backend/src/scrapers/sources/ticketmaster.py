@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from sqlalchemy import select
@@ -8,9 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from shared.database.models import EventModel
-from shared.geo.neighborhoods import load_boundaries, resolve_neighborhood_id
 from shared.enrichment import extract_from_event_text
 from shared.geo import chicago_neighborhoods
+from shared.geo.neighborhoods import load_boundaries, resolve_neighborhood_id
 from shared.localtime import to_chicago_naive
 from shared.schemas import EventCreate
 
@@ -360,7 +360,7 @@ class TicketmasterScraper:
                     db.add(event)
                     saved_count += 1
                 else:
-                    existing.date_retrieved = datetime.utcnow()
+                    existing.date_retrieved = datetime.now(timezone.utc)
                     # Refresh location on rows stored before these fields were
                     # captured, so existing events gain a neighborhood too.
                     if event_data.latitude is not None:

@@ -82,3 +82,51 @@ line-length = 100
 [tool.ruff]
 line-length = 100
 target-version = "py314"
+
+[tool.ruff.lint]
+select = [
+    "B",    # flake8-bugbear
+    "BLE",  # flake8-blind-except
+    "DTZ",  # flake8-datetimez (timezone-aware datetime)
+    "E",    # pycodestyle errors
+    "EXE",  # flake8-executable
+    "F",    # pyflakes
+    "G",    # flake8-logging-format
+    "LOG",  # flake8-logging
+    "PLW",  # pylint warnings
+    "RUF",  # ruff-specific
+    "S",    # flake8-bandit (security)
+    "SIM",  # flake8-simplify
+    "W",    # pycodestyle warnings
+]
+ignore = [
+    # FastAPI's Depends() / Query() / Header() in default arguments is the
+    # framework's dependency-injection API, not a bug.
+    "B008",
+    # Broad except is deliberate throughout: resilience handlers, background
+    # tasks, and lifespan hooks that must not crash the server.
+    "BLE001",
+    # Scripts are invoked via `python scripts/foo.py`, not chmod+executed.
+    "EXE001",
+    # f-string logging (G004) is the existing codebase convention throughout.
+    # Converting 200+ log lines to %-style is a separate cleanup pass.
+    "G004",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "BLE001", "RUF012", "DTZ", "E501"]
+"src/app/chat/agent.py" = ["E501"]
+"eval/**"  = ["S", "BLE001", "T20", "DTZ"]
+"scripts/**" = ["S", "BLE001", "T20", "DTZ", "SIM115", "RUF005", "E501"]
+# Scrapers construct naive datetimes intentionally: event dates are stored as
+# local-midnight naive values throughout the database. Timezone-aware datetimes
+# would require migrating the entire events table and all downstream comparisons.
+# SIM/S rules: scraper resilience patterns (try-except-continue, try-except-pass,
+# file:// URLs in geo data, etc.) are intentional; long lines in venue configs
+# contain CSS selectors that cannot be split without breaking them.
+"src/scrapers/**" = ["DTZ", "SIM", "S110", "S112", "S310", "E501", "RUF001", "PLW2901", "RUF012"]
+# Pricing and enrichment use em-dashes in pattern strings deliberately (e.g. "$20–$25").
+"src/shared/enrichment.py" = ["RUF001", "RUF003", "E501"]
+"src/shared/pricing.py" = ["RUF001", "RUF003"]
+# Geo loader opens local boundary files via file:// URL.
+"src/shared/geo/chicago_neighborhoods.py" = ["S310"]

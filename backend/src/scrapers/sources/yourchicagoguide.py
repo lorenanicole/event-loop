@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 from sqlalchemy import select
@@ -188,7 +188,7 @@ class YourChicagoGuideScraper:
                     db.add(event)
                     saved_count += 1
                 else:
-                    existing.date_retrieved = datetime.utcnow()
+                    existing.date_retrieved = datetime.now(timezone.utc)
 
             if is_async:
                 await db.commit()

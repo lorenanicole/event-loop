@@ -16,7 +16,7 @@ class PromptInjectionDetector:
     """
 
     # Patterns that indicate attempted prompt injection
-    INJECTION_PATTERNS = [
+    INJECTION_PATTERNS: list = [  # noqa: RUF012
         # Role override attempts
         r"(?i)(ignore|forget|discard).*(?:instructions|system prompt|rules|guidelines)",
         r"(?i)(from now on|you are|you will be|pretend you are|act as)",
@@ -35,7 +35,7 @@ class PromptInjectionDetector:
     ]
 
     # Benign patterns that might trigger false positives (allow list)
-    ALLOW_PATTERNS = [
+    ALLOW_PATTERNS: list = [  # noqa: RUF012
         r"(?i)instructions for making",  # Recipe instructions
         r"(?i)system administrator",  # Legitimate term
         r"(?i)what is your",  # Normal question
@@ -68,7 +68,7 @@ class OutputValidator:
     """
 
     # Patterns of sensitive data we should never output
-    SENSITIVE_PATTERNS = [
+    SENSITIVE_PATTERNS: list = [  # noqa: RUF012
         r"(?i)(?:api_key|apikey|api-key|secret|password|token)\s*[=:]\s*['\"]?[a-zA-Z0-9_-]+",
         r"(?i)(?:system prompt|system instructions|instructions are)",
         r"(?i)(?:database|sql|query)\s*(?:string|connection|config)",
@@ -204,9 +204,9 @@ rate_limiter = RateLimiter()
 # Admin key dependency
 # ---------------------------------------------------------------------------
 
-import os
+import os  # noqa: E402
 
-from fastapi import Header, HTTPException
+from fastapi import Header, HTTPException  # noqa: E402
 
 
 async def require_admin_key(x_admin_key: str = Header(..., alias="X-Admin-Key")) -> None:

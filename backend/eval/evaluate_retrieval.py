@@ -37,8 +37,6 @@ TOP_K = 5
 
 async def run_search(query: str, db) -> list:
     """Mirror search_local_db: SQL candidates → semantic rerank → top-K."""
-    from sqlalchemy import and_, or_, select
-
     from app.ai.search_query import (
         extract_date_range,
         extract_keywords,
@@ -47,6 +45,8 @@ async def run_search(query: str, db) -> list:
     )
     from app.ai.search_ranking import filter_top_results
     from app.ai.semantic_index import event_index
+    from sqlalchemy import and_, or_, select
+
     from shared.categories import category_filter, extract_category_concepts
     from shared.database import start_of_day, upcoming_events_filter
     from shared.database.models import EventModel, NeighborhoodModel
@@ -154,6 +154,7 @@ async def main(verbose: bool = False, single_query: str | None = None) -> int:
         load_dotenv(env)
 
     from app.ai.semantic_index import event_index
+
     from shared.database import AsyncSessionLocal, init_db
 
     await init_db()

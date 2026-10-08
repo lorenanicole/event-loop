@@ -49,11 +49,14 @@ def score_event_relevance(
     if semantic_score is not None and semantic_score > 0:
         score += min(0.4, max(0.0, semantic_score) * 0.9)
 
-    if event.category and query_categories:
-        if event.category.lower() in [category.lower() for category in query_categories]:
-            score += 0.15
+    if (
+        event.category
+        and query_categories
+        and event.category.lower() in [c.lower() for c in query_categories]
+    ):
+        score += 0.15
 
-    now = datetime.now()
+    now = datetime.now()  # noqa: DTZ005 — intentionally naive for local date arithmetic
     if event.date and event.date >= now:
         days_away = (event.date - now).days
         score += 0.05 if days_away <= 7 else 0.03 if days_away <= 30 else 0.01

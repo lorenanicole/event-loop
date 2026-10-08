@@ -5,7 +5,7 @@ Handles LLM failures, database unavailability, and rate limiting.
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ class CircuitBreaker:
     def record_failure(self):
         """Increment failure count."""
         self.failure_count += 1
-        self.last_failure_time = datetime.utcnow()
+        self.last_failure_time = datetime.now(timezone.utc)
 
         if self.failure_count >= self.failure_threshold:
             self.status = ServiceStatus.UNHEALTHY
@@ -57,7 +57,7 @@ class CircuitBreaker:
         else:
             self.status = ServiceStatus.DEGRADED
             logger.warning(
-                f"CircuitBreaker({self.name}): DEGRADED (failures: {self.failure_count}/{self.failure_threshold})"
+                f"CircuitBreaker({self.name}): DEGRADED (failures: {self.failure_count}/{self.failure_threshold})"  # noqa: E501
             )
 
     def is_available(self) -> bool:
@@ -66,13 +66,15 @@ class CircuitBreaker:
             return True
 
         if self.status == ServiceStatus.UNHEALTHY:
-            # Try recovery after timeout (only if recovery timeout is configured)
-            if self.last_failure_time and self.recovery_timeout.total_seconds() > 0:
-                if datetime.utcnow() >= self.last_failure_time + self.recovery_timeout:
-                    logger.info(f"CircuitBreaker({self.name}): Attempting recovery...")
-                    self.failure_count = 0
-                    self.status = ServiceStatus.DEGRADED
-                    return True
+            if (
+                self.last_failure_time
+                and self.recovery_timeout.total_seconds() > 0
+                and datetime.now(timezone.utc) >= self.last_failure_time + self.recovery_timeout
+            ):
+                logger.info(f"CircuitBreaker({self.name}): Attempting recovery...")
+                self.failure_count = 0
+                self.status = ServiceStatus.DEGRADED
+                return True
             return False
 
         return True  # DEGRADED - allow with caution

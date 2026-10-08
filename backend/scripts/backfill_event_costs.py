@@ -98,7 +98,7 @@ async def read_price(client, event, semaphore, stats):
         try:
             return cost_from_page(response.text, event.source)
         except Exception as exc:  # a malformed page must not stop the run
-            logging.debug("parse failed for %s: %s", event.origination_url, exc)
+            logging.getLogger(__name__).debug("parse failed for %s: %s", event.origination_url, exc)
             stats["parse failed"] += 1
             return None
 
@@ -138,7 +138,7 @@ async def main():
             )
 
         per_source = defaultdict(Counter)
-        for event, price in zip(readable, prices):
+        for event, price in zip(readable, prices, strict=False):
             if not price:
                 continue
             found[event.id] = price

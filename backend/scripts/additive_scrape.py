@@ -51,6 +51,7 @@ from scrapers.venue.chicago_events_scraper import (
 from scrapers.venue.venue_scraper import VenueScraper
 from shared.database import apply_sqlite_pragmas
 from shared.database.models import EventModel
+import contextlib
 
 logging.basicConfig(level=logging.WARNING, format="%(message)s")
 
@@ -117,7 +118,7 @@ class SingleRun:
             if self._stale():
                 os.unlink(self.path)
                 return self.__enter__()
-            raise SystemExit(f"another scrape is already running (lock: {self.path})")
+            raise SystemExit(f"another scrape is already running (lock: {self.path})") from exc
         os.write(fd, str(os.getpid()).encode())
         os.close(fd)
         self.held = True
@@ -140,10 +141,8 @@ class SingleRun:
 
     def __exit__(self, *exc):
         if self.held:
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 os.unlink(self.path)
-            except FileNotFoundError:
-                pass
 
 
 async def scrape_external(session_maker) -> int:

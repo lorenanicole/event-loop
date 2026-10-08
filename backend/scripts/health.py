@@ -32,13 +32,13 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 sys.path.insert(0, "src")
 
-import httpx
+import httpx  # noqa: E402
 
-from scrapers.venue.chicago_events_scraper import (
+from scrapers.venue.chicago_events_scraper import (  # noqa: E402
     CHICAGO_VENUES,
     venue_source_name,
 )
-from scrapers.venue.venue_scraper import VenueScraper
+from scrapers.venue.venue_scraper import VenueScraper  # noqa: E402
 
 DB = "data/events.db"
 SCRAPE_TIMEOUT = 120
@@ -98,7 +98,7 @@ async def venues_live() -> None:
                         err = "" if dated else "empty"
                     except TimeoutError:
                         events, dated, err = [], 0, "timeout"
-                    except Exception as e:  # noqa: BLE001 - reporting every failure
+                    except Exception as e:
                         events, dated, err = [], 0, type(e).__name__
                     if dated:
                         err = "" if attempt == 0 else "ok on retry"
@@ -141,7 +141,7 @@ async def check_link(client, source, url, sem):
             if code in (403, 405):  # some servers reject HEAD
                 r = await client.get(url, timeout=20, follow_redirects=True)
                 code = r.status_code
-        except Exception as exc:  # noqa: BLE001 - the failure is the result
+        except Exception as exc:
             return source, url, f"ERR {type(exc).__name__}"
         return source, url, str(code)
 

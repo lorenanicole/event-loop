@@ -319,6 +319,29 @@ CHICAGO_VENUES = {
             selectors={},
             use_playwright=True,
         ),
+        VenueConfig(
+            name="Rhapsody Theater",
+            website_url="https://www.rhapsodytheater.com",
+            event_page_url="https://www.rhapsodytheater.com/upcoming-events/",
+            category="theater",
+            address="1328 W Morse Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_rhapsody_theater,
+        ),
+        VenueConfig(
+            # Publishes a season page, not a calendar: each show is a run of
+            # several weeks, stored with a date_end so it stays visible
+            # throughout. The homepage carried no JSON-LD, hence the blank.
+            name="Lifeline Theatre",
+            website_url="https://lifelinetheatre.com",
+            event_page_url="https://lifelinetheatre.com/2026-27-season/",
+            category="theater",
+            address="6912 N Glenwood Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_dated_list_items,
+        ),
     ],
     "Uptown": [
         VenueConfig(
@@ -609,6 +632,40 @@ CHICAGO_VENUES = {
             selectors={},
             use_playwright=True,
         ),
+        VenueConfig(
+            name="City Winery",
+            website_url="https://citywinery.com",
+            event_page_url="https://citywinery.com/pages/events/chicago",
+            category="music",
+            address="1200 W Randolph St",
+            selectors={
+                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
+                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
+                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time',
+            },
+            use_playwright=True,
+            extractor_fn=None,
+        ),
+        VenueConfig(
+            name="Cobra Lounge",
+            website_url="https://cobralounge.com",
+            event_page_url="https://cobralounge.com/events",
+            category="music",
+            address="235 N Ashland Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=extract_cobra_lounge,
+        ),
+        VenueConfig(
+            name="Epiphany Center for the Arts",
+            website_url="https://epiphanychi.com",
+            event_page_url="https://epiphanychi.com/",
+            category="arts",
+            address="311 W Carroll Ave",
+            selectors={},
+            use_playwright=True,
+            extractor_fn=None,
+        ),
     ],
     "Near West Side": [
         VenueConfig(
@@ -646,76 +703,6 @@ CHICAGO_VENUES = {
             },
             use_playwright=True,
             extractor_fn=None,
-        ),
-    ],
-    "West Loop": [
-        VenueConfig(
-            name="City Winery",
-            website_url="https://citywinery.com",
-            event_page_url="https://citywinery.com/pages/events/chicago",
-            category="music",
-            address="1200 W Randolph St",
-            selectors={
-                "event_container": 'div[class*="event"], li[class*="event"], article, .event-item',
-                "title": '[class*="title"], [class*="name"], .event-title, h3, h4',
-                "date": '.date, .start-time, .end-time, [class*="date"], [class*="time"], .event-date, .show-date, [class*="datetime"], .event-time, time',
-            },
-            use_playwright=True,
-            extractor_fn=None,
-        ),
-        VenueConfig(
-            name="Cobra Lounge",
-            website_url="https://cobralounge.com",
-            event_page_url="https://cobralounge.com/events",
-            category="music",
-            address="235 N Ashland Ave",
-            selectors={},
-            use_playwright=True,
-            extractor_fn=extract_cobra_lounge,
-        ),
-        VenueConfig(
-            # The homepage does carry the calendar (/art-events does not, which
-            # is why this was dark), and cards render as one run-together
-            # string: "wed07oct(oct 7)7:00 pmSalsa on a School Night".
-            #
-            # Deliberately left unwired: extract_dated_list_items reads that
-            # page as 168 "events", mixing in room names ("Epiphany Hall",
-            # "Cafe Bar") and attaching the wrong dates, because the markup
-            # nests each show's rooms as sibling blocks. Needs a venue-specific
-            # extractor; junk is worse than a gap.
-            name="Epiphany Center for the Arts",
-            website_url="https://epiphanychi.com",
-            event_page_url="https://epiphanychi.com/",
-            category="arts",
-            address="311 W Carroll Ave",
-            selectors={},
-            use_playwright=True,
-            extractor_fn=None,
-        ),
-    ],
-    "Rogers Park": [
-        VenueConfig(
-            name="Rhapsody Theater",
-            website_url="https://www.rhapsodytheater.com",
-            event_page_url="https://www.rhapsodytheater.com/upcoming-events/",
-            category="theater",
-            address="1328 W Morse Ave",
-            selectors={},
-            use_playwright=True,
-            extractor_fn=extract_rhapsody_theater,
-        ),
-        VenueConfig(
-            # Publishes a season page, not a calendar: each show is a run of
-            # several weeks, stored with a date_end so it stays visible
-            # throughout. The homepage carried no JSON-LD, hence the blank.
-            name="Lifeline Theatre",
-            website_url="https://lifelinetheatre.com",
-            event_page_url="https://lifelinetheatre.com/2026-27-season/",
-            category="theater",
-            address="6912 N Glenwood Ave",
-            selectors={},
-            use_playwright=True,
-            extractor_fn=extract_dated_list_items,
         ),
     ],
     # South Side coverage. Every venue above is North or Central, which left

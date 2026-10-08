@@ -178,7 +178,7 @@ class VenueScraper:
                             frame_text = await frame.evaluate("document.body.innerText")
                             if frame_text and len(frame_text) > 100:
                                 iframe_content.append(frame_text)
-                        except:
+                        except Exception:
                             pass
 
                     # Create soup and inject iframe content if found

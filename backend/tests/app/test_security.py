@@ -135,7 +135,7 @@ class TestRateLimiter:
         thread_id = "test_thread"
 
         # Exceed BLOCK_THRESHOLD
-        for i in range(limiter.BLOCK_THRESHOLD):
+        for _i in range(limiter.BLOCK_THRESHOLD):
             limiter.record_injection_attempt(thread_id)
 
         # Should be blocked

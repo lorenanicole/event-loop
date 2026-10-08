@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from bs4 import BeautifulSoup
 from pyppeteer import launch
@@ -48,7 +48,7 @@ class EventsComScraper:
             await page.evaluate("() => new Promise(resolve => setTimeout(resolve, 3000))")
 
             # Scroll down to trigger lazy loading
-            for i in range(3):
+            for _i in range(3):
                 await page.evaluate("window.scrollBy(0, window.innerHeight)")
                 await page.evaluate("() => new Promise(resolve => setTimeout(resolve, 1000))")
 
@@ -113,7 +113,7 @@ class EventsComScraper:
             if browser:
                 try:
                     await browser.close()
-                except:
+                except Exception:
                     pass
             logger.error(f"Error fetching Events.com events: {e}")
             return []
@@ -294,7 +294,7 @@ class EventsComScraper:
                     db.add(event)
                     saved_count += 1
                 else:
-                    existing.date_retrieved = datetime.utcnow()
+                    existing.date_retrieved = datetime.now(timezone.utc)
 
             db.commit()
             logger.info(f"Saved {saved_count} new events from Events.com")

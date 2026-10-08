@@ -133,7 +133,7 @@ def _load():
     Lazily, and tolerantly: this is an enrichment, so a missing model must
     leave the rules-based path working rather than break a scrape.
     """
-    global _model, _exemplar_vectors, _exemplar_owners
+    global _model, _exemplar_vectors, _exemplar_owners  # noqa: PLW0603
     if _exemplar_vectors is not None:
         return True
     try:
@@ -153,7 +153,7 @@ def _load():
         _exemplar_vectors = vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
         _exemplar_owners = owners
         return True
-    except Exception as exc:  # noqa: BLE001 - never break a scrape over this
+    except Exception as exc:
         logger.warning("semantic categorization unavailable: %s", exc)
         _exemplar_vectors = None
         return False

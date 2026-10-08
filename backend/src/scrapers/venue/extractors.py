@@ -427,7 +427,7 @@ async def extract_salt_shed_playwright(page, config: VenueConfig) -> list[VenueE
                     # Scroll if no button
                     await page.mouse.wheel(0, 4000)
                     await page.wait_for_timeout(1000)
-            except:
+            except Exception:
                 break
 
         # Extract all cards using JavaScript
@@ -1102,7 +1102,7 @@ def extract_labelled_meeting(soup: BeautifulSoup, config: VenueConfig) -> list[V
     The venue moves monthly (these groups meet at whichever company is
     hosting), so the address comes off the page rather than from the config.
     """
-    lines = [l.strip() for l in soup.get_text("\n", strip=True).split("\n") if l.strip()]
+    lines = [ln.strip() for ln in soup.get_text("\n", strip=True).split("\n") if ln.strip()]
 
     def after(label: str, limit: int = 6) -> list[str]:
         """The lines following a label, up to the next label or `limit`."""
@@ -1934,17 +1934,17 @@ def extract_dice_widget(soup: BeautifulSoup, config: VenueConfig) -> list[VenueE
             if not match:
                 continue
 
-            lines = [l.strip() for l in card.get_text("\n", strip=True).split("\n") if l.strip()]
+            lines = [ln.strip() for ln in card.get_text("\n", strip=True).split("\n") if ln.strip()]
             # The billing is the first line that is neither the date nor a button.
             title = next(
                 (
-                    l
-                    for l in lines
-                    if not when.search(l)
+                    ln
+                    for ln in lines
+                    if not when.search(ln)
                     and not re.fullmatch(
-                        r"(buy now|join the waiting list|more info|sold out|\+)", l, re.IGNORECASE
+                        r"(buy now|join the waiting list|more info|sold out|\+)", ln, re.IGNORECASE
                     )
-                    and len(l) > 3
+                    and len(ln) > 3
                 ),
                 None,
             )
@@ -2062,7 +2062,7 @@ def extract_day_month_card(soup: BeautifulSoup, config: VenueConfig) -> list[Ven
             re.IGNORECASE,
         )
         for card in containers:
-            lines = [l.strip() for l in card.get_text("\n", strip=True).split("\n") if l.strip()]
+            lines = [ln.strip() for ln in card.get_text("\n", strip=True).split("\n") if ln.strip()]
             if not lines:
                 continue
 
@@ -2083,7 +2083,7 @@ def extract_day_month_card(soup: BeautifulSoup, config: VenueConfig) -> list[Ven
                 r"^\s*(free|rsvp|learn more)\s*$",
                 re.IGNORECASE,
             )
-            candidates = [l for l in lines if not noise.search(l) and len(l) > 4]
+            candidates = [ln for ln in lines if not noise.search(ln) and len(ln) > 4]
             if not candidates:
                 continue
             title = max(candidates, key=len)
@@ -2457,7 +2457,7 @@ def extract_generic_javascript_events(soup: BeautifulSoup, config: VenueConfig) 
                     continue
 
                 # Extract title - take first substantial line
-                lines = [l.strip() for l in text.split("\n") if l.strip()]
+                lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
                 title = None
                 for line in lines:
                     if 8 <= len(line) <= 200 and not line.startswith("http"):
@@ -2528,7 +2528,7 @@ def extract_zanies_calendar(soup: BeautifulSoup, config: VenueConfig) -> list[Ve
                 # Parse date to datetime
                 try:
                     parsed_date = datetime.fromisoformat(date_str)
-                except:
+                except Exception:
                     parsed_date = None
 
                 events.append(
@@ -2664,7 +2664,7 @@ def extract_squarespace_events(soup: BeautifulSoup, config: VenueConfig) -> list
         event_items = soup.select("li[class*='item']")
         logger.info(f"{config.name}: found {len(event_items)} event items")
 
-        for idx, item in enumerate(event_items):
+        for _idx, item in enumerate(event_items):
             text = item.get_text(strip=True)
             if not text or len(text) < 3:
                 continue

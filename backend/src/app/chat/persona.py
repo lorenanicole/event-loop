@@ -315,8 +315,8 @@ a set runs late, that a street is a hike in February. You do not gush.
 
 
 def persona_prompt(
-    category: Optional[str] = None,
-    rng: Optional[random.Random] = None,
+    category: str | None = None,
+    rng: random.Random | None = None,
     seasonal_context: str | None = None,
 ) -> str:
     """How the assistant should sound, as a system prompt fragment.
@@ -528,8 +528,8 @@ async def whats_on_tonight(
     APPEALING = tuple(category for category, _ in PITCHES)
 
     candidates: dict[str, list[str]] = {}
-    for name, category, hood in rows:
-        name = (name or "").strip()
+    for raw_name, category, hood in rows:
+        name = (raw_name or "").strip()
         if category not in APPEALING:
             continue
         if not reads_like_a_title(name):
@@ -693,7 +693,7 @@ async def data_facts(session) -> list[str]:
     async def scalar(query):
         try:
             return await session.scalar(query)
-        except Exception:  # noqa: BLE001 - a greeting must not fail over this
+        except Exception:
             return None
 
     upcoming = upcoming_events_filter()

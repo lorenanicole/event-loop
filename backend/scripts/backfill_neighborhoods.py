@@ -19,11 +19,11 @@ import sys
 
 sys.path.insert(0, "src")
 
+from shared.database.neighborhoods import load_boundaries, resolve_neighborhood_id
 from sqlalchemy import select
 
 from scrapers.venue.chicago_events_scraper import venue_to_neighborhood
 from shared.database import AsyncSessionLocal, EventModel, init_db, upcoming_events_filter
-from shared.database.neighborhoods import load_boundaries, resolve_neighborhood_id
 from shared.geo import resolve_neighborhood
 
 

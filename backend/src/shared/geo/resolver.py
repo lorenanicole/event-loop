@@ -77,7 +77,7 @@ async def _cached_coordinates(session, key: str):
 
 async def _geocode_with_nominatim(key: str):
     """Address -> (lat, lon) via OpenStreetMap, rate limited. None when unknown."""
-    global _last_nominatim_call
+    global _last_nominatim_call  # noqa: PLW0603
 
     import httpx
 

@@ -263,7 +263,6 @@ def info(c):
     print_header("Chicago Events Chatbot - Development")
 
 
-
 # Create command collection
 ns = Collection()
 ns.add_task(scrape)

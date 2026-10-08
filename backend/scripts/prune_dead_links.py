@@ -82,7 +82,7 @@ async def main() -> None:
     async with httpx.AsyncClient(headers=HEADERS) as client:
         verdicts = await asyncio.gather(*(confirm_gone(client, url, sem) for _, _, url, _ in rows))
 
-    dead = [row for row, gone in zip(rows, verdicts) if gone]
+    dead = [row for row, gone in zip(rows, verdicts, strict=False) if gone]
     print(f"{len(dead)} events whose page is gone (confirmed twice):")
     for _, source, url, name in dead:
         print(f"   {source[:34]:36} {name[:34]:36} {url[-44:]}")

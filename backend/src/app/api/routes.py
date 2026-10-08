@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.chat.search_query import extract_date_range as _extract_date_range
-from app.chat.search_query import extract_keywords as _extract_keywords
 from app.api.analytics import router as analytics_router  # noqa: F401 — re-exported via __init__
 from app.api.chat import router as chat_router
+from app.chat.search_query import extract_date_range as _extract_date_range
+from app.chat.search_query import extract_keywords as _extract_keywords
 from app.logging import get_logger
 from app.security import require_admin_key
 from shared.categories import category_filter, extract_category_concepts
@@ -137,7 +137,7 @@ async def refresh_venue_events(db: AsyncSession = Depends(get_db)):
 
         return {"status": "success", "new_events": inserted}
     except Exception as exc:
-        logger.error("Venue events refresh failed: %s", exc, exc_info=True)
+        logger.exception("Venue events refresh failed: %s", exc)
         raise HTTPException(status_code=500, detail="Venue event refresh failed") from exc
 
 

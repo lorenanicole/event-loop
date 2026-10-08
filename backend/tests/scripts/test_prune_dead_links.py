@@ -39,4 +39,4 @@ class TestGoneCodes:
 
     def test_nothing_else_crept_in(self):
         """A whitelist, so a future edit cannot widen this by accident."""
-        assert GONE == {404, 410}
+        assert {404, 410} == GONE

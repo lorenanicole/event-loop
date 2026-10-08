@@ -12,7 +12,7 @@ stored with a date and a date_end and surfaces for any day in between.
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 from bs4 import BeautifulSoup
 from sqlalchemy import select
@@ -156,7 +156,7 @@ class BroadwayInChicagoScraper:
             else:
                 continue
 
-            lines = [l.strip() for l in card.get_text("\n", strip=True).split("\n") if l.strip()]
+            lines = [ln.strip() for ln in card.get_text("\n", strip=True).split("\n") if ln.strip()]
             run = self._RUN_RE.search(" ".join(lines))
             if not run:
                 continue
@@ -167,7 +167,7 @@ class BroadwayInChicagoScraper:
             start, end = dates
 
             theatre = next(
-                (self.THEATRES[l.lower()] for l in lines if l.lower() in self.THEATRES), None
+                (self.THEATRES[ln.lower()] for ln in lines if ln.lower() in self.THEATRES), None
             )
             title = self._title(lines, theatre)
             if not title:
@@ -281,7 +281,7 @@ class BroadwayInChicagoScraper:
                 else:
                     # Runs get extended and venues get reassigned mid-season,
                     # so refresh those without touching anything else.
-                    existing.date_retrieved = datetime.utcnow()
+                    existing.date_retrieved = datetime.now(timezone.utc)
                     existing.date = event_data.date
                     existing.date_end = event_data.date_end
                     if event_data.venue_name and not existing.venue_name:

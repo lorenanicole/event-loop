@@ -10,7 +10,7 @@ from app.chat.chatbot import SearchPolicy, search_local_db
 from app.chat.web_search import search_google_events
 from shared.localtime import CHICAGO
 
-SYSTEM_PROMPT = """You are EventLoop, a Chicago events discovery chatbot. Help users find great events efficiently.
+SYSTEM_PROMPT = """You are EventLoop, a Chicago events discovery chatbot. Help users find great events efficiently.  # noqa: E501
 
 TOOLS AVAILABLE:
 1. search_local_db(query) - Searches the local event database

@@ -54,7 +54,7 @@ async def startup_event():
     # Warm the semantic search index in the background. The first call loads a
     # model from disk (downloading it once), so doing it here keeps that cost
     # off the first user query without delaying startup.
-    asyncio.create_task(_warm_semantic_index())
+    asyncio.create_task(_warm_semantic_index())  # noqa: RUF006
 
     # For telemetry, we'll use AsyncSessionLocal when metrics are accessed
 
@@ -87,7 +87,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="EventLoop: Async Event Discovery in the 312",
-    description="AI-powered event discovery for Chicago. REACT agents + semantic search + production resilience patterns. Python 3.15 showcase.",
+    description=(
+        "AI-powered event discovery for Chicago. REACT agents + semantic search"
+        " + production resilience patterns. Python 3.15 showcase."
+    ),
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -112,7 +115,7 @@ async def root():
     return {
         "name": "EventLoop",
         "tagline": "Async Event Discovery in the 312",
-        "description": "AI-powered event discovery for Chicago with REACT agents and semantic search",
+        "description": "AI-powered event discovery for Chicago with REACT agents and semantic search",  # noqa: E501
         "blog": "EventLoop: Building Production AI Apps with Python 3.15",
         "docs": "/docs",
         "features": {
@@ -155,8 +158,8 @@ if os.path.exists("frontend/dist"):
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.getenv("API_PORT", 8000))
-    host = os.getenv("API_HOST", "0.0.0.0")
+    port = int(os.getenv("API_PORT", "8000"))
+    host = os.getenv("API_HOST", "0.0.0.0")  # noqa: S104
 
     uvicorn.run(
         "main:app",

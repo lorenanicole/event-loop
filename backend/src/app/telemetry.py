@@ -6,7 +6,7 @@ Persists metrics to database for historical analysis.
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from opentelemetry import metrics
 from opentelemetry.sdk.metrics import MeterProvider
@@ -137,7 +137,7 @@ def record_tool_call(operation: str, duration_ms: float, tokens: int = 0):
 
 def set_db_session(db_session: object) -> None:
     """Set the database session for metric persistence."""
-    global _db_session
+    global _db_session  # noqa: PLW0603
     _db_session = db_session
 
 
@@ -170,7 +170,7 @@ def persist_metrics_to_db() -> None:
                             value=getattr(data_point, "value", 0),
                             attributes=attributes_json,
                             unit=metric.unit,
-                            timestamp=datetime.utcnow(),
+                            timestamp=datetime.now(timezone.utc),
                         )
                         _db_session.add(metric_record)
 
@@ -193,7 +193,7 @@ def get_metrics_snapshot() -> dict:
         # Return current snapshot
         metrics_data = reader.get_metrics_data()
         return {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "metrics_data": str(metrics_data),
             "resource_metrics": len(metrics_data.resource_metrics) if metrics_data else 0,
             "persisted": True,
@@ -201,6 +201,6 @@ def get_metrics_snapshot() -> dict:
     except Exception as e:
         logger.error(f"Error getting metrics snapshot: {e}")
         return {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "error": str(e),
         }

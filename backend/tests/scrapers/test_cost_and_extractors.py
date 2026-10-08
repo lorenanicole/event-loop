@@ -8,6 +8,9 @@ from datetime import datetime
 
 from bs4 import BeautifulSoup
 
+from scrapers.sources.broadway_in_chicago import BroadwayInChicagoScraper
+from scrapers.sources.chicago_park_district import ChicagoParkDistrictScraper
+from scrapers.sources.ticketmaster import TicketmasterScraper
 from scrapers.venue.chicago_events_scraper import (
     extract_dated_links,
     extract_dated_list_items,
@@ -17,9 +20,6 @@ from scrapers.venue.chicago_events_scraper import (
     extract_tribe_events,
 )
 from scrapers.venue.venue_scraper import VenueConfig, parse_cost
-from scrapers.sources.broadway_in_chicago import BroadwayInChicagoScraper
-from scrapers.sources.chicago_park_district import ChicagoParkDistrictScraper
-from scrapers.sources.ticketmaster import TicketmasterScraper
 
 
 def config(name="Test Venue", address="1 N Test St"):
@@ -300,15 +300,17 @@ class TestParkDistrictDates:
 
     TODAY = datetime(2026, 10, 6)
 
+    @staticmethod
+    def _fmt(d):
+        return d.strftime("%Y-%m-%d") if d else None
+
     def short(self, text):
         start, end = ChicagoParkDistrictScraper._dates_from_short(text, self.TODAY)
-        fmt = lambda d: d.strftime("%Y-%m-%d") if d else None
-        return fmt(start), fmt(end)
+        return self._fmt(start), self._fmt(end)
 
     def full(self, text):
         start, end = ChicagoParkDistrictScraper._dates_from_text(text)
-        fmt = lambda d: d.strftime("%Y-%m-%d") if d else None
-        return fmt(start), fmt(end)
+        return self._fmt(start), self._fmt(end)
 
     def test_full_run_with_years(self):
         assert self.full("April 25, 2026 - October 31, 2026") == ("2026-04-25", "2026-10-31")

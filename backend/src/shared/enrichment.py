@@ -188,7 +188,7 @@ def extract_venue_name(event_name: str, url: str | None = None) -> str | None:
     if match:
         venue = match.group(1).strip()
         # Filter out common filler words
-        if venue and len(venue) > 2 and not venue.lower() in ["the", "chicago"]:
+        if venue and len(venue) > 2 and venue.lower() not in ["the", "chicago"]:
             return venue
 
     return None

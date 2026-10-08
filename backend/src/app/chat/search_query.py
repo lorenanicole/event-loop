@@ -180,7 +180,7 @@ def extract_keywords(query: str) -> list[str]:
 
 def extract_date_range(query: str) -> tuple[datetime, datetime] | None:
     """Parse the supported relative date phrases into a date window."""
-    now = datetime.now()
+    now = datetime.now()  # noqa: DTZ005 — intentionally naive for local date arithmetic
     query_lower = query.lower()
 
     if (

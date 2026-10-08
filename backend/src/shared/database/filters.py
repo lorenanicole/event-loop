@@ -14,7 +14,7 @@ from .models import EventModel
 
 def start_of_day(moment: datetime | None = None) -> datetime:
     """Midnight on the given day (defaults to today)."""
-    moment = moment or datetime.now()
+    moment = moment or datetime.now()  # noqa: DTZ005
     return moment.replace(hour=0, minute=0, second=0, microsecond=0)
 
 

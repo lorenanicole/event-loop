@@ -14,14 +14,6 @@ from pydantic_ai.usage import UsageLimits
 from sqlalchemy import select
 
 from app import telemetry
-from app.chat.agent import SYSTEM_PROMPT, agent, todays_date
-from app.chat.chatbot import (
-    AGENT_OUTPUT_TOKEN_LIMIT,
-    AGENT_REQUEST_LIMIT,
-    AGENT_TOOL_CALL_LIMIT,
-    SearchPolicy,
-)
-from app.chat.intent_classifier import Intent, get_intent_classifier, get_intent_response
 from app.api.sse import (  # noqa: F401 — re-exported for callers that import from here
     ChatStartedEvent,
     CompleteEvent,
@@ -32,6 +24,14 @@ from app.api.sse import (  # noqa: F401 — re-exported for callers that import 
     ToolCallEvent,
     sse_event_formatter,
 )
+from app.chat.agent import SYSTEM_PROMPT, agent, todays_date
+from app.chat.chatbot import (
+    AGENT_OUTPUT_TOKEN_LIMIT,
+    AGENT_REQUEST_LIMIT,
+    AGENT_TOOL_CALL_LIMIT,
+    SearchPolicy,
+)
+from app.chat.intent_classifier import Intent, get_intent_classifier, get_intent_response
 from app.resilience import (
     ErrorClassifier,
     db_circuit_breaker,
@@ -62,7 +62,7 @@ def _tools_used(result) -> list[tuple[str, dict]]:
     calls: list[tuple[str, dict]] = []
     try:
         messages = result.all_messages()
-    except Exception:  # noqa: BLE001 - reporting must not break the turn
+    except Exception:
         return calls
 
     for message in messages:
@@ -253,7 +253,7 @@ class ChatExecutor:
                 # single binary threshold:
                 #
                 #  confidence >= 0.85 + non-event   → hard redirect: don't run agent
-                #  confidence 0.65–0.84 + non-event → soft: run agent with an
+                #  confidence 0.65-0.84 + non-event → soft: run agent with an
                 #      ambiguity hint so it asks a clarifying question instead
                 #      of searching blindly
                 #  anything else                    → run agent normally
@@ -492,12 +492,11 @@ class ChatExecutor:
         except Exception as e:
             logger.error(f"Execution error: {e}")
 
-            # Classify and audit the error
-            if isinstance(e, Exception):
-                try:
-                    _error_type, _is_retryable = ErrorClassifier.classify_llm_error(e)
-                except:
-                    pass
+            # Classify the error (best-effort — never let this crash the error handler).
+            import contextlib
+
+            with contextlib.suppress(Exception):
+                _error_type, _is_retryable = ErrorClassifier.classify_llm_error(e)
 
             # Return user-friendly error
             error_message = self._get_user_friendly_error(str(e))
@@ -645,13 +644,6 @@ class ChatExecutor:
                         f"Output validation failed - potential info disclosure: {leaked_pattern}"
                     )
                     response_text = OutputValidator.sanitize(response_text)
-                    await self._audit_log(
-                        "output_sanitized",
-                        thread_id,
-                        "success",
-                        0,
-                        {"reason": "information_disclosure_risk"},
-                    )
 
                 if "🌐" in response_text:
                     yield ThinkingEvent(
@@ -755,7 +747,7 @@ class ChatExecutor:
                     )
                 )
                 await session.commit()
-        except Exception as exc:  # noqa: BLE001 - see docstring
+        except Exception as exc:
             logger.warning("audit log write failed: %s: %s", type(exc).__name__, exc)
 
 

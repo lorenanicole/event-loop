@@ -226,7 +226,7 @@ Return ONLY raw JSON object (no markdown, no code fences):
             return intent, confidence, reasoning
 
         except Exception as e:
-            logger.error(f"Intent classification error: {e}", exc_info=True)
+            logger.exception(f"Intent classification error: {e}")
             # Default to chicago_events on error (fail open for events)
             return Intent.CHICAGO_EVENTS, 0.5, f"Classification error: {e!s}"
 
@@ -237,7 +237,7 @@ _classifier_instance = None
 
 def get_intent_classifier() -> IntentClassifier:
     """Get or create the singleton intent classifier."""
-    global _classifier_instance
+    global _classifier_instance  # noqa: PLW0603
     if _classifier_instance is None:
         _classifier_instance = IntentClassifier()
     return _classifier_instance
@@ -296,4 +296,4 @@ async def get_intent_response(intent: Intent, reasoning: str) -> str:
             "I'm a Chicago events guide — ask me what's on tonight or this weekend.",
         ],
     )
-    return random.choice(options)
+    return random.choice(options)  # noqa: S311

@@ -16,11 +16,11 @@ from pathlib import Path
 
 sys.path.insert(0, "src")
 
+from shared.database.neighborhoods import canonical_neighborhood
 from sqlalchemy import select
 
 from shared.database import AsyncSessionLocal, init_db
 from shared.database.models import NeighborhoodModel
-from shared.database.neighborhoods import canonical_neighborhood
 
 SOURCE_URL = "https://data.cityofchicago.org/resource/y6yq-dbs2.geojson?$limit=500"
 CACHE_PATH = Path("data/chicago_neighborhoods.geojson")

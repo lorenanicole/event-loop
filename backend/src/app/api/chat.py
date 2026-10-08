@@ -109,7 +109,7 @@ async def chat_greeting(db: AsyncSession = Depends(get_db)):
     tags=["Chat"],
     responses={
         200: {
-            "description": "An SSE stream (`text/event-stream`) ending with a response and complete frame.",
+            "description": "An SSE stream (`text/event-stream`) ending with a response and complete frame.",  # noqa: E501
             "content": {
                 "text/event-stream": {
                     "example": (
