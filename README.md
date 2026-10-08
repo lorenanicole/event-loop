@@ -37,10 +37,16 @@ eventloop/
 |   |-- scripts/                # Operational tools (see scripts/README.md)
 |   |-- eval/                   # Eval harnesses + labelled data
 |   |-- data/                   # Local SQLite database and boundary data
+|   |-- Dockerfile              # API service (Python 3.15, uv, no Playwright)
+|   |-- Dockerfile.scraper      # Scraper cron service (Python 3.14 + Playwright)
+|   |-- railway.toml            # Railway config for API service
+|   |-- railway.scraper.toml    # Railway config for scraper cron service
+|   |-- .env.example            # Required environment variables
 |   `-- pyproject.toml          # Dependencies, pytest config, ruff lint config
 |-- frontend/                   # TypeScript + Vite browser application
 |-- benchmarks/                 # Interpreter microbenchmarks
 |-- tasks.py                    # Invoke development tasks
+|-- DEPLOY.md                   # Railway deployment guide
 |-- DEVELOPMENT.md
 |-- PROJECT_STRUCTURE.md
 |-- RAG_PIPELINE.md
@@ -89,8 +95,8 @@ The short version: retrieval is hybrid and structured-first (dates and neighborh
 ```bash
 # Backend
 cd backend
-uv pip install -e ".[app,test,dev]"
-PYTHONPATH=src uvicorn app.main:app --reload   # http://localhost:8000
+uv sync --extra app --extra test --extra dev
+PYTHONPATH=src uv run uvicorn app.main:app --reload   # http://localhost:8000
 
 # Frontend
 cd frontend
@@ -98,15 +104,19 @@ npm install
 npm run dev   # http://localhost:5173
 ```
 
-Required environment variables:
+Required environment variables (copy `backend/.env.example` to `backend/.env`):
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
 DATABASE_URL=sqlite+aiosqlite:///./data/events.db
-ADMIN_API_KEY=...        # protects POST /api/venue-events/refresh
+ADMIN_KEY=...            # protects POST /api/venue-events/refresh
 SERPAPI_KEY=...          # optional: web search fallback
 LOG_LEVEL=INFO
 ```
+
+## Deployment
+
+See **[DEPLOY.md](DEPLOY.md)** for the full Railway deployment guide (two services — API + scraper cron — sharing a persistent SQLite volume).
 
 ## Tests
 
