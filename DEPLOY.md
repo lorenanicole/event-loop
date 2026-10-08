@@ -1,10 +1,11 @@
 # Deploying EventLoop on Railway
 
-Two services share one Railway Postgres database:
+Three services, one Railway Postgres database:
 
 | Service | Dockerfile | Purpose |
 |---|---|---|
 | `api` | `backend/Dockerfile` | FastAPI + PydanticAI chat backend (Python 3.15) |
+| `frontend` | `frontend/Dockerfile` | nginx serving the Vite/TypeScript UI |
 | `scraper` | `backend/Dockerfile.scraper` | Playwright venue scraper cron (Python 3.14, Playwright 1.63) |
 
 ---
@@ -49,8 +50,24 @@ Or skip the CLI: **New Project → Deploy from GitHub repo → select `lorenanic
    SERPAPI_KEY=...
    TICKETMASTER_API_KEY=...
    LOG_LEVEL=INFO
+   FRONTEND_URL=https://<your-frontend-domain>.up.railway.app
    ```
 5. **Settings → Networking → Generate Domain** — gives you a public URL
+
+---
+
+## Create the Frontend service
+
+1. **+ Add → GitHub Repo** → same repo, new service
+2. Service name: `frontend`
+3. **Settings → Source → Root Directory**: `frontend`
+   - Railway will find `frontend/Dockerfile` automatically
+4. **Settings → Variables** — add:
+   ```
+   VITE_API_BASE_URL=https://<your-api-domain>.up.railway.app
+   ```
+5. **Settings → Networking → Generate Domain** — gives the UI its public URL
+6. Go back to the **api** service and set `FRONTEND_URL` to this domain
 
 ---
 

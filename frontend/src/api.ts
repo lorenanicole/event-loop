@@ -43,7 +43,9 @@ export interface Stats {
   latest_event: string
 }
 
-const API_BASE = '/api'
+// VITE_API_BASE_URL is set at Docker build time via ARG/ENV.
+// Falls back to '/api' for local dev (Vite proxy handles it).
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '') + '/api'
 
 const client = axios.create({
   baseURL: API_BASE,

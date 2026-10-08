@@ -5,8 +5,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+
 
 from app.api import analytics_router, router
 from app.logging import configure_logging, get_logger
@@ -96,9 +95,14 @@ app = FastAPI(
 )
 
 # CORS middleware
+# FRONTEND_URL can be set to the Railway frontend domain to restrict CORS.
+# Falls back to wildcard so the API works before the frontend is deployed.
+_frontend_url = os.getenv("FRONTEND_URL", "")
+_cors_origins = [_frontend_url] if _frontend_url else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -111,9 +115,7 @@ app.include_router(analytics_router)
 
 @app.get("/")
 async def root():
-    """Root — redirect to the frontend if present, otherwise return API info."""
-    if os.path.exists("frontend/dist/index.html"):
-        return FileResponse("frontend/dist/index.html")
+    """API root — returns service info."""
     return {
         "name": "EventLoop",
         "tagline": "Async Event Discovery in the 312",
@@ -141,20 +143,6 @@ async def root():
 async def health():
     """Health check endpoint"""
     return {"status": "healthy"}
-
-
-# Serve frontend (if built) — mount at root so Vite's /assets/ paths resolve
-if os.path.exists("frontend/dist"):
-    app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
-
-    @app.get("/{path_name:path}")
-    async def serve_frontend(path_name: str):
-        """Serve frontend files"""
-        file_path = f"frontend/dist/{path_name}"
-        if os.path.isfile(file_path):
-            return FileResponse(file_path)
-        # Fallback to index.html for SPA routing
-        return FileResponse("frontend/dist/index.html")
 
 
 if __name__ == "__main__":
