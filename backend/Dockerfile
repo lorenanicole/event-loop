@@ -15,14 +15,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency manifests first so Docker caches this layer
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock ./
 
 # Install third-party dependencies only — skip building the local package
 # so Docker can cache this layer independently of source changes.
 RUN uv sync --frozen --extra app --no-dev --no-install-project
 
-# Copy source (after deps so the cache layer above stays valid on src changes)
+# Copy source + README (README is required by pyproject.toml for package build)
 COPY src/ ./src/
+COPY README.md ./
 
 # Now install the local eventloop package itself
 RUN uv sync --frozen --extra app --no-dev
