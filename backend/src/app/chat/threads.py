@@ -38,7 +38,7 @@ async def close_thread(session, thread_id: str, status: str = CLOSED) -> bool:
     result = await session.execute(
         update(ChatThreadModel)
         .where(ChatThreadModel.id == thread_id, ChatThreadModel.status == ACTIVE)
-        .values(status=status, updated_at=datetime.now(timezone.utc))
+        .values(status=status, updated_at=datetime.now(timezone.utc).replace(tzinfo=None))
     )
     await session.commit()
     return bool(result.rowcount)
@@ -51,7 +51,7 @@ async def sweep_stale_threads(session, hours: int = STALE_THREAD_HOURS) -> int:
     natural moment to tidy, and a sweep that only runs while the app is up
     would never reach the threads left by the previous run.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)
     result = await session.execute(
         update(ChatThreadModel)
         .where(
