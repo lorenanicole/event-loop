@@ -387,7 +387,7 @@ export class SearchApp {
                the middle: "Let's explore comedy this weekend in Pilsen" says
                it without the filler, and it still reads when nothing is
                chosen - "Let's explore anything any time anywhere in Chicago". -->
-          <h1 class="text-4xl md:text-5xl font-light text-gray-900 leading-[1.6] md:leading-[1.7]">
+          <h1 class="hero-headline text-4xl md:text-5xl font-light text-gray-900 leading-[1.6] md:leading-[1.7]">
             <span class="block mb-2">Let&rsquo;s explore</span>
             ${this.renderSlot(what)}
             ${this.renderSlot(when)}
@@ -856,6 +856,80 @@ export class SearchApp {
     `
   }
 
+  // ── Halloween easter egg ────────────────────────────────────────────────
+  // Konami code (↑↑↓↓←→←→BA) triggers a 4-second spooky mode:
+  //  • pumpkins + ghosts rain down the page
+  //  • the hero headline swaps to Halloween copy
+  //  • everything cleans itself up automatically
+  private _konamiSequence: string[] = []
+  private static readonly KONAMI = [
+    'ArrowUp','ArrowUp','ArrowDown','ArrowDown',
+    'ArrowLeft','ArrowRight','ArrowLeft','ArrowRight',
+    'b','a',
+  ]
+
+  private _onKonami(key: string) {
+    this._konamiSequence.push(key)
+    if (this._konamiSequence.length > SearchApp.KONAMI.length)
+      this._konamiSequence.shift()
+    if (this._konamiSequence.join(',') === SearchApp.KONAMI.join(',')) {
+      this._konamiSequence = []
+      this._triggerHalloween()
+    }
+  }
+
+  private _triggerHalloween() {
+    // Swap hero headline
+    const hero = this.container.querySelector('.hero-headline') as HTMLElement | null
+    const original = hero?.innerHTML ?? ''
+    if (hero) hero.innerHTML = '👻 &nbsp;Boo, Chicago&nbsp; 🎃'
+
+    // Rain emojis down the viewport
+    const EMOJIS = ['🎃','👻','🕷️','🕸️','🦇','💀','🍬','🌙']
+    const drops: HTMLElement[] = []
+    for (let i = 0; i < 40; i++) {
+      const el = document.createElement('span')
+      const emoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)]
+      const startX = Math.random() * 100
+      const delay   = Math.random() * 2500   // ms
+      const size    = 18 + Math.floor(Math.random() * 24)
+      const dur     = 1800 + Math.floor(Math.random() * 1500)  // fall duration
+      el.textContent = emoji
+      el.setAttribute('aria-hidden', 'true')
+      Object.assign(el.style, {
+        position:      'fixed',
+        top:           '-60px',
+        left:          `${startX}vw`,
+        fontSize:      `${size}px`,
+        opacity:       '0.92',
+        pointerEvents: 'none',
+        zIndex:        '9999',
+        animation:     `halloween-fall ${dur}ms ease-in ${delay}ms forwards`,
+      })
+      document.body.appendChild(el)
+      drops.push(el)
+    }
+
+    // Inject keyframe animation once
+    if (!document.getElementById('halloween-style')) {
+      const style = document.createElement('style')
+      style.id = 'halloween-style'
+      style.textContent = `
+        @keyframes halloween-fall {
+          0%   { transform: translateY(0)    rotate(0deg);   opacity: .92; }
+          100% { transform: translateY(110vh) rotate(360deg); opacity: 0;   }
+        }
+      `
+      document.head.appendChild(style)
+    }
+
+    // Clean up after 5 seconds
+    setTimeout(() => {
+      drops.forEach(el => el.remove())
+      if (hero) hero.innerHTML = original
+    }, 5000)
+  }
+
   private attachEventListeners() {
     // One delegated listener on the container: the madlib re-renders its own
     // pieces, so per-element handlers would go stale on every selection.
@@ -892,6 +966,10 @@ export class SearchApp {
       const key = input.getAttribute('data-combo-filter')
       if (key) this.filterOptions(key, (input as HTMLInputElement).value)
     })
+
+    // Global keydown for Konami code — listen on document so it fires even
+    // when no input inside the container is focused.
+    document.addEventListener('keydown', (e) => this._onKonami(e.key))
 
     this.container.addEventListener('keydown', (e) => {
       const event = e as KeyboardEvent
