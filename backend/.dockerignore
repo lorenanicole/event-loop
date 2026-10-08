@@ -1,0 +1,16 @@
+# Keep the build context lean
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/backups/
+data/scrape.log
+.scrape.lock
+eval/
+benchmarks/

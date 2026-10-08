@@ -111,7 +111,9 @@ app.include_router(analytics_router)
 
 @app.get("/")
 async def root():
-    """API root endpoint"""
+    """Root — redirect to the frontend if present, otherwise return API info."""
+    if os.path.exists("frontend/dist/index.html"):
+        return FileResponse("frontend/dist/index.html")
     return {
         "name": "EventLoop",
         "tagline": "Async Event Discovery in the 312",
@@ -141,9 +143,9 @@ async def health():
     return {"status": "healthy"}
 
 
-# Serve frontend (if built)
+# Serve frontend (if built) — mount at root so Vite's /assets/ paths resolve
 if os.path.exists("frontend/dist"):
-    app.mount("/static", StaticFiles(directory="frontend/dist"), name="static")
+    app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
 
     @app.get("/{path_name:path}")
     async def serve_frontend(path_name: str):

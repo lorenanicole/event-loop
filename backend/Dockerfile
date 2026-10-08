@@ -26,6 +26,10 @@ RUN uv sync --frozen --extra app --no-dev --no-install-project
 COPY src/ ./src/
 COPY README.md ./
 
+# Copy pre-built frontend so the API can serve it at /
+# main.py checks for frontend/dist, so preserve that structure
+COPY frontend/ ./frontend/dist/
+
 # Now install the local eventloop package itself
 RUN uv sync --frozen --extra app --no-dev
 
