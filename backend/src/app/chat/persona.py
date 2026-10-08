@@ -630,9 +630,9 @@ def farewell(reason: str = "turns", rng: random.Random | None = None) -> str:
 
 
 # The four six-pointed stars of the Chicago flag, which is also the app's own
-# logo. Joined without spaces so markdown renderers can't mis-parse them as
-# a bullet list or thematic break.
-FLAG_STARS = "\u2736\u2736\u2736\u2736"
+# logo. Spaced apart so the chat renderer's regex (\u2736(?:\s+\u2736){3})
+# matches them and wraps them in the red chat-flag-stars div.
+FLAG_STARS = "\u2736 \u2736 \u2736 \u2736"
 
 # Rotating sign-offs. All local, none requiring you to pick a baseball team -
 # the North/South rivalry is real and a farewell is the wrong place to take a
@@ -648,11 +648,15 @@ SIGN_OFFS = [
 
 
 def sign_off(rng: random.Random | None = None) -> str:
-    """A small visual goodbye: the flag's four stars and a local line."""
+    """A small visual goodbye: the flag's four stars and a local line.
+
+    Stars go on their own line so the chat renderer picks them up as the
+    Chicago flag and colours them red. The sign-off text follows on a
+    separate line without any markdown italic wrapper — *text* renders
+    inconsistently across UIs and can appear as literal asterisks.
+    """
     picker = rng or random
-    # No markdown italic wrapper — asterisks around text render inconsistently
-    # across chat UIs and can appear as literal * characters.
-    return f"{FLAG_STARS} {picker.choice(SIGN_OFFS)}"
+    return f"{FLAG_STARS}\n{picker.choice(SIGN_OFFS)}"
 
 
 # The wording for signing off. Whether a message IS a sign-off is decided by
