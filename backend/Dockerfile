@@ -3,7 +3,7 @@
 # The SQLite database is expected on a Railway volume mounted at /data.
 # ─────────────────────────────────────────────────────────────────────────────
 
-FROM python:3.15-slim
+FROM python:3.15.0rc3-slim
 
 WORKDIR /app
 
