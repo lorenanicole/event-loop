@@ -1,0 +1,37 @@
+# ── EventLoop Scraper (Cron) ──────────────────────────────────────────────────
+# Python 3.14 + Playwright. Playwright doesn't have 3.15 wheels yet so this
+# service deliberately pins 3.14. It shares the same SQLite volume as the API.
+#
+# On Railway: deploy as a Cron service, schedule "0 */6 * * *" (every 6 hours),
+# start command: python scripts/additive_scrape.py
+# ─────────────────────────────────────────────────────────────────────────────
+
+FROM mcr.microsoft.com/playwright/python:v1.48.0-jammy
+
+# uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.23 /uv /uvx /usr/local/bin/
+
+WORKDIR /app
+
+# Python 3.14 is bundled in the Playwright image; pin uv to use it
+RUN uv python pin 3.14
+
+# Copy dependency manifests
+COPY pyproject.toml uv.lock ./
+
+# Install parser + app deps (scraper needs SQLAlchemy, httpx, pydantic, etc.)
+RUN uv sync --frozen --extra parser --extra app --no-dev
+
+# Copy source
+COPY src/ ./src/
+COPY scripts/ ./scripts/
+COPY data/ ./data/
+
+RUN mkdir -p /data
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src \
+    DATABASE_URL=sqlite+aiosqlite:////data/events.db
+
+# Default command — Railway Cron overrides this per-schedule
+CMD ["uv", "run", "python", "scripts/additive_scrape.py"]
