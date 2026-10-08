@@ -1,11 +1,11 @@
 """Operational telemetry, audit, analytics, and security endpoints."""
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import telemetry
-from app.security import rate_limiter
+from app.security import rate_limiter, require_admin_key
 from shared.database import get_db
 from shared.database.models import AuditLogModel, ChatThreadModel
 
@@ -131,3 +131,63 @@ async def get_security_summary(db: AsyncSession = Depends(get_db)):
             for record in recent_blocks
         ],
     }
+
+
+# Tables with a serial integer PK whose sequence may be desynced after a bulk migration.
+_SERIAL_PK_TABLES = [
+    "chat_messages",
+    "audit_logs",
+    "metrics",
+    "events",
+    "neighborhoods",
+    "venues",
+    "geocode_cache",
+]
+
+
+@router.post(
+    "/admin/fix-sequences",
+    summary="Reset Postgres serial sequences after bulk migration",
+    tags=["Admin"],
+    dependencies=[Depends(require_admin_key)],
+)
+async def fix_sequences(db: AsyncSession = Depends(get_db)):
+    """
+    After a migration that inserts rows with explicit integer IDs, Postgres
+    sequences remain at 1 and every subsequent INSERT hits a unique-key clash.
+
+    This endpoint resets every serial-PK sequence to MAX(id) so that new rows
+    get IDs that don't collide with existing ones.  Safe to call repeatedly.
+    """
+    results = {}
+    for table in _SERIAL_PK_TABLES:
+        try:
+            # pg_get_serial_sequence returns NULL for UUID-PK tables
+            seq_result = await db.execute(
+                text("SELECT pg_get_serial_sequence(:t, 'id')").bindparams(t=table)
+            )
+            seq_name = seq_result.scalar()
+            if not seq_name:
+                results[table] = "skipped (no serial sequence)"
+                continue
+
+            max_result = await db.execute(text(f"SELECT COALESCE(MAX(id), 0) FROM {table}"))  # noqa: S608
+            max_id = max_result.scalar()
+
+            if max_id == 0:
+                results[table] = "skipped (empty table)"
+                continue
+
+            cur_result = await db.execute(text(f"SELECT last_value FROM {seq_name}"))  # noqa: S608
+            current_seq = cur_result.scalar()
+
+            if current_seq >= max_id:
+                results[table] = f"ok (seq={current_seq}, max_id={max_id})"
+                continue
+
+            await db.execute(text(f"SELECT setval('{seq_name}', {max_id})"))
+            results[table] = f"fixed ({current_seq} → {max_id}, next={max_id + 1})"
+        except Exception as exc:
+            results[table] = f"error: {exc}"
+
+    return {"fixed": results}
