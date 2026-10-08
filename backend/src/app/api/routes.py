@@ -11,7 +11,7 @@ from app.chat.search_query import extract_keywords as _extract_keywords
 from app.logging import get_logger
 from app.security import require_admin_key
 from shared.categories import category_filter, extract_category_concepts
-from shared.database import feed_order, get_db, start_of_day, upcoming_events_filter
+from shared.database import IS_SQLITE, feed_order, get_db, start_of_day, upcoming_events_filter
 from shared.database.models import EventModel, NeighborhoodModel
 from shared.schemas import Event, EventSearch
 
@@ -421,24 +421,30 @@ async def get_filter_counts(
     # Counted across every label rather than just the primary, because the
     # filter matches every label too - an LGBTQ tile reading only the events
     # whose *primary* category is LGBTQ would undercount the drag shows filed
-    # under Music, and the number would stop matching what clicking it
-    # returns. json_array_elements_text unnests the JSON array to individual
-    # text rows (Postgres equivalent of SQLite's json_each). Events predating
-    # the categories column fall back to their single category string wrapped
-    # in a one-element JSON array via json_build_array. Returning text means
-    # GROUP BY works without needing an equality operator on json.
-    label = func.json_array_elements_text(
-        func.coalesce(EventModel.categories, func.json_build_array(EventModel.category))
-    ).column_valued("value", joins_implicitly=True)
+    # under Music, and the number would stop matching what clicking it returns.
+    #
+    # SQLite: json_each / json_array  (table-valued, .c.value)
+    # Postgres: json_array_elements_text / json_build_array  (set-returning, column_valued)
+    if IS_SQLITE:
+        label = func.json_each(
+            func.coalesce(EventModel.categories, func.json_array(EventModel.category))
+        ).table_valued("value", joins_implicitly=True)
+        label_col = label.c.value
+    else:
+        label = func.json_array_elements_text(
+            func.coalesce(EventModel.categories, func.json_build_array(EventModel.category))
+        ).column_valued("value", joins_implicitly=True)
+        label_col = label
+
     category_stmt = (
         constrain(
-            select(label, func.count(EventModel.id).label("n"))
+            select(label_col, func.count(EventModel.id).label("n"))
             .outerjoin(NeighborhoodModel, EventModel.neighborhood_id == NeighborhoodModel.id)
             .where(EventModel.category.isnot(None)),
             with_category=False,
             with_neighborhood=True,
         )
-        .group_by(label)
+        .group_by(label_col)
         .order_by(func.count(EventModel.id).desc())
     )
 
