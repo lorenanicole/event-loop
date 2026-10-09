@@ -1,19 +1,32 @@
 # ── EventLoop Scraper (Cron) ──────────────────────────────────────────────────
-# Python 3.15 + Playwright.
-# greenlet 3.5.6 ships cp315 manylinux wheels (released 2026-09-14) so there
-# is no longer any 3.15 blocker for SQLAlchemy's sync core.
-# Playwright 1.63.0 is py3-none (pure Python) — works on any version.
+# Python 3.15 + Playwright on a standard Python slim base.
+#
+# We use python:3.15.0rc3-slim (final tag pending Docker Hub) rather than
+# Microsoft's playwright/python image, which hard-codes its own Python version
+# (currently 3.14) and gives us no way to upgrade independently.
+#
+# playwright 1.63.0 is py3-none — pure Python, works on any version.
+# greenlet 3.5.6 ships cp315 manylinux wheels — no SQLAlchemy blocker on 3.15.
 #
 # On Railway: deploy as a Cron service, schedule "0 */6 * * *" (every 6 hours),
 # start command: python scripts/additive_scrape.py
 # ─────────────────────────────────────────────────────────────────────────────
 
-FROM mcr.microsoft.com/playwright/python:v1.63.0-jammy
+FROM python:3.15.0rc3-slim
 
 WORKDIR /app
 
-# Install uv via pip (Python 3.14 is bundled in the Playwright image)
-RUN pip install --no-cache-dir uv==0.12.23
+# Playwright's Chromium runtime dependencies on Debian slim.
+# Equivalent to what `playwright install-deps chromium` would install.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
+    libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 \
+    libpango-1.0-0 libcairo2 libasound2 libatspi2.0-0 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN pip install --no-cache-dir uv==0.12.24
 
 # Copy dependency manifests
 COPY pyproject.toml uv.lock ./
@@ -21,14 +34,18 @@ COPY pyproject.toml uv.lock ./
 # Install third-party dependencies only (skip local package build)
 RUN uv sync --frozen --extra parser --extra app --no-dev --no-install-project
 
-# Copy source + README (README is required by pyproject.toml for package build)
+# Copy source + README
 COPY src/ ./src/
 COPY README.md ./
 
-# Now install the local eventloop package itself
+# Install the local eventloop package
 RUN uv sync --frozen --extra parser --extra app --no-dev
+
 COPY scripts/ ./scripts/
 COPY data/ ./data/
+
+# Install Playwright's Chromium browser binary
+RUN uv run playwright install chromium
 
 RUN mkdir -p /data
 
