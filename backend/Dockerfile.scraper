@@ -1,6 +1,8 @@
 # ── EventLoop Scraper (Cron) ──────────────────────────────────────────────────
-# Python 3.14 + Playwright. Playwright doesn't have 3.15 wheels yet so this
-# service deliberately pins 3.14. It shares the same SQLite volume as the API.
+# Python 3.15 + Playwright.
+# greenlet 3.5.6 ships cp315 manylinux wheels (released 2026-09-14) so there
+# is no longer any 3.15 blocker for SQLAlchemy's sync core.
+# Playwright 1.63.0 is py3-none (pure Python) — works on any version.
 #
 # On Railway: deploy as a Cron service, schedule "0 */6 * * *" (every 6 hours),
 # start command: python scripts/additive_scrape.py

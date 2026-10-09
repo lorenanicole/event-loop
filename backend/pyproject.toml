@@ -5,10 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "eventloop"
 version = "0.1.0"
-description = "Multi-version AI Chat Bot for Real-time Chicago Event Discovery - Python 3.15 Backend + 3.14 Parser"
+description = "AI-powered Chicago event discovery chatbot — Python 3.15"
 readme = "README.md"
 authors = [{name = "Lorena Mesa", email = "me@lorenamesa.com"}]
-requires-python = ">=3.14"
+requires-python = ">=3.15"
 dependencies = [
     "asyncpg>=0.32.0",
 ]
@@ -90,7 +90,7 @@ line-length = 100
 
 [tool.ruff]
 line-length = 100
-target-version = "py314"
+target-version = "py315"
 
 [tool.ruff.lint]
 select = [
