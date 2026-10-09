@@ -1,0 +1,11 @@
+# railway.toml — EventLoop Frontend service
+# Railway reads this file when the service root directory is set to /frontend.
+# Docs: https://docs.railway.com/guides/config-as-code
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
