@@ -53,5 +53,7 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/src \
     DATABASE_URL=sqlite+aiosqlite:////data/events.db
 
-# Default command — Railway Cron overrides this per-schedule
-CMD ["uv", "run", "python", "scripts/additive_scrape.py"]
+# Default command — Railway Cron overrides this per-schedule.
+# We use the absolute path to the uv-managed venv python so that
+# Railway dashboard start command overrides also work without `uv run`.
+CMD ["uv", "run", "python", "/app/scripts/additive_scrape.py"]
