@@ -331,5 +331,4 @@ invoke coverage
 4. 🚀 Start developing!
 
 For more details, see:
-- [TESTING.md](TESTING.md) - Comprehensive test guide
 - [README.md](README.md) - Project overview

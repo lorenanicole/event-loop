@@ -1,17 +1,17 @@
 # EventLoop Performance Benchmarks
 
-Comprehensive performance comparison between Python 3.14 and 3.15 RC3.
+Performance comparison between Python 3.14 and Python 3.15 (final, released October 9 2026).
 
 ## Running Benchmarks
 
-### Python 3.14 (Stable)
+### Python 3.14
 ```bash
 uv run --python 3.14 python benchmarks/perf_compare.py
 ```
 
-### Python 3.15 RC3 (New Features)
+### Python 3.15
 ```bash
-uv run --python 3.15.0rc3 python benchmarks/perf_compare.py
+uv run --python 3.15 python benchmarks/perf_compare.py
 ```
 
 ## Metrics Tested
@@ -45,7 +45,7 @@ uv run --python 3.15.0rc3 python benchmarks/perf_compare.py
 
 Results are saved to `benchmarks/results/` as JSON:
 - `benchmark_py314.json` - Python 3.14 results
-- `benchmark_py315.json` - Python 3.15 RC3 results
+- `benchmark_py315.json` - Python 3.15 results
 
 ## Expected Performance Improvements
 
@@ -69,7 +69,7 @@ Benchmarks can be run on every commit:
 ```bash
 # Run benchmarks on both versions
 uv run --python 3.14 python benchmarks/perf_compare.py
-uv run --python 3.15.0rc3 python benchmarks/perf_compare.py
+uv run --python 3.15 python benchmarks/perf_compare.py
 
 # Store results for historical tracking
 ```

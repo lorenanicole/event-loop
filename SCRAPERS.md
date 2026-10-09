@@ -45,7 +45,7 @@ HTTP-triggered run. They can be run manually.
 
 | Module | What it does | Why not scheduled |
 |---|---|---|
-| `scrapers/sources/eventscom.py` | events.com scraper | Requires pyppeteer (headless browser), not installed in production |
+| `scrapers/sources/eventscom.py` | events.com scraper | Uses Playwright; not wired into `additive_scrape.py` or any scheduled run |
 | `scrapers/sources/timeoutchicago.py` | Time Out Chicago scraper | Not wired into `additive_scrape.py`; was used for a one-off import, source still works |
 
 ---

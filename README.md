@@ -1,6 +1,6 @@
 # EventLoop: Chicago Events Chatbot
 
-**An event discovery app for Chicago, with a Python backend, PostgreSQL event catalog, and a TypeScript/Vite frontend.** The backend and scrapers share one Python package and database; the current environment uses Python 3.15 (API) and Python 3.14 (scraper/Playwright container).
+**An event discovery app for Chicago, with a Python backend, PostgreSQL event catalog, and a TypeScript/Vite frontend.** The backend and scrapers share one Python package and database; both run Python 3.15.
 
 ## Project Structure
 
@@ -41,9 +41,8 @@ eventloop/
 |   |-- eval/                   # Eval harnesses + labelled data
 |   |-- data/                   # Local SQLite database and boundary data
 |   |-- Dockerfile              # API service (Python 3.15, uv, no Playwright)
-|   |-- Dockerfile.scraper      # Scraper cron service (Python 3.14 + Playwright)
+|   |-- Dockerfile.scraper      # Scraper cron service (Python 3.15 + Playwright)
 |   |-- railway.toml            # Railway config for API service
-|   |-- railway.scraper.toml    # Railway config for scraper cron service
 |   |-- .env.example            # Required environment variables
 |   `-- pyproject.toml          # Dependencies, pytest config, ruff lint config
 |-- frontend/                   # TypeScript + Vite browser application

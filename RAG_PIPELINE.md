@@ -74,7 +74,7 @@ stuff near me this weekend") while the data is structured.
 
 | Step | Where | What it does |
 |---|---|---|
-| Intent gate | `app/ai/intent_classifier.py` | What is this message *doing*? Explicit Chicago event requests skip the model entirely (regex fast path). Ambiguous messages go to **claude-haiku-4-5** (switched from Sonnet — ~10× cheaper, same accuracy on 4-category classification). Confidence drives three-tier routing: ≥0.85 non-event → hard redirect in Loopara's voice; 0.65–0.84 non-event → agent runs with a clarification hint injected; anything else → normal agent run. The confidence score was previously read, logged, and discarded after a binary 0.7 threshold. Off-topic and farewell never reach retrieval. |
+| Intent gate | `app/chat/intent_classifier.py` | What is this message *doing*? Explicit Chicago event requests skip the model entirely (regex fast path). Ambiguous messages go to **claude-haiku-4-5** (switched from Sonnet — ~10× cheaper, same accuracy on 4-category classification). Confidence drives three-tier routing: ≥0.85 non-event → hard redirect in Loopara's voice; 0.65–0.84 non-event → agent runs with a clarification hint injected; anything else → normal agent run. The confidence score was previously read, logged, and discarded after a binary 0.7 threshold. Off-topic and farewell never reach retrieval. |
 | Keyword extraction | `_extract_keywords` | Strips filler to content words. "I'd like to go to a family friendly outdoor event" → the words that can actually match. |
 | Neighborhood resolution | `_extract_neighborhoods`, `shared/database/neighborhoods.py` | Exact neighborhood names and aliases resolve against rows in the database; selected broad regions (Northwest, North, West, South Side, downtown) expand through a curated map, intersected with existing rows. |
 | Category mapping | `shared/categories.py` | Maps the words a person uses to the stored vocabulary: "blues", "salsa" and "symphony" all become `Music`. See `CATEGORY_TAXONOMY` for the parent/subtag scheme. |
@@ -130,7 +130,7 @@ all three.
 A category filter matches any of an event's parent categories, so a drag show
 stored primarily as `Music` still answers a question about `LGBTQ`.
 
-**2. Semantic fallback** (`app/ai/semantic_index.py`). `minishlab/potion-base-8M`
+**2. Semantic fallback** (`app/chat/semantic_index.py`). `minishlab/potion-base-8M`
 static embeddings — a lookup table, not a transformer, so encoding is a token
 lookup with no inference server and no GPU. Used two ways: to *score* the
 structured results for relevance, and to *find* candidates when the structured
@@ -166,7 +166,7 @@ The reasons, in order of weight:
    A fine-tuned model fixes none of those.
 
 Where behaviour needed changing, the levers used instead were the system prompt
-(`app/ai/persona.py`), the category vocabulary and taxonomy, and the retrieval
+(`app/chat/persona.py`), the category vocabulary and taxonomy, and the retrieval
 thresholds — all of them inspectable and testable, which a fine-tune is not.
 
 ---

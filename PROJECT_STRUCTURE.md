@@ -50,7 +50,7 @@ runtime/package: they use the backend's Python environment and database.
 | `scrapers/sources/broadway_in_chicago.py` | broadwayinchicago.com HTML |
 | `scrapers/sources/bandsintown.py` | Bandsintown API |
 | `scrapers/sources/yourchicagoguide.py` | yourchicagoguide.com HTML |
-| `scrapers/sources/eventscom.py` | events.com (unscheduled; requires pyppeteer) |
+| `scrapers/sources/eventscom.py` | events.com (unscheduled; uses Playwright, not wired into scheduled runs) |
 | `scrapers/sources/timeoutchicago.py` | Time Out Chicago (unscheduled) |
 
 See [SCRAPERS.md](SCRAPERS.md) for the active / unscheduled / retired inventory.

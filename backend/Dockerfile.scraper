@@ -1,9 +1,10 @@
 # ── EventLoop Scraper (Cron) ──────────────────────────────────────────────────
 # Python 3.15 + Playwright on a standard Python slim base.
 #
-# We use python:3.15.0rc3-slim (final tag pending Docker Hub) rather than
-# Microsoft's playwright/python image, which hard-codes its own Python version
-# (currently 3.14) and gives us no way to upgrade independently.
+# We use python:3.15.0rc3-slim (Docker Hub final tag publishing in progress —
+# switch to python:3.15-slim once available) rather than Microsoft's
+# playwright/python image, which hard-codes its own Python version and gives
+# us no way to upgrade independently.
 #
 # playwright 1.63.0 is py3-none — pure Python, works on any version.
 # greenlet 3.5.6 ships cp315 manylinux wheels — no SQLAlchemy blocker on 3.15.
@@ -16,7 +17,7 @@ FROM python:3.15.0rc3-slim
 
 WORKDIR /app
 
-# Build tools (needed to compile pydantic-core from source — no cp315 wheel yet)
+# Build tools (needed to compile pydantic-core from source — cp315 wheels not yet published)
 # + Playwright's Chromium runtime dependencies on Debian slim.
 # libasound2t64 is the Bookworm rename of libasound2.
 RUN apt-get update && apt-get install -y --no-install-recommends \

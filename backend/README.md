@@ -40,7 +40,6 @@ eventloop/
 |   |-- Dockerfile              # API service (Python 3.15, uv, no Playwright)
 |   |-- Dockerfile.scraper      # Scraper cron service (Python 3.15 + Playwright)
 |   |-- railway.toml            # Railway config for API service
-|   |-- railway.scraper.toml    # Railway config for scraper cron service
 |   |-- .env.example            # Required environment variables
 |   `-- pyproject.toml          # Dependencies, pytest config, ruff lint config
 |-- frontend/                   # TypeScript + Vite browser application

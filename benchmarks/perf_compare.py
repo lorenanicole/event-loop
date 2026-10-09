@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Performance Benchmark: Python 3.14 vs 3.15 RC3
-Measures startup time, request latency, scraping speed, and JIT impact
+Performance Benchmark: Python 3.14 vs 3.15
+Measures startup time, request latency, scraping speed, and JIT impact.
+Python 3.15 was released as final on October 9, 2026.
 """
 
 import asyncio

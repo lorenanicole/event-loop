@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Compare benchmark results between Python 3.14 and 3.15 RC3
+Compare benchmark results between Python 3.14 and 3.15
 """
 
 import json

@@ -64,8 +64,9 @@ Or skip the CLI: **New Project → Deploy from GitHub repo → select `lorenanic
    - Railway will find `frontend/Dockerfile` automatically
 4. **Settings → Variables** — add:
    ```
-   VITE_API_BASE_URL=https://<your-api-domain>.up.railway.app
+   API_URL=https://<your-api-domain>.up.railway.app
    ```
+   (`API_URL` is substituted into nginx.conf at container startup to proxy `/api/*` to the backend.)
 5. **Settings → Networking → Generate Domain** — gives the UI its public URL
 6. Go back to the **api** service and set `FRONTEND_URL` to this domain
 
@@ -75,7 +76,7 @@ Or skip the CLI: **New Project → Deploy from GitHub repo → select `lorenanic
 
 1. **+ Add → GitHub Repo** → same repo, create a **new service**
 2. Service name: `scraper`
-3. **Settings → Source → Root Directory**: `backend`
+3. **Settings → Source → Root Directory**: `/` (repo root — so the root `railway.toml` is picked up)
 4. **Settings → Variables** — add:
    ```
    DATABASE_URL=${{Postgres.DATABASE_URL}}
@@ -83,11 +84,10 @@ Or skip the CLI: **New Project → Deploy from GitHub repo → select `lorenanic
    TICKETMASTER_API_KEY=...
    SERPAPI_KEY=...
    ```
-5. **Settings → Deploy → Start Command**:
-   ```
-   uv run python scripts/additive_scrape.py --only external
-   ```
-6. **Settings → Deploy → Cron Schedule**: `0 */6 * * *` (every 6 hours)
+5. The root `railway.toml` sets the Dockerfile path, start command, and cron schedule automatically:
+   - Dockerfile: `backend/Dockerfile.scraper`
+   - Start command: `/app/.venv/bin/python /app/scripts/additive_scrape.py`
+   - Cron schedule: `0 */6 * * *` (every 6 hours)
 
 ---
 
