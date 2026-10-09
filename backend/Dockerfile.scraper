@@ -44,16 +44,19 @@ RUN uv sync --frozen --extra parser --extra app --no-dev
 COPY scripts/ ./scripts/
 COPY data/ ./data/
 
-# Install Playwright's Chromium browser binary
+# Install Playwright's Chromium browser binary into the uv venv
 RUN uv run playwright install chromium
 
 RUN mkdir -p /data
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/src \
-    DATABASE_URL=sqlite+aiosqlite:////data/events.db
+    DATABASE_URL=sqlite+aiosqlite:////data/events.db \
+    PATH="/app/.venv/bin:$PATH"
 
-# Default command — Railway Cron overrides this per-schedule.
-# We use the absolute path to the uv-managed venv python so that
-# Railway dashboard start command overrides also work without `uv run`.
-CMD ["uv", "run", "python", "/app/scripts/additive_scrape.py"]
+# Activate the venv at build time so the CMD python is the right one
+# and Railway's start command override doesn't trigger a uv re-sync.
+RUN echo "source /app/.venv/bin/activate" >> /etc/profile
+
+# Use venv python directly — avoids uv re-syncing the package on every cron run
+CMD ["/app/.venv/bin/python", "/app/scripts/additive_scrape.py"]

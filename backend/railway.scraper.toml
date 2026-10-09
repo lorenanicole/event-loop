@@ -10,5 +10,5 @@ dockerfilePath = "Dockerfile.scraper"
 [deploy]
 # Cron: every 6 hours. Edit in dashboard under service → Settings → Cron Schedule.
 cronSchedule = "0 */6 * * *"
-startCommand = "uv run python /app/scripts/additive_scrape.py"
+startCommand = "/app/.venv/bin/python /app/scripts/additive_scrape.py"
 restartPolicyType = "never"
