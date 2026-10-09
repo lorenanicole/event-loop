@@ -44,6 +44,9 @@ RUN uv sync --frozen --extra parser --extra app --no-dev
 COPY scripts/ ./scripts/
 COPY data/ ./data/
 
+# Verify scripts were copied — fail fast at build time if missing
+RUN test -f /app/scripts/additive_scrape.py || (echo "ERROR: scripts/additive_scrape.py not found in image" && exit 1)
+
 # Install Playwright's Chromium browser binary into the uv venv
 RUN uv run playwright install chromium
 
