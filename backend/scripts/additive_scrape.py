@@ -79,7 +79,9 @@ DB_URL = _normalise_db_url(os.getenv("DATABASE_URL", "sqlite+aiosqlite:///data/e
 LOCK_PATH = "data/.scrape.lock"
 # Playwright venues are heavy; more than a handful at once thrashes the box and
 # starts tripping timeouts that look like venue failures.
-CONCURRENCY = 6
+# Railway's free/hobby tier has limited RAM (~512 MB); 6 concurrent Chromium
+# processes cause OOM "Page crashed" errors. 3 is the safe ceiling.
+CONCURRENCY = 3
 VENUE_TIMEOUT = 150
 
 
