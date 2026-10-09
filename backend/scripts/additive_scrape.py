@@ -195,7 +195,7 @@ async def scrape_external(session_maker) -> int:
     return saved_total, ran_ok
 
 
-async def scrape_one(config, hood, sem, client):
+async def scrape_one(config, hood, sem, client, browser=None):
     async with sem:
         started = time.monotonic()
         # Retried once on a zero. Under concurrency, sites intermittently serve
@@ -208,7 +208,8 @@ async def scrape_one(config, hood, sem, client):
                 await asyncio.sleep(5)
             try:
                 events = await asyncio.wait_for(
-                    VenueScraper(config).scrape(client), timeout=VENUE_TIMEOUT
+                    VenueScraper(config).scrape(client, browser=browser),
+                    timeout=VENUE_TIMEOUT,
                 )
                 note = f"{time.monotonic() - started:.0f}s" + (" (retry)" if attempt else "")
             except TimeoutError:
@@ -271,18 +272,32 @@ async def main(args) -> int:
             log(f"scraping {len(targets)} venues, {CONCURRENCY} at a time")
             log()
             sem = asyncio.Semaphore(CONCURRENCY)
-            async with httpx.AsyncClient(follow_redirects=True) as client:
-                tasks = [scrape_one(c, h, sem, client) for c, h in targets]
-                results = []
-                for coro in asyncio.as_completed(tasks):
-                    hood, config, events, note = await coro
-                    dated = sum(1 for e in events if e.date)
-                    priced = sum(1 for e in events if e.cost)
-                    log(
-                        f"{config.name[:34]:34} {len(events):4} events  "
-                        f"{dated:4} dated  {priced:4} priced   {note}"
-                    )
-                    results.append((hood, config, events))
+            # One shared Chromium process for all Playwright venues.
+            # Each venue gets its own BrowserContext (isolated cookies/storage)
+            # but pays no browser-launch overhead. This cuts RAM and wall-clock
+            # time vs launching a fresh browser per venue.
+            from playwright.async_api import async_playwright
+            from scrapers.venue.venue_scraper import VenueScraper as _VS
+            async with async_playwright() as pw:
+                browser = await pw.chromium.launch(
+                    headless=True,
+                    args=_VS._CHROMIUM_ARGS,
+                )
+                try:
+                    async with httpx.AsyncClient(follow_redirects=True) as client:
+                        tasks = [scrape_one(c, h, sem, client, browser=browser) for c, h in targets]
+                        results = []
+                        for coro in asyncio.as_completed(tasks):
+                            hood, config, events, note = await coro
+                            dated = sum(1 for e in events if e.date)
+                            priced = sum(1 for e in events if e.cost)
+                            log(
+                                f"{config.name[:34]:34} {len(events):4} events  "
+                                f"{dated:4} dated  {priced:4} priced   {note}"
+                            )
+                            results.append((hood, config, events))
+                finally:
+                    await browser.close()
 
             # Saved serially: SQLite takes one writer, and save_events_to_db
             # queries for existing rows as it goes.

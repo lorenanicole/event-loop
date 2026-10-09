@@ -93,10 +93,20 @@ class VenueScraper:
     def __init__(self, config: VenueConfig):
         self.config = config
 
-    async def scrape(self, client: httpx.AsyncClient) -> list[VenueEvent]:
-        """Scrape events from venue using configured strategy."""
+    async def scrape(
+        self,
+        client: httpx.AsyncClient,
+        browser=None,
+    ) -> list[VenueEvent]:
+        """Scrape events from venue using configured strategy.
+
+        Pass a shared Playwright Browser instance via `browser` to avoid
+        launching a new Chromium process per venue. The scraper creates an
+        isolated BrowserContext for each venue (cheap), then closes it — the
+        shared browser itself stays open for the caller to close.
+        """
         if self.config.use_playwright:
-            return await self._scrape_with_playwright()
+            return await self._scrape_with_playwright(browser=browser)
         else:
             return await self._scrape_static(client)
 
@@ -117,21 +127,34 @@ class VenueScraper:
 
         return events
 
-    async def _scrape_with_playwright(self) -> list[VenueEvent]:
-        """Scrape JavaScript-rendered page with Playwright + stealth."""
+    # Chromium launch flags used whether we own the browser or borrow a shared one.
+    _CHROMIUM_ARGS = [
+        "--disable-blink-features=AutomationControlled",
+        "--disable-dev-shm-usage",
+        # Required in Docker/Linux to avoid sandbox setuid errors and to
+        # significantly reduce per-process RAM.  Not needed on macOS.
+        "--no-sandbox",
+        "--no-zygote",
+        # Trim background work that burns RAM without helping scraping.
+        "--disable-gpu",
+        "--disable-extensions",
+        "--disable-background-networking",
+    ]
+
+    async def _scrape_with_playwright(self, browser=None) -> list[VenueEvent]:
+        """Scrape JavaScript-rendered page with Playwright + stealth.
+
+        If `browser` is supplied the caller owns it and this method only
+        creates/closes an isolated BrowserContext — one Chromium process serves
+        many venues.  If `browser` is None a fresh browser is launched and
+        closed here (single-venue or standalone use).
+        """
         events = []
+        own_browser = browser is None
         try:
             from playwright.async_api import async_playwright
 
-            async with async_playwright() as p:
-                # Stealth mode to bypass bot detection (Cloudflare, etc)
-                browser = await p.chromium.launch(
-                    headless=True,
-                    args=[
-                        "--disable-blink-features=AutomationControlled",
-                        "--disable-dev-shm-usage",
-                    ],
-                )
+            async def _run(browser):
                 # A truncated user agent with no locale, timezone or
                 # Accept-Language is enough for Cloudflare to challenge the
                 # request, which is what several venues were answering 403/406
@@ -163,17 +186,15 @@ class VenueScraper:
                     await page.wait_for_timeout(2000)
 
                     # Page-based extractors need the live DOM (JS-rendered cards,
-                    # "load more" pagination), so they run before the browser closes.
+                    # "load more" pagination), so they run before the context closes.
                     if self.config.page_extractor_fn:
-                        events = await self.config.page_extractor_fn(page, self.config)
-                        return events
+                        return await self.config.page_extractor_fn(page, self.config)
 
                     html = await page.content()
 
-                    # Extract content from any iframes (for venues like Rhapsody Theater with ThunderTix)
-                    frames = page.frames
+                    # Extract content from any iframes (e.g. Rhapsody Theater / ThunderTix)
                     iframe_content = []
-                    for frame in frames:
+                    for frame in page.frames:
                         try:
                             frame_text = await frame.evaluate("document.body.innerText")
                             if frame_text and len(frame_text) > 100:
@@ -181,21 +202,29 @@ class VenueScraper:
                         except Exception:
                             pass
 
-                    # Create soup and inject iframe content if found
                     soup = BeautifulSoup(html, "html.parser")
                     if iframe_content:
-                        # Append iframe content as hidden text node for extractor to find
                         body = soup.find("body")
                         if body:
-                            iframe_text = " ".join(iframe_content)
                             import html as html_module
 
+                            iframe_text = " ".join(iframe_content)
                             body.append(soup.new_string(f"\n{html_module.escape(iframe_text)}\n"))
 
-                    events = self._extract_events(soup)
+                    return self._extract_events(soup)
 
                 finally:
-                    await browser.close()
+                    await context.close()
+
+            if own_browser:
+                async with async_playwright() as p:
+                    b = await p.chromium.launch(headless=True, args=self._CHROMIUM_ARGS)
+                    try:
+                        events = await _run(b)
+                    finally:
+                        await b.close()
+            else:
+                events = await _run(browser)
 
         except ImportError:
             logger.debug(f"{self.config.name}: Playwright not available")
