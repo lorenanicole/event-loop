@@ -6,7 +6,7 @@ Three services, one Railway Postgres database:
 |---|---|---|
 | `api` | `backend/Dockerfile` | FastAPI + PydanticAI chat backend (Python 3.15) |
 | `frontend` | `frontend/Dockerfile` | nginx serving the Vite/TypeScript UI |
-| `scraper` | `backend/Dockerfile.scraper` | Playwright venue scraper cron (Python 3.14, Playwright 1.63) |
+| `scraper` | `backend/Dockerfile.scraper` | Playwright venue scraper cron (Python 3.15, Playwright 1.63) |
 
 ---
 

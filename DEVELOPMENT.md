@@ -127,7 +127,7 @@ $ git commit -m "Add new feature"
 
 Ruff settings live in `backend/pyproject.toml` under `[tool.ruff.lint]`:
 
-- **Target**: Python 3.14 (minimum declared; environment runs 3.15)
+- **Target**: Python 3.15
 - **Line length**: 100 chars
 - **Rules selected**: B, BLE, DTZ, E, EXE, F, G, LOG, PLW, RUF, S, SIM, W
 - **Globally ignored**: B008 (FastAPI Depends), BLE001 (deliberate broad except), EXE001 (scripts not chmod'd), G004 (f-string logging convention)

@@ -7,7 +7,7 @@ client is a TypeScript/Vite application.
 ## Backend (`backend/`)
 
 The backend package uses Python 3.15 in the current local environment; its
-`pyproject.toml` declares Python 3.14 or newer. Scrapers are not a separate
+`pyproject.toml` declares Python 3.15 or newer. Scrapers are not a separate
 runtime/package: they use the backend's Python environment and database.
 
 ### `src/app/` — FastAPI server
