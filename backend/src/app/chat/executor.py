@@ -24,14 +24,20 @@ from app.api.sse import (  # noqa: F401 — re-exported for callers that import 
     ToolCallEvent,
     sse_event_formatter,
 )
-from app.chat.agent import SYSTEM_PROMPT, agent, todays_date
-from app.chat.chatbot import (
+
+# lazy from (PEP 810, Python 3.15) — deferred loading of heavy imports.
+# The agent module pulls in pydantic_ai + anthropic; the intent classifier
+# loads the model2vec embedding model. Neither is needed until the first
+# actual chat request arrives, so scraper subprocesses and test collection
+# that import this module pay zero cost for these stacks.
+lazy from app.chat.agent import SYSTEM_PROMPT, agent, todays_date
+lazy from app.chat.chatbot import (
     AGENT_OUTPUT_TOKEN_LIMIT,
     AGENT_REQUEST_LIMIT,
     AGENT_TOOL_CALL_LIMIT,
     SearchPolicy,
 )
-from app.chat.intent_classifier import Intent, get_intent_classifier, get_intent_response
+lazy from app.chat.intent_classifier import Intent, get_intent_classifier, get_intent_response
 from app.resilience import (
     ErrorClassifier,
     db_circuit_breaker,

@@ -100,7 +100,7 @@ def coerce_row(Model, columns, values: tuple) -> dict:
                 continue
         return val  # leave other strings as-is
 
-    return {col: coerce(col, val) for col, val in zip(columns, values)}
+    return {col: coerce(col, val) for col, val in zip(columns, values, strict=False)}
 
 
 async def migrate(sqlite_url: str, pg_url: str) -> None:
@@ -144,13 +144,12 @@ async def migrate(sqlite_url: str, pg_url: str) -> None:
 
         # Bulk insert in chunks into Postgres
         inserted = 0
-        async with PgSession() as dst:
-            async with dst.begin():
-                for i in range(0, len(dicts), CHUNK_SIZE):
-                    chunk = dicts[i : i + CHUNK_SIZE]
-                    await dst.execute(Model.__table__.insert(), chunk)
-                    inserted += len(chunk)
-                    print(f"  inserted {inserted}/{total}...", end="\r")
+        async with PgSession() as dst, dst.begin():
+            for i in range(0, len(dicts), CHUNK_SIZE):
+                chunk = dicts[i : i + CHUNK_SIZE]
+                await dst.execute(Model.__table__.insert(), chunk)
+                inserted += len(chunk)
+                print(f"  inserted {inserted}/{total}...", end="\r")
 
         # For tables with integer serial PKs, sync the sequence so future
         # inserts don't collide with migrated rows. Skip UUID/string PKs.

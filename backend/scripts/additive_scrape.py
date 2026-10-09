@@ -310,7 +310,7 @@ async def main(args) -> int:
             log()
             log(f"external sources ({len(EXTERNAL_SOURCES)})")
             log()
-            saved, ran_ok = await scrape_external(session_maker)
+            _saved, ran_ok = await scrape_external(session_maker)
             # A run is successful if at least one source ran without an exception,
             # even if it returned 0 new events (the DB is simply up to date).
             scraped_any = scraped_any or ran_ok > 0

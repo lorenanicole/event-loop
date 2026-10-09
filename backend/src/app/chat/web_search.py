@@ -37,6 +37,12 @@ SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 SERPAPI_TIMEOUT = 12  # see chatbot.py for measurement rationale
 
 
+# sentinel (PEP 661, Python 3.15 built-in) — a named, inspectable sentinel.
+# Distinguishes "result field not present in the API response" from "present
+# but explicitly null". `None` can't carry that distinction alone.
+_MISSING = sentinel("MISSING")
+
+
 class EventResult(BaseModel):
     """One event card as returned by the Google Events API via SerpAPI."""
 
@@ -45,7 +51,9 @@ class EventResult(BaseModel):
     location: str | None = None
     venue: str | None = None
     url: str | None = None
-    type_hint: str | None = None
+    # type_hint is absent from many sources; _MISSING lets callers tell
+    # "field not returned" from "field returned as null".
+    type_hint: str | None = _MISSING  # type: ignore[assignment]
     source: str
     model_config = ConfigDict(extra="ignore")
 

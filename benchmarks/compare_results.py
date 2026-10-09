@@ -53,7 +53,7 @@ def compare_results(py314: dict, py315: dict) -> None:
     avg_improvement = total_improvement / len(benchmarks_314)
 
     if improvements:
-        for name, _pct in sorted(improvements, key=lambda x: x[1], reverse=True):
+        for _name, _pct in sorted(improvements, key=lambda x: x[1], reverse=True):
             pass
 
     # Insights
