@@ -32,14 +32,16 @@ RUN pip install --no-cache-dir uv==0.12.24
 COPY pyproject.toml uv.lock ./
 
 # Install third-party dependencies only (skip local package build)
-RUN uv sync --frozen --extra parser --extra app --no-dev --no-install-project
+# The scraper only needs the `parser` extra — `app` pulls in uvicorn[standard]
+# which requires gcc to build httptools from source (no cp315 wheel yet).
+RUN uv sync --frozen --extra parser --no-dev --no-install-project
 
 # Copy source + README
 COPY src/ ./src/
 COPY README.md ./
 
 # Install the local eventloop package
-RUN uv sync --frozen --extra parser --extra app --no-dev
+RUN uv sync --frozen --extra parser --no-dev
 
 COPY scripts/ ./scripts/
 COPY data/ ./data/
