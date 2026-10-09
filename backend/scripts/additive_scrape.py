@@ -61,7 +61,21 @@ logging.basicConfig(level=logging.WARNING, format="%(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-DB_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///data/events.db")
+# Normalise DATABASE_URL to the asyncpg driver regardless of what Railway
+# injects. Railway has been observed to inject postgresql+psycopg://, postgres://,
+# and postgresql:// — none of which are installed. Only asyncpg is.
+def _normalise_db_url(url: str) -> str:
+    for prefix, replacement in [
+        ("postgresql+psycopg2://", "postgresql+asyncpg://"),
+        ("postgresql+psycopg://",  "postgresql+asyncpg://"),
+        ("postgres://",            "postgresql+asyncpg://"),
+        ("postgresql://",          "postgresql+asyncpg://"),
+    ]:
+        if url.startswith(prefix):
+            return replacement + url[len(prefix):]
+    return url
+
+DB_URL = _normalise_db_url(os.getenv("DATABASE_URL", "sqlite+aiosqlite:///data/events.db"))
 LOCK_PATH = "data/.scrape.lock"
 # Playwright venues are heavy; more than a handful at once thrashes the box and
 # starts tripping timeouts that look like venue failures.

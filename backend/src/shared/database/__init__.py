@@ -19,12 +19,23 @@ from .models import Base, EventModel
 
 _raw_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/events.db")
 
-# Railway's Postgres plugin injects DATABASE_URL as `postgresql://...` (the
-# libpq/psycopg scheme). SQLAlchemy would route that to the sync psycopg
-# driver, which isn't installed. Rewrite it to `postgresql+asyncpg://` so
-# the async asyncpg driver is used instead.
-if _raw_url.startswith("postgresql://"):
-    _raw_url = _raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+# Railway injects DATABASE_URL in several forms depending on the plugin version:
+#   postgresql://...           → plain libpq, routes to sync psycopg2/psycopg3
+#   postgres://...             → alias for the above
+#   postgresql+psycopg://...   → explicitly sync psycopg3
+#   postgresql+psycopg2://...  → explicitly sync psycopg2
+# None of those drivers are installed — only asyncpg is. Rewrite any
+# postgresql variant to postgresql+asyncpg:// so the correct async driver
+# is used. Leave sqlite:// and postgresql+asyncpg:// untouched.
+for _prefix, _replacement in [
+    ("postgresql+psycopg2://", "postgresql+asyncpg://"),
+    ("postgresql+psycopg://", "postgresql+asyncpg://"),
+    ("postgres://", "postgresql+asyncpg://"),
+    ("postgresql://", "postgresql+asyncpg://"),
+]:
+    if _raw_url.startswith(_prefix):
+        _raw_url = _replacement + _raw_url[len(_prefix) :]
+        break
 
 DATABASE_URL = _raw_url
 IS_SQLITE = "sqlite" in DATABASE_URL
