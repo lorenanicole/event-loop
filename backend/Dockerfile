@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libc6-dev \
     curl \
-    && pip install --no-cache-dir uv==0.12.23 \
+    && pip install --no-cache-dir uv==0.12.24 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency manifests first so Docker caches this layer
