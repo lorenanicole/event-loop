@@ -1,0 +1,14 @@
+# railway.toml — EventLoop Scraper cron service (repo root)
+# The scraper service on Railway must have its Root Directory set to /
+# (repo root) so this file is picked up instead of backend/railway.toml.
+# Docs: https://docs.railway.com/guides/config-as-code
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "backend/Dockerfile.scraper"
+
+[deploy]
+# Cron: every 6 hours. Edit in dashboard under service → Settings → Cron Schedule.
+cronSchedule = "0 */6 * * *"
+startCommand = "/app/.venv/bin/python /app/scripts/additive_scrape.py"
+restartPolicyType = "never"

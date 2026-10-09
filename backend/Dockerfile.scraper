@@ -29,7 +29,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir uv==0.12.24
 
 # Copy dependency manifests
-COPY pyproject.toml uv.lock ./
+# NOTE: build context = repo root (Railway root dir = /), so all paths are backend-prefixed.
+COPY backend/pyproject.toml backend/uv.lock ./
 
 # Install third-party dependencies only (skip local package build)
 # The scraper only needs the `parser` extra — `app` pulls in uvicorn[standard]
@@ -37,14 +38,14 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --extra parser --no-dev --no-install-project
 
 # Copy source + README
-COPY src/ ./src/
-COPY README.md ./
+COPY backend/src/ ./src/
+COPY backend/README.md ./
 
 # Install the local eventloop package
 RUN uv sync --frozen --extra parser --no-dev
 
-COPY scripts/ ./scripts/
-COPY data/ ./data/
+COPY backend/scripts/ ./scripts/
+COPY backend/data/ ./data/
 
 # Verify scripts were copied — fail fast at build time if missing
 RUN test -f /app/scripts/additive_scrape.py || (echo "ERROR: scripts/additive_scrape.py not found in image" && exit 1)
