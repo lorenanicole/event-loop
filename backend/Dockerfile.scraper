@@ -16,12 +16,14 @@ FROM python:3.15.0rc3-slim
 
 WORKDIR /app
 
-# Playwright's Chromium runtime dependencies on Debian slim.
-# Equivalent to what `playwright install-deps chromium` would install.
+# Build tools (needed to compile pydantic-core from source — no cp315 wheel yet)
+# + Playwright's Chromium runtime dependencies on Debian slim.
+# libasound2t64 is the Bookworm rename of libasound2.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libc6-dev \
     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
     libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 \
-    libpango-1.0-0 libcairo2 libasound2 libatspi2.0-0 \
+    libpango-1.0-0 libcairo2 libasound2t64 libatspi2.0-0 \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
