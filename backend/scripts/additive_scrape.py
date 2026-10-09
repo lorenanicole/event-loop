@@ -145,7 +145,7 @@ class SingleRun:
     def _stale(self) -> bool:
         try:
             pid = int(open(self.path).read().strip())
-        except ValueError, OSError:
+        except (ValueError, OSError):
             return True  # unreadable lock is no lock
         if pid == os.getpid():
             return True
